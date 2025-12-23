@@ -1,4 +1,4 @@
-import { memo, useMemo } from "react";
+import React, { useMemo } from "react";
 import { Bill } from "@/hooks/useBills";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { MoneyDisplay } from "@/components/ui/MoneyDisplay";
@@ -11,7 +11,7 @@ interface BillCardProps {
   bill: Bill;
 }
 
-export const BillCard = memo(function BillCard({ bill }: BillCardProps) {
+export const BillCard: React.FC<BillCardProps> = React.memo(({ bill }) => {
   const { participantCount, paidCount, progress } = useMemo(() => {
     const count = bill.participants?.length || 0;
     const paid = bill.participants?.filter(p => p.status === "paid").length || 0;
@@ -93,3 +93,5 @@ export const BillCard = memo(function BillCard({ bill }: BillCardProps) {
     </Link>
   );
 });
+
+BillCard.displayName = "BillCard";

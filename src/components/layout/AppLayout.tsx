@@ -1,4 +1,4 @@
-import { ReactNode, memo } from "react";
+import React, { ReactNode } from "react";
 import { Header } from "./Header";
 import { BottomNav } from "./BottomNav";
 
@@ -7,7 +7,7 @@ interface AppLayoutProps {
   hideNav?: boolean;
 }
 
-export const AppLayout = memo(function AppLayout({ children, hideNav }: AppLayoutProps) {
+export const AppLayout: React.FC<AppLayoutProps> = React.memo(({ children, hideNav }) => {
   return (
     <div className="min-h-screen bg-background">
       <Header />
@@ -18,3 +18,5 @@ export const AppLayout = memo(function AppLayout({ children, hideNav }: AppLayou
     </div>
   );
 });
+
+AppLayout.displayName = "AppLayout";
