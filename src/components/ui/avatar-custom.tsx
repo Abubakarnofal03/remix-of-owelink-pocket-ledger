@@ -1,4 +1,4 @@
-import { memo, useMemo } from "react";
+import React, { useMemo } from "react";
 import { cn } from "@/lib/utils";
 
 interface AvatarCustomProps {
@@ -40,12 +40,12 @@ function getAvatarColor(name: string): string {
   return colors[index];
 }
 
-export const AvatarCustom = memo(function AvatarCustom({ 
+export const AvatarCustom: React.FC<AvatarCustomProps> = React.memo(({ 
   name, 
   imageUrl, 
   size = "md", 
   className 
-}: AvatarCustomProps) {
+}) => {
   const initials = useMemo(() => getInitials(name), [name]);
   const avatarColor = useMemo(() => getAvatarColor(name), [name]);
 
@@ -76,3 +76,5 @@ export const AvatarCustom = memo(function AvatarCustom({
     </div>
   );
 });
+
+AvatarCustom.displayName = "AvatarCustom";

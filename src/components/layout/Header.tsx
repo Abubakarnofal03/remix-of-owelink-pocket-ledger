@@ -1,4 +1,4 @@
-import { memo, useCallback } from "react";
+import React, { useCallback } from "react";
 import { Link } from "react-router-dom";
 import { Settings, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -13,7 +13,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
-export const Header = memo(function Header() {
+export const Header: React.FC = React.memo(() => {
   const { profile, signOut } = useAuth();
 
   const handleSignOut = useCallback(() => {
@@ -63,3 +63,5 @@ export const Header = memo(function Header() {
     </header>
   );
 });
+
+Header.displayName = "Header";

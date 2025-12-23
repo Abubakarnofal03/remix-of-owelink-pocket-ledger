@@ -1,6 +1,6 @@
-import { memo, useMemo } from "react";
+import React, { useMemo } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { Home, Receipt, FileText, Users, Bell } from "lucide-react";
+import { Home, Receipt, FileText, Users, Bell, LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const navItems = [
@@ -13,12 +13,12 @@ const navItems = [
 
 interface NavItemProps {
   path: string;
-  icon: typeof Home;
+  icon: LucideIcon;
   label: string;
   isActive: boolean;
 }
 
-const NavItem = memo(function NavItem({ path, icon: Icon, label, isActive }: NavItemProps) {
+const NavItem: React.FC<NavItemProps> = React.memo(({ path, icon: Icon, label, isActive }) => {
   return (
     <Link
       to={path}
@@ -47,7 +47,11 @@ const NavItem = memo(function NavItem({ path, icon: Icon, label, isActive }: Nav
   );
 });
 
-export const BottomNav = memo(function BottomNav() {
+NavItem.displayName = "NavItem";
+
+interface BottomNavProps {}
+
+export const BottomNav: React.FC<BottomNavProps> = React.memo(() => {
   const location = useLocation();
   const currentPath = location.pathname;
 
@@ -72,3 +76,5 @@ export const BottomNav = memo(function BottomNav() {
     </nav>
   );
 });
+
+BottomNav.displayName = "BottomNav";

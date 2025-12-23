@@ -1,4 +1,4 @@
-import { memo, useMemo } from "react";
+import React, { useMemo } from "react";
 import { Contact } from "@/hooks/useContacts";
 import { ContactCard } from "./ContactCard";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -13,7 +13,7 @@ interface ContactListProps {
   selectedIds?: string[];
 }
 
-const ContactListSkeleton = memo(function ContactListSkeleton() {
+const ContactListSkeleton: React.FC = React.memo(() => {
   return (
     <div className="space-y-3">
       {[...Array(5)].map((_, i) => (
@@ -29,7 +29,9 @@ const ContactListSkeleton = memo(function ContactListSkeleton() {
   );
 });
 
-export const ContactList = memo(function ContactList({
+ContactListSkeleton.displayName = "ContactListSkeleton";
+
+export const ContactList: React.FC<ContactListProps> = React.memo(({
   contacts,
   loading,
   onEdit,
@@ -37,7 +39,7 @@ export const ContactList = memo(function ContactList({
   onClick,
   selectable,
   selectedIds = [],
-}: ContactListProps) {
+}) => {
   const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
 
   const renderedContacts = useMemo(() => 
@@ -69,3 +71,5 @@ export const ContactList = memo(function ContactList({
     </div>
   );
 });
+
+ContactList.displayName = "ContactList";

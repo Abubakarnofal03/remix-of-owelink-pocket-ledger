@@ -1,4 +1,4 @@
-import { memo, useCallback, useMemo } from "react";
+import React, { useCallback, useMemo } from "react";
 import { Contact } from "@/hooks/useContacts";
 import { AvatarCustom } from "@/components/ui/avatar-custom";
 import { Phone, MoreVertical, Pencil, Trash2 } from "lucide-react";
@@ -19,14 +19,14 @@ interface ContactCardProps {
   selected?: boolean;
 }
 
-export const ContactCard = memo(function ContactCard({
+export const ContactCard: React.FC<ContactCardProps> = React.memo(({
   contact,
   onEdit,
   onDelete,
   onClick,
   selectable,
   selected,
-}: ContactCardProps) {
+}) => {
   const displayName = useMemo(() => 
     contact.nickname || contact.phone_number, 
     [contact.nickname, contact.phone_number]
@@ -96,3 +96,5 @@ export const ContactCard = memo(function ContactCard({
     </div>
   );
 });
+
+ContactCard.displayName = "ContactCard";

@@ -1,4 +1,4 @@
-import { memo, useMemo } from "react";
+import React, { useMemo } from "react";
 import { Bill } from "@/hooks/useBills";
 import { BillCard } from "./BillCard";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -8,7 +8,7 @@ interface BillListProps {
   loading?: boolean;
 }
 
-const BillListSkeleton = memo(function BillListSkeleton() {
+const BillListSkeleton: React.FC = React.memo(() => {
   return (
     <div className="space-y-3">
       {[...Array(3)].map((_, i) => (
@@ -36,7 +36,9 @@ const BillListSkeleton = memo(function BillListSkeleton() {
   );
 });
 
-export const BillList = memo(function BillList({ bills, loading }: BillListProps) {
+BillListSkeleton.displayName = "BillListSkeleton";
+
+export const BillList: React.FC<BillListProps> = React.memo(({ bills, loading }) => {
   const renderedBills = useMemo(() => 
     bills.map((bill) => <BillCard key={bill.id} bill={bill} />),
     [bills]
@@ -56,3 +58,5 @@ export const BillList = memo(function BillList({ bills, loading }: BillListProps
     </div>
   );
 });
+
+BillList.displayName = "BillList";
