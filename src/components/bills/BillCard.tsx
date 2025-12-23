@@ -1,4 +1,3 @@
-import React, { useMemo } from "react";
 import { Bill } from "@/hooks/useBills";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { MoneyDisplay } from "@/components/ui/MoneyDisplay";
@@ -11,24 +10,11 @@ interface BillCardProps {
   bill: Bill;
 }
 
-export const BillCard: React.FC<BillCardProps> = React.memo(({ bill }) => {
-  const { participantCount, paidCount, progress } = useMemo(() => {
-    const count = bill.participants?.length || 0;
-    const paid = bill.participants?.filter(p => p.status === "paid").length || 0;
-    const totalPaid = bill.participants?.reduce((sum, p) => sum + p.amount_paid, 0) || 0;
-    const prog = bill.total_amount > 0 ? (totalPaid / bill.total_amount) * 100 : 0;
-    return { participantCount: count, paidCount: paid, progress: prog };
-  }, [bill.participants, bill.total_amount]);
-
-  const formattedDueDate = useMemo(() => 
-    bill.due_date ? format(new Date(bill.due_date), "MMM d") : null,
-    [bill.due_date]
-  );
-
-  const displayedParticipants = useMemo(() => 
-    bill.participants?.slice(0, 4) || [],
-    [bill.participants]
-  );
+export function BillCard({ bill }: BillCardProps) {
+  const participantCount = bill.participants?.length || 0;
+  const paidCount = bill.participants?.filter(p => p.status === "paid").length || 0;
+  const totalPaid = bill.participants?.reduce((sum, p) => sum + p.amount_paid, 0) || 0;
+  const progress = bill.total_amount > 0 ? (totalPaid / bill.total_amount) * 100 : 0;
 
   return (
     <Link to={`/bills/${bill.id}`} className="block">
@@ -64,7 +50,7 @@ export const BillCard: React.FC<BillCardProps> = React.memo(({ bill }) => {
         <div className="flex items-center justify-between">
           {/* Participant avatars */}
           <div className="flex -space-x-2">
-            {displayedParticipants.map((p) => (
+            {bill.participants?.slice(0, 4).map((p, i) => (
               <AvatarCustom
                 key={p.id}
                 name={p.phone_number}
@@ -80,10 +66,10 @@ export const BillCard: React.FC<BillCardProps> = React.memo(({ bill }) => {
           </div>
 
           {/* Due date */}
-          {formattedDueDate && (
+          {bill.due_date && (
             <div className="flex items-center gap-1 text-xs text-muted-foreground">
               <Calendar className="h-3 w-3" />
-              <span>Due {formattedDueDate}</span>
+              <span>Due {format(new Date(bill.due_date), "MMM d")}</span>
             </div>
           )}
 
@@ -92,6 +78,4 @@ export const BillCard: React.FC<BillCardProps> = React.memo(({ bill }) => {
       </div>
     </Link>
   );
-});
-
-BillCard.displayName = "BillCard";
+}

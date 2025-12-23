@@ -1,4 +1,4 @@
-import React, { ReactNode } from "react";
+import { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "./button";
 import { LucideIcon } from "lucide-react";
@@ -15,14 +15,14 @@ interface EmptyStateProps {
   children?: ReactNode;
 }
 
-export const EmptyState: React.FC<EmptyStateProps> = React.memo(({
+export function EmptyState({
   icon: Icon,
   title,
   description,
   action,
   className,
   children,
-}) => {
+}: EmptyStateProps) {
   return (
     <div
       className={cn(
@@ -43,6 +43,4 @@ export const EmptyState: React.FC<EmptyStateProps> = React.memo(({
       {children}
     </div>
   );
-});
-
-EmptyState.displayName = "EmptyState";
+}

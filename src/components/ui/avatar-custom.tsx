@@ -1,4 +1,3 @@
-import React, { useMemo } from "react";
 import { cn } from "@/lib/utils";
 
 interface AvatarCustomProps {
@@ -7,24 +6,6 @@ interface AvatarCustomProps {
   size?: "xs" | "sm" | "md" | "lg";
   className?: string;
 }
-
-const colors = [
-  "bg-emerald-500",
-  "bg-blue-500",
-  "bg-purple-500",
-  "bg-amber-500",
-  "bg-rose-500",
-  "bg-cyan-500",
-  "bg-indigo-500",
-  "bg-teal-500",
-];
-
-const sizeClasses = {
-  xs: "h-6 w-6 text-[10px]",
-  sm: "h-8 w-8 text-xs",
-  md: "h-10 w-10 text-sm",
-  lg: "h-14 w-14 text-lg",
-};
 
 function getInitials(name: string): string {
   return name
@@ -36,18 +17,27 @@ function getInitials(name: string): string {
 }
 
 function getAvatarColor(name: string): string {
+  const colors = [
+    "bg-emerald-500",
+    "bg-blue-500",
+    "bg-purple-500",
+    "bg-amber-500",
+    "bg-rose-500",
+    "bg-cyan-500",
+    "bg-indigo-500",
+    "bg-teal-500",
+  ];
   const index = name.charCodeAt(0) % colors.length;
   return colors[index];
 }
 
-export const AvatarCustom: React.FC<AvatarCustomProps> = React.memo(({ 
-  name, 
-  imageUrl, 
-  size = "md", 
-  className 
-}) => {
-  const initials = useMemo(() => getInitials(name), [name]);
-  const avatarColor = useMemo(() => getAvatarColor(name), [name]);
+export function AvatarCustom({ name, imageUrl, size = "md", className }: AvatarCustomProps) {
+  const sizeClasses = {
+    xs: "h-6 w-6 text-[10px]",
+    sm: "h-8 w-8 text-xs",
+    md: "h-10 w-10 text-sm",
+    lg: "h-14 w-14 text-lg",
+  };
 
   if (imageUrl) {
     return (
@@ -67,14 +57,12 @@ export const AvatarCustom: React.FC<AvatarCustomProps> = React.memo(({
     <div
       className={cn(
         "rounded-full flex items-center justify-center font-medium text-white",
-        avatarColor,
+        getAvatarColor(name),
         sizeClasses[size],
         className
       )}
     >
-      {initials}
+      {getInitials(name)}
     </div>
   );
-});
-
-AvatarCustom.displayName = "AvatarCustom";
+}
