@@ -93,12 +93,13 @@ export function useBills() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
 
-  const { data: bills = [], isLoading: loading } = useQuery({
+  const { data: bills = [], isLoading: loading, refetch: refetchBills } = useQuery({
     queryKey: BILLS_QUERY_KEY,
     queryFn: () => fetchBills(user!.id),
     enabled: !!user,
     staleTime: 5 * 60 * 1000, // 5 minutes
-    gcTime: 30 * 60 * 1000, // 30 minutes (previously cacheTime)
+    gcTime: 30 * 60 * 1000, // 30 minutes
+    refetchOnMount: "always", // Always refetch on mount to ensure fresh data
   });
 
   const createBillMutation = useMutation({
