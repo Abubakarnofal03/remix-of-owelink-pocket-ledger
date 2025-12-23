@@ -52,6 +52,7 @@ export type Database = {
           created_at: string
           id: string
           phone_number: string
+          phone_suffix: string | null
           status: string
           updated_at: string
           user_id: string | null
@@ -63,6 +64,7 @@ export type Database = {
           created_at?: string
           id?: string
           phone_number: string
+          phone_suffix?: string | null
           status?: string
           updated_at?: string
           user_id?: string | null
@@ -74,6 +76,7 @@ export type Database = {
           created_at?: string
           id?: string
           phone_number?: string
+          phone_suffix?: string | null
           status?: string
           updated_at?: string
           user_id?: string | null
@@ -137,6 +140,7 @@ export type Database = {
           linked_profile_id: string | null
           nickname: string | null
           phone_number: string
+          phone_suffix: string | null
           updated_at: string
           user_id: string
         }
@@ -146,6 +150,7 @@ export type Database = {
           linked_profile_id?: string | null
           nickname?: string | null
           phone_number: string
+          phone_suffix?: string | null
           updated_at?: string
           user_id: string
         }
@@ -155,6 +160,7 @@ export type Database = {
           linked_profile_id?: string | null
           nickname?: string | null
           phone_number?: string
+          phone_suffix?: string | null
           updated_at?: string
           user_id?: string
         }
@@ -230,6 +236,7 @@ export type Database = {
           creditor_id: string
           currency: string
           debtor_phone_number: string
+          debtor_phone_suffix: string | null
           debtor_user_id: string | null
           deleted_at: string | null
           description: string | null
@@ -245,6 +252,7 @@ export type Database = {
           creditor_id: string
           currency?: string
           debtor_phone_number: string
+          debtor_phone_suffix?: string | null
           debtor_user_id?: string | null
           deleted_at?: string | null
           description?: string | null
@@ -260,6 +268,7 @@ export type Database = {
           creditor_id?: string
           currency?: string
           debtor_phone_number?: string
+          debtor_phone_suffix?: string | null
           debtor_user_id?: string | null
           deleted_at?: string | null
           description?: string | null
@@ -350,6 +359,7 @@ export type Database = {
           id: string
           notification_preferences: Json | null
           phone_number: string
+          phone_suffix: string | null
           settings: Json | null
           updated_at: string
           user_id: string
@@ -362,6 +372,7 @@ export type Database = {
           id?: string
           notification_preferences?: Json | null
           phone_number: string
+          phone_suffix?: string | null
           settings?: Json | null
           updated_at?: string
           user_id: string
@@ -374,6 +385,7 @@ export type Database = {
           id?: string
           notification_preferences?: Json | null
           phone_number?: string
+          phone_suffix?: string | null
           settings?: Json | null
           updated_at?: string
           user_id?: string
@@ -408,6 +420,7 @@ export type Database = {
     }
     Functions: {
       get_user_phone: { Args: { _user_id: string }; Returns: string }
+      get_user_phone_suffix: { Args: { _user_id: string }; Returns: string }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]

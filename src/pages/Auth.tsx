@@ -15,6 +15,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { APP_NAME } from "@/lib/constants";
 import { z } from "zod";
+import { normalizeToE164 } from "@/lib/phoneUtils";
 
 type CountryCode = {
   code: string;
@@ -61,9 +62,9 @@ export default function Auth() {
     document.title = `${isSignUp ? "Sign up" : "Sign in"} | ${APP_NAME}`;
   }, [isSignUp]);
 
+  // Normalize phone number to E.164 format
   const fullPhoneNumber = useMemo(() => {
-    const localDigits = formData.phoneNumber.replace(/[^0-9]/g, "");
-    return `${formData.countryCode}${localDigits}`;
+    return normalizeToE164(formData.phoneNumber, formData.countryCode);
   }, [formData.countryCode, formData.phoneNumber]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -90,10 +91,9 @@ export default function Auth() {
           return;
         }
 
-        const digitsOnly = fullPhoneNumber.replace(/[^0-9]/g, "");
-        const email = `${digitsOnly}@owelink.app`;
+        // signUp now handles email generation internally
         const { error } = await signUp(
-          email,
+          "", // email is generated in useAuth from phone number
           formData.password,
           formData.username,
           fullPhoneNumber

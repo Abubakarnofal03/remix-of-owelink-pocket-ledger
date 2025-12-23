@@ -3,13 +3,14 @@ export interface Profile {
   user_id: string;
   username: string;
   phone_number: string;
+  phone_suffix: string | null;
   avatar_url: string | null;
   business_mode_enabled: boolean;
   notification_preferences: {
     push: boolean;
     in_app: boolean;
-  };
-  settings: Record<string, unknown>;
+  } | null;
+  settings: Record<string, unknown> | null;
   created_at: string;
   updated_at: string;
 }
@@ -18,6 +19,7 @@ export interface Contact {
   id: string;
   user_id: string;
   phone_number: string;
+  phone_suffix: string | null;
   nickname: string | null;
   linked_profile_id: string | null;
   linked_profile?: Profile | null;
@@ -45,6 +47,7 @@ export interface BillParticipant {
   id: string;
   bill_id: string;
   phone_number: string;
+  phone_suffix: string | null;
   user_id: string | null;
   amount_owed: number;
   amount_paid: number;
@@ -58,6 +61,7 @@ export interface IOU {
   id: string;
   creditor_id: string;
   debtor_phone_number: string;
+  debtor_phone_suffix: string | null;
   debtor_user_id: string | null;
   amount: number;
   amount_paid: number;
