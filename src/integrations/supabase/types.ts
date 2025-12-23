@@ -415,6 +415,8 @@ export type Database = {
         }
         Returns: boolean
       }
+      is_bill_creator: { Args: { bill_id: string }; Returns: boolean }
+      is_bill_participant: { Args: { bill_id: string }; Returns: boolean }
     }
     Enums: {
       app_role: "admin" | "user"
