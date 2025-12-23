@@ -163,7 +163,7 @@ export default function Index() {
               {recentActivity.map((activity) => (
                 <Link
                   key={activity.id}
-                  to={activity.type === "bill" ? `/bills/${activity.id.replace("bill-", "").replace("owe-bill-", "")}` : `/ious`}
+                  to={activity.type === "bill" ? `/bills/${activity.id.replace("owe-bill-", "").replace("bill-", "")}` : `/ious`}
                   className="block"
                 >
                   <div className="card-elevated p-3 hover:ring-2 hover:ring-primary/20 transition-all">
