@@ -1,25 +1,133 @@
+import { useState } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { Navigate } from "react-router-dom";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { EmptyState } from "@/components/ui/EmptyState";
-import { Users } from "lucide-react";
+import { useContacts, Contact } from "@/hooks/useContacts";
+import { ContactList } from "@/components/contacts/ContactList";
+import { AddContactDialog } from "@/components/contacts/AddContactDialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Users, Plus, Search, Download } from "lucide-react";
 
 export default function Contacts() {
-  const { user, loading } = useAuth();
+  const { user, loading: authLoading } = useAuth();
+  const { 
+    contacts, 
+    loading: contactsLoading, 
+    addContact, 
+    deleteContact,
+    importContactsFromDevice,
+    searchContacts 
+  } = useContacts();
 
-  if (loading) return null;
+  const [showAddDialog, setShowAddDialog] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState<Contact | null>(null);
+  const [importing, setImporting] = useState(false);
+
+  if (authLoading) return null;
   if (!user) return <Navigate to="/auth" replace />;
+
+  const filteredContacts = searchQuery ? searchContacts(searchQuery) : contacts;
+
+  const handleImport = async () => {
+    setImporting(true);
+    await importContactsFromDevice();
+    setImporting(false);
+  };
+
+  const handleDelete = async () => {
+    if (deleteTarget) {
+      await deleteContact(deleteTarget.id);
+      setDeleteTarget(null);
+    }
+  };
 
   return (
     <AppLayout>
       <div className="animate-fade-in">
-        <h1 className="font-display text-2xl font-bold text-foreground mb-6">Contacts</h1>
-        <EmptyState
-          icon={Users}
-          title="No contacts yet"
-          description="Add contacts to quickly split bills and track debts."
-          action={{ label: "Add Contact", onClick: () => {} }}
+        <div className="flex items-center justify-between mb-6">
+          <h1 className="font-display text-2xl font-bold text-foreground">Contacts</h1>
+          <div className="flex gap-2">
+            <Button 
+              variant="outline" 
+              size="sm"
+              onClick={handleImport}
+              disabled={importing}
+            >
+              <Download className="h-4 w-4 mr-1" />
+              {importing ? "Importing..." : "Import"}
+            </Button>
+            <Button size="sm" onClick={() => setShowAddDialog(true)}>
+              <Plus className="h-4 w-4 mr-1" />
+              Add
+            </Button>
+          </div>
+        </div>
+
+        {contacts.length > 0 && (
+          <div className="mb-4">
+            <Input
+              placeholder="Search contacts..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              icon={<Search className="h-4 w-4" />}
+            />
+          </div>
+        )}
+
+        {contacts.length === 0 && !contactsLoading ? (
+          <EmptyState
+            icon={Users}
+            title="No contacts yet"
+            description="Add contacts to quickly split bills and track debts."
+            action={{ label: "Add Contact", onClick: () => setShowAddDialog(true) }}
+          />
+        ) : (
+          <ContactList
+            contacts={filteredContacts}
+            loading={contactsLoading}
+            onDelete={setDeleteTarget}
+          />
+        )}
+
+        <AddContactDialog
+          open={showAddDialog}
+          onOpenChange={setShowAddDialog}
+          onAdd={addContact}
         />
+
+        <AlertDialog open={!!deleteTarget} onOpenChange={() => setDeleteTarget(null)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Delete Contact</AlertDialogTitle>
+              <AlertDialogDescription>
+                Are you sure you want to delete{" "}
+                <span className="font-medium">
+                  {deleteTarget?.nickname || deleteTarget?.phone_number}
+                </span>
+                ? This action cannot be undone.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                Delete
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     </AppLayout>
   );

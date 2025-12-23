@@ -1,0 +1,490 @@
+import { useState, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
+import { useContacts, Contact } from "@/hooks/useContacts";
+import { useBills, BillInsert } from "@/hooks/useBills";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Calendar } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Switch } from "@/components/ui/switch";
+import { AddContactDialog } from "@/components/contacts/AddContactDialog";
+import { AvatarCustom } from "@/components/ui/avatar-custom";
+import { cn } from "@/lib/utils";
+import { format } from "date-fns";
+import {
+  Receipt,
+  CalendarIcon,
+  Search,
+  Plus,
+  X,
+  Users,
+  Loader2,
+  Phone,
+  DollarSign,
+  Check,
+} from "lucide-react";
+
+interface Participant {
+  id: string;
+  phone_number: string;
+  nickname: string | null;
+  amount: number;
+}
+
+export function BillForm() {
+  const navigate = useNavigate();
+  const { contacts, addContact, loading: contactsLoading } = useContacts();
+  const { createBill } = useBills();
+
+  // Form state
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [totalAmount, setTotalAmount] = useState("");
+  const [dueDate, setDueDate] = useState<Date | undefined>();
+  const [participants, setParticipants] = useState<Participant[]>([]);
+  const [equalSplit, setEqualSplit] = useState(true);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [showAddContact, setShowAddContact] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+
+  // Filter contacts based on search and exclude already selected
+  const filteredContacts = useMemo(() => {
+    const selectedPhones = new Set(participants.map((p) => p.phone_number));
+    let filtered = contacts.filter((c) => !selectedPhones.has(c.phone_number));
+
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      filtered = filtered.filter(
+        (c) =>
+          c.nickname?.toLowerCase().includes(q) || c.phone_number.includes(q)
+      );
+    }
+
+    return filtered;
+  }, [contacts, participants, searchQuery]);
+
+  // Calculate split amounts
+  const total = parseFloat(totalAmount) || 0;
+  const splitAmount =
+    participants.length > 0 ? total / participants.length : 0;
+
+  // Update participant amounts when equal split or total changes
+  const updateParticipantAmounts = () => {
+    if (equalSplit && participants.length > 0) {
+      setParticipants((prev) =>
+        prev.map((p) => ({ ...p, amount: splitAmount }))
+      );
+    }
+  };
+
+  // Add participant from contact
+  const addParticipant = (contact: Contact) => {
+    const newParticipant: Participant = {
+      id: contact.id,
+      phone_number: contact.phone_number,
+      nickname: contact.nickname,
+      amount: equalSplit ? splitAmount : 0,
+    };
+    setParticipants((prev) => [...prev, newParticipant]);
+    setSearchQuery("");
+  };
+
+  // Remove participant
+  const removeParticipant = (phone: string) => {
+    setParticipants((prev) => prev.filter((p) => p.phone_number !== phone));
+  };
+
+  // Update individual participant amount
+  const updateParticipantAmount = (phone: string, amount: number) => {
+    setParticipants((prev) =>
+      prev.map((p) => (p.phone_number === phone ? { ...p, amount } : p))
+    );
+  };
+
+  // Handle adding new contact inline
+  const handleAddNewContact = async (data: {
+    phone_number: string;
+    nickname?: string;
+  }) => {
+    const contact = await addContact(data);
+    if (contact) {
+      addParticipant(contact);
+      return contact;
+    }
+    return null;
+  };
+
+  // Recalculate when total or participant count changes
+  useMemo(() => {
+    if (equalSplit) {
+      updateParticipantAmounts();
+    }
+  }, [total, participants.length, equalSplit]);
+
+  // Validate form
+  const validate = (): boolean => {
+    const newErrors: Record<string, string> = {};
+
+    if (!title.trim()) {
+      newErrors.title = "Title is required";
+    }
+
+    if (!totalAmount || total <= 0) {
+      newErrors.total = "Enter a valid amount";
+    }
+
+    if (participants.length === 0) {
+      newErrors.participants = "Add at least one participant";
+    }
+
+    if (!equalSplit) {
+      const participantTotal = participants.reduce((sum, p) => sum + p.amount, 0);
+      if (Math.abs(participantTotal - total) > 0.01) {
+        newErrors.split = `Amounts must equal $${total.toFixed(2)} (currently $${participantTotal.toFixed(2)})`;
+      }
+    }
+
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
+  // Submit form
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (!validate()) return;
+
+    setSubmitting(true);
+
+    const billData: BillInsert = {
+      title: title.trim(),
+      description: description.trim() || undefined,
+      total_amount: total,
+      due_date: dueDate?.toISOString(),
+      participants: participants.map((p) => ({
+        phone_number: p.phone_number,
+        amount_owed: equalSplit ? splitAmount : p.amount,
+      })),
+    };
+
+    const result = await createBill(billData);
+    setSubmitting(false);
+
+    if (result) {
+      navigate("/bills");
+    }
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-6">
+      {/* Title */}
+      <div className="space-y-2">
+        <Label htmlFor="title">Bill Title</Label>
+        <Input
+          id="title"
+          placeholder="Dinner at Italian Place"
+          value={title}
+          onChange={(e) => {
+            setTitle(e.target.value);
+            if (errors.title) setErrors((prev) => ({ ...prev, title: "" }));
+          }}
+          icon={<Receipt className="h-4 w-4" />}
+          error={!!errors.title}
+        />
+        {errors.title && (
+          <p className="text-sm text-destructive">{errors.title}</p>
+        )}
+      </div>
+
+      {/* Description */}
+      <div className="space-y-2">
+        <Label htmlFor="description">Description (optional)</Label>
+        <Textarea
+          id="description"
+          placeholder="Add any notes about this bill..."
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          rows={2}
+          className="resize-none"
+        />
+      </div>
+
+      {/* Total Amount */}
+      <div className="space-y-2">
+        <Label htmlFor="total">Total Amount</Label>
+        <Input
+          id="total"
+          type="number"
+          step="0.01"
+          min="0"
+          placeholder="0.00"
+          value={totalAmount}
+          onChange={(e) => {
+            setTotalAmount(e.target.value);
+            if (errors.total) setErrors((prev) => ({ ...prev, total: "" }));
+          }}
+          icon={<DollarSign className="h-4 w-4" />}
+          error={!!errors.total}
+        />
+        {errors.total && (
+          <p className="text-sm text-destructive">{errors.total}</p>
+        )}
+      </div>
+
+      {/* Due Date */}
+      <div className="space-y-2">
+        <Label>Due Date (optional)</Label>
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button
+              variant="outline"
+              className={cn(
+                "w-full justify-start text-left font-normal",
+                !dueDate && "text-muted-foreground"
+              )}
+            >
+              <CalendarIcon className="mr-2 h-4 w-4" />
+              {dueDate ? format(dueDate, "PPP") : "Pick a due date"}
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-auto p-0" align="start">
+            <Calendar
+              mode="single"
+              selected={dueDate}
+              onSelect={setDueDate}
+              initialFocus
+              disabled={(date) => date < new Date()}
+              className="pointer-events-auto"
+            />
+          </PopoverContent>
+        </Popover>
+      </div>
+
+      {/* Participants Section */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <Label className="flex items-center gap-2">
+            <Users className="h-4 w-4" />
+            Participants
+          </Label>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => setShowAddContact(true)}
+            className="text-primary"
+          >
+            <Plus className="h-4 w-4 mr-1" />
+            New Contact
+          </Button>
+        </div>
+
+        {/* Search Contacts */}
+        <div className="relative">
+          <Input
+            placeholder="Search contacts by name or phone..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            icon={<Search className="h-4 w-4" />}
+          />
+
+          {/* Contact dropdown */}
+          {searchQuery && filteredContacts.length > 0 && (
+            <div className="absolute z-10 mt-1 w-full bg-popover border border-border rounded-lg shadow-lg max-h-48 overflow-y-auto">
+              {filteredContacts.map((contact) => (
+                <button
+                  key={contact.id}
+                  type="button"
+                  className="w-full px-3 py-2 flex items-center gap-3 hover:bg-accent transition-colors text-left"
+                  onClick={() => addParticipant(contact)}
+                >
+                  <AvatarCustom
+                    name={contact.nickname || contact.phone_number}
+                    size="sm"
+                  />
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-sm truncate">
+                      {contact.nickname || contact.phone_number}
+                    </p>
+                    {contact.nickname && (
+                      <p className="text-xs text-muted-foreground truncate">
+                        {contact.phone_number}
+                      </p>
+                    )}
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+
+          {searchQuery && filteredContacts.length === 0 && !contactsLoading && (
+            <div className="absolute z-10 mt-1 w-full bg-popover border border-border rounded-lg shadow-lg p-3">
+              <p className="text-sm text-muted-foreground text-center mb-2">
+                No contacts found
+              </p>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="w-full"
+                onClick={() => {
+                  setShowAddContact(true);
+                }}
+              >
+                <Plus className="h-4 w-4 mr-1" />
+                Add "{searchQuery}" as new contact
+              </Button>
+            </div>
+          )}
+        </div>
+
+        {errors.participants && participants.length === 0 && (
+          <p className="text-sm text-destructive">{errors.participants}</p>
+        )}
+
+        {/* Selected Participants */}
+        {participants.length > 0 && (
+          <div className="space-y-3">
+            {/* Split Toggle */}
+            <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
+              <span className="text-sm font-medium">Equal Split</span>
+              <Switch
+                checked={equalSplit}
+                onCheckedChange={(checked) => {
+                  setEqualSplit(checked);
+                  if (checked) {
+                    setParticipants((prev) =>
+                      prev.map((p) => ({ ...p, amount: splitAmount }))
+                    );
+                  }
+                }}
+              />
+            </div>
+
+            {/* Participant Cards */}
+            <div className="space-y-2">
+              {participants.map((participant) => (
+                <div
+                  key={participant.phone_number}
+                  className="flex items-center gap-3 p-3 bg-card border border-border rounded-lg"
+                >
+                  <AvatarCustom
+                    name={participant.nickname || participant.phone_number}
+                    size="sm"
+                  />
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-sm truncate">
+                      {participant.nickname || participant.phone_number}
+                    </p>
+                    {participant.nickname && (
+                      <p className="text-xs text-muted-foreground truncate flex items-center gap-1">
+                        <Phone className="h-3 w-3" />
+                        {participant.phone_number}
+                      </p>
+                    )}
+                  </div>
+
+                  {equalSplit ? (
+                    <span className="text-sm font-semibold text-primary">
+                      ${splitAmount.toFixed(2)}
+                    </span>
+                  ) : (
+                    <div className="w-24">
+                      <Input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        value={participant.amount || ""}
+                        onChange={(e) =>
+                          updateParticipantAmount(
+                            participant.phone_number,
+                            parseFloat(e.target.value) || 0
+                          )
+                        }
+                        className="h-8 text-right"
+                      />
+                    </div>
+                  )}
+
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                    onClick={() => removeParticipant(participant.phone_number)}
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+
+            {/* Split Error */}
+            {errors.split && (
+              <p className="text-sm text-destructive">{errors.split}</p>
+            )}
+
+            {/* Total Summary */}
+            {!equalSplit && (
+              <div className="flex justify-between items-center p-3 bg-muted/50 rounded-lg">
+                <span className="text-sm text-muted-foreground">
+                  Participant Total
+                </span>
+                <span
+                  className={cn(
+                    "font-semibold",
+                    Math.abs(
+                      participants.reduce((sum, p) => sum + p.amount, 0) - total
+                    ) < 0.01
+                      ? "text-emerald-600"
+                      : "text-destructive"
+                  )}
+                >
+                  $
+                  {participants.reduce((sum, p) => sum + p.amount, 0).toFixed(2)}{" "}
+                  / ${total.toFixed(2)}
+                </span>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Submit */}
+      <div className="flex gap-3 pt-4">
+        <Button
+          type="button"
+          variant="outline"
+          className="flex-1"
+          onClick={() => navigate("/bills")}
+        >
+          Cancel
+        </Button>
+        <Button type="submit" className="flex-1" disabled={submitting}>
+          {submitting ? (
+            <>
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              Creating...
+            </>
+          ) : (
+            <>
+              <Check className="mr-2 h-4 w-4" />
+              Create Bill
+            </>
+          )}
+        </Button>
+      </div>
+
+      {/* Add Contact Dialog */}
+      <AddContactDialog
+        open={showAddContact}
+        onOpenChange={setShowAddContact}
+        onAdd={handleAddNewContact}
+        initialPhone={searchQuery.replace(/\D/g, "")}
+      />
+    </form>
+  );
+}
