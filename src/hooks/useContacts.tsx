@@ -1,8 +1,9 @@
-import { useState, useEffect, useCallback } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "./useAuth";
 import { toast } from "sonner";
 import { extractPhoneSuffix } from "@/lib/phoneUtils";
+import { useCallback } from "react";
 
 export interface Contact {
   id: string;
@@ -19,49 +20,44 @@ export interface ContactInsert {
   nickname?: string;
 }
 
+const CONTACTS_QUERY_KEY = ["contacts"];
+
+async function fetchContacts(userId: string): Promise<Contact[]> {
+  const { data, error } = await supabase
+    .from("contacts")
+    .select("*")
+    .eq("user_id", userId)
+    .order("nickname", { ascending: true, nullsFirst: false });
+
+  if (error) throw error;
+  return data || [];
+}
+
 export function useContacts() {
   const { user } = useAuth();
-  const [contacts, setContacts] = useState<Contact[]>([]);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
 
-  const fetchContacts = useCallback(async () => {
-    if (!user) return;
-    
-    try {
-      const { data, error } = await supabase
-        .from("contacts")
-        .select("*")
-        .eq("user_id", user.id)
-        .order("nickname", { ascending: true, nullsFirst: false });
+  const { data: contacts = [], isLoading: loading } = useQuery({
+    queryKey: CONTACTS_QUERY_KEY,
+    queryFn: () => fetchContacts(user!.id),
+    enabled: !!user,
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    gcTime: 30 * 60 * 1000, // 30 minutes
+  });
 
-      if (error) throw error;
-      setContacts(data || []);
-    } catch (error: any) {
-      console.error("Error fetching contacts:", error);
-      toast.error("Failed to load contacts");
-    } finally {
-      setLoading(false);
-    }
-  }, [user]);
+  const addContactMutation = useMutation({
+    mutationFn: async (contact: ContactInsert) => {
+      if (!user) throw new Error("Not authenticated");
 
-  useEffect(() => {
-    fetchContacts();
-  }, [fetchContacts]);
+      // Check for duplicate using phone_suffix matching
+      const newSuffix = extractPhoneSuffix(contact.phone_number);
+      const existing = contacts.find(c => 
+        c.phone_suffix === newSuffix || extractPhoneSuffix(c.phone_number) === newSuffix
+      );
+      if (existing) {
+        throw new Error("Contact with this phone number already exists");
+      }
 
-  const addContact = async (contact: ContactInsert): Promise<Contact | null> => {
-    if (!user) return null;
-
-    // Check for duplicate using phone_suffix matching
-    const newSuffix = extractPhoneSuffix(contact.phone_number);
-    const existing = contacts.find(c => 
-      c.phone_suffix === newSuffix || extractPhoneSuffix(c.phone_number) === newSuffix
-    );
-    if (existing) {
-      toast.error("Contact with this phone number already exists");
-      return null;
-    }
-
-    try {
       const { data, error } = await supabase
         .from("contacts")
         .insert({
@@ -73,56 +69,86 @@ export function useContacts() {
         .single();
 
       if (error) throw error;
-
-      // Update local cache
-      setContacts(prev => [...prev, data]);
-      toast.success("Contact added");
       return data;
-    } catch (error: any) {
+    },
+    onSuccess: (newContact) => {
+      queryClient.setQueryData<Contact[]>(CONTACTS_QUERY_KEY, (old = []) => [...old, newContact]);
+      toast.success("Contact added");
+    },
+    onError: (error: any) => {
       console.error("Error adding contact:", error);
-      toast.error("Failed to add contact");
-      return null;
-    }
-  };
+      toast.error(error.message || "Failed to add contact");
+    },
+  });
 
-  const updateContact = async (id: string, updates: Partial<ContactInsert>): Promise<boolean> => {
-    try {
-      const { error } = await supabase
+  const updateContactMutation = useMutation({
+    mutationFn: async ({ id, updates }: { id: string; updates: Partial<ContactInsert> }) => {
+      const { data, error } = await supabase
         .from("contacts")
         .update(updates)
-        .eq("id", id);
+        .eq("id", id)
+        .select()
+        .single();
 
       if (error) throw error;
-
-      // Update local cache
-      setContacts(prev =>
-        prev.map(c => (c.id === id ? { ...c, ...updates, updated_at: new Date().toISOString() } : c))
+      return data;
+    },
+    onSuccess: (data) => {
+      queryClient.setQueryData<Contact[]>(CONTACTS_QUERY_KEY, (old = []) =>
+        old.map(c => c.id === data.id ? data : c)
       );
       toast.success("Contact updated");
-      return true;
-    } catch (error: any) {
+    },
+    onError: (error: any) => {
       console.error("Error updating contact:", error);
       toast.error("Failed to update contact");
-      return false;
-    }
-  };
+    },
+  });
 
-  const deleteContact = async (id: string): Promise<boolean> => {
-    try {
+  const deleteContactMutation = useMutation({
+    mutationFn: async (id: string) => {
       const { error } = await supabase
         .from("contacts")
         .delete()
         .eq("id", id);
 
       if (error) throw error;
-
-      // Update local cache
-      setContacts(prev => prev.filter(c => c.id !== id));
+      return id;
+    },
+    onSuccess: (id) => {
+      queryClient.setQueryData<Contact[]>(CONTACTS_QUERY_KEY, (old = []) =>
+        old.filter(c => c.id !== id)
+      );
       toast.success("Contact deleted");
-      return true;
-    } catch (error: any) {
+    },
+    onError: (error: any) => {
       console.error("Error deleting contact:", error);
       toast.error("Failed to delete contact");
+    },
+  });
+
+  const addContact = async (contact: ContactInsert): Promise<Contact | null> => {
+    try {
+      return await addContactMutation.mutateAsync(contact);
+    } catch {
+      return null;
+    }
+  };
+
+  const updateContact = async (id: string, updates: Partial<ContactInsert>): Promise<boolean> => {
+    try {
+      await updateContactMutation.mutateAsync({ id, updates });
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  const deleteContact = async (id: string): Promise<boolean> => {
+    try {
+      await deleteContactMutation.mutateAsync(id);
+      return true;
+    } catch {
       return false;
     }
   };
@@ -183,6 +209,10 @@ export function useContacts() {
     );
   }, [contacts]);
 
+  const getContactById = (id: string): Contact | undefined => {
+    return contacts.find(c => c.id === id);
+  };
+
   return {
     contacts,
     loading,
@@ -191,6 +221,40 @@ export function useContacts() {
     deleteContact,
     importContactsFromDevice,
     searchContacts,
-    refetch: fetchContacts,
+    getContactById,
+    refetch: () => queryClient.invalidateQueries({ queryKey: CONTACTS_QUERY_KEY }),
+  };
+}
+
+// Hook for single contact detail (uses cache first)
+export function useContactDetail(contactId: string | undefined) {
+  const { user } = useAuth();
+  const queryClient = useQueryClient();
+
+  // Try to get from cache first
+  const cachedContacts = queryClient.getQueryData<Contact[]>(CONTACTS_QUERY_KEY);
+  const cachedContact = cachedContacts?.find(c => c.id === contactId);
+
+  const { data: contact, isLoading } = useQuery({
+    queryKey: ["contact", contactId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("contacts")
+        .select("*, linked_profile:profiles!contacts_linked_profile_id_fkey(user_id, phone_suffix)")
+        .eq("id", contactId!)
+        .single();
+
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!user && !!contactId && !cachedContact,
+    initialData: cachedContact,
+    staleTime: 5 * 60 * 1000,
+    gcTime: 30 * 60 * 1000,
+  });
+
+  return {
+    contact: contact || cachedContact,
+    loading: isLoading && !cachedContact,
   };
 }

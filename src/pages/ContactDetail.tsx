@@ -1,8 +1,6 @@
-import { useState, useEffect } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { Navigate, useParams, useNavigate } from "react-router-dom";
 import { AppLayout } from "@/components/layout/AppLayout";
-import { Contact } from "@/hooks/useContacts";
 import { Button } from "@/components/ui/button";
 import { MoneyDisplay } from "@/components/ui/MoneyDisplay";
 import { AvatarCustom } from "@/components/ui/avatar-custom";
@@ -17,194 +15,21 @@ import {
   FileText,
   DollarSign,
 } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
-import { extractPhoneSuffix } from "@/lib/phoneUtils";
-
-interface TimelineItem {
-  id: string;
-  type: "bill_created" | "bill_owed" | "iou_created" | "iou_owed";
-  title: string;
-  description: string;
-  amount: number;
-  amountPaid: number;
-  currency: string;
-  date: string;
-  status: string;
-  isCredit: boolean; // Money coming to you
-}
+import { useContactTimeline, TimelineItem } from "@/hooks/useContactTimeline";
 
 export default function ContactDetail() {
-  const { user, profile, loading: authLoading } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const { id } = useParams();
   const navigate = useNavigate();
-  const [contact, setContact] = useState<Contact | null>(null);
-  const [timeline, setTimeline] = useState<TimelineItem[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [totalOwedToYou, setTotalOwedToYou] = useState(0);
-  const [totalYouOwe, setTotalYouOwe] = useState(0);
-
-  useEffect(() => {
-    const fetchContactData = async () => {
-      if (!id || !user || !profile) return;
-
-      try {
-        // Fetch contact with linked profile info
-        const { data: contactData, error: contactError } = await supabase
-          .from("contacts")
-          .select("*, linked_profile:profiles!contacts_linked_profile_id_fkey(user_id, phone_suffix)")
-          .eq("id", id)
-          .single();
-
-        if (contactError) throw contactError;
-        setContact(contactData);
-
-        // Use phone_suffix for matching
-        const contactSuffix = contactData.phone_suffix || extractPhoneSuffix(contactData.phone_number);
-        const mySuffix = profile.phone_suffix || extractPhoneSuffix(profile.phone_number);
-        
-        // Get the contact's user_id from linked profile (if they have an account)
-        const contactUserId = (contactData as any).linked_profile?.user_id;
-        
-        const timelineItems: TimelineItem[] = [];
-        let owedToYou = 0;
-        let youOwe = 0;
-
-        // 1. Bills I created where contact is a participant (they owe me)
-        const { data: myBills } = await supabase
-          .from("bills")
-          .select(`*, participants:bill_participants(*)`)
-          .eq("creator_id", user.id)
-          .is("deleted_at", null);
-
-        myBills?.forEach((bill) => {
-          const participant = bill.participants?.find(
-            (p: any) => (p.phone_suffix || extractPhoneSuffix(p.phone_number)) === contactSuffix
-          );
-          if (participant) {
-            const remaining = participant.amount_owed - participant.amount_paid;
-            owedToYou += remaining;
-
-            timelineItems.push({
-              id: `bill-${bill.id}`,
-              type: "bill_created",
-              title: bill.title,
-              description: `${contactData.nickname || "They"} owe${remaining > 0 ? "s" : "d"} you`,
-              amount: participant.amount_owed,
-              amountPaid: participant.amount_paid,
-              currency: bill.currency,
-              date: bill.created_at,
-              status: participant.status,
-              isCredit: true,
-            });
-          }
-        });
-
-        // 2. Bills where I'm a participant and contact created it (I owe them)
-        const { data: allBillsWithParticipants } = await supabase
-          .from("bill_participants")
-          .select(`*, bill:bills(*)`)
-          .or(`user_id.eq.${user.id},phone_suffix.eq.${mySuffix}`);
-
-        allBillsWithParticipants?.forEach((participation: any) => {
-          if (!participation.bill || participation.bill.deleted_at) return;
-          if (participation.bill.creator_id === user.id) return; // Skip my own bills
-
-          // Check if the bill creator matches contact's user_id (from linked_profile)
-          const isContactCreator = contactUserId && participation.bill.creator_id === contactUserId;
-          
-          if (isContactCreator) {
-            const remaining = participation.amount_owed - participation.amount_paid;
-            youOwe += remaining;
-
-            timelineItems.push({
-              id: `bill-owe-${participation.bill.id}`,
-              type: "bill_owed",
-              title: participation.bill.title,
-              description: `You owe ${contactData.nickname || "them"}`,
-              amount: participation.amount_owed,
-              amountPaid: participation.amount_paid,
-              currency: participation.bill.currency,
-              date: participation.bill.created_at,
-              status: participation.status,
-              isCredit: false,
-            });
-          }
-        });
-
-        // 3. IOUs I created where contact is debtor (they owe me)
-        const { data: myIOUs } = await supabase
-          .from("ious")
-          .select("*")
-          .eq("creditor_id", user.id)
-          .is("deleted_at", null);
-
-        const filteredMyIOUs = myIOUs?.filter(iou => 
-          (iou.debtor_phone_suffix || extractPhoneSuffix(iou.debtor_phone_number)) === contactSuffix
-        ) || [];
-
-        filteredMyIOUs.forEach((iou) => {
-          const remaining = iou.amount - iou.amount_paid;
-          owedToYou += remaining;
-
-          timelineItems.push({
-            id: `iou-${iou.id}`,
-            type: "iou_created",
-            title: iou.description || "IOU",
-            description: `${contactData.nickname || "They"} owe${remaining > 0 ? "s" : "d"} you`,
-            amount: iou.amount,
-            amountPaid: iou.amount_paid,
-            currency: iou.currency,
-            date: iou.created_at,
-            status: iou.status,
-            isCredit: true,
-          });
-        });
-
-        // 4. IOUs where I'm the debtor and contact is creditor (I owe them)
-        const { data: iOweThem } = await supabase
-          .from("ious")
-          .select("*")
-          .or(`debtor_user_id.eq.${user.id},debtor_phone_suffix.eq.${mySuffix}`)
-          .is("deleted_at", null);
-
-        // Match by contact's user_id (creditor_id is a user_id, not profile_id)
-        const filteredIOwe = iOweThem?.filter(iou => 
-          contactUserId && iou.creditor_id === contactUserId
-        ) || [];
-
-        filteredIOwe.forEach((iou) => {
-          const remaining = iou.amount - iou.amount_paid;
-          youOwe += remaining;
-
-          timelineItems.push({
-            id: `iou-owe-${iou.id}`,
-            type: "iou_owed",
-            title: iou.description || "IOU",
-            description: `You owe ${contactData.nickname || "them"}`,
-            amount: iou.amount,
-            amountPaid: iou.amount_paid,
-            currency: iou.currency,
-            date: iou.created_at,
-            status: iou.status,
-            isCredit: false,
-          });
-        });
-
-        // Sort by date descending
-        timelineItems.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-
-        setTotalOwedToYou(owedToYou);
-        setTotalYouOwe(youOwe);
-        setTimeline(timelineItems);
-      } catch (error) {
-        console.error("Error fetching contact data:", error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchContactData();
-  }, [id, user, profile]);
+  
+  const {
+    contact,
+    timeline,
+    totalOwedToYou,
+    totalYouOwe,
+    netBalance,
+    loading,
+  } = useContactTimeline(id);
 
   if (authLoading || loading) {
     return (
@@ -231,8 +56,6 @@ export default function ContactDetail() {
       </AppLayout>
     );
   }
-
-  const netBalance = totalOwedToYou - totalYouOwe;
 
   const getTimelineIcon = (item: TimelineItem) => {
     switch (item.type) {
