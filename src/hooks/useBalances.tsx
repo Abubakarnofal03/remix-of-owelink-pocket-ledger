@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "./useAuth";
+import { extractPhoneSuffix } from "@/lib/phoneUtils";
 
 interface BalanceData {
   owedToYou: number;
@@ -36,7 +37,9 @@ export function useBalances() {
       let owedToYou = 0;
       let youOwe = 0;
       const activities: RecentActivity[] = [];
-      const myPhone = profile.phone_number;
+      
+      // Use phone_suffix for matching
+      const mySuffix = profile.phone_suffix || extractPhoneSuffix(profile.phone_number);
 
       // Bills I created - calculate what others owe me
       const { data: myBills } = await supabase
@@ -47,8 +50,9 @@ export function useBalances() {
 
       myBills?.forEach((bill) => {
         bill.participants?.forEach((p: any) => {
-          // Skip myself as participant
-          if (p.phone_number !== myPhone && p.user_id !== user.id) {
+          // Skip myself as participant using phone_suffix
+          const participantSuffix = p.phone_suffix || extractPhoneSuffix(p.phone_number);
+          if (participantSuffix !== mySuffix && p.user_id !== user.id) {
             owedToYou += p.amount_owed - p.amount_paid;
           }
         });
@@ -66,12 +70,13 @@ export function useBalances() {
       });
 
       // Bills where I'm a participant - calculate what I owe
-      const { data: participations } = await supabase
+      // Use phone_suffix for matching
+      const { data: allBillParticipants } = await supabase
         .from("bill_participants")
         .select(`*, bill:bills(*)`)
-        .or(`phone_number.eq.${myPhone},user_id.eq.${user.id}`);
+        .or(`user_id.eq.${user.id},phone_suffix.eq.${mySuffix}`);
 
-      participations?.forEach((p: any) => {
+      allBillParticipants?.forEach((p: any) => {
         if (p.bill && p.bill.creator_id !== user.id && !p.bill.deleted_at) {
           youOwe += p.amount_owed - p.amount_paid;
           
@@ -108,25 +113,28 @@ export function useBalances() {
         });
       });
 
-      // IOUs where I'm the debtor - what I owe
+      // IOUs where I'm the debtor - what I owe (use debtor_phone_suffix)
       const { data: iOwe } = await supabase
         .from("ious")
         .select("*")
-        .or(`debtor_phone_number.eq.${myPhone},debtor_user_id.eq.${user.id}`)
+        .or(`debtor_user_id.eq.${user.id},debtor_phone_suffix.eq.${mySuffix}`)
         .is("deleted_at", null);
 
       iOwe?.forEach((iou) => {
-        youOwe += iou.amount - iou.amount_paid;
-        
-        activities.push({
-          id: `owe-iou-${iou.id}`,
-          type: "iou",
-          title: iou.description || "IOU",
-          amount: iou.amount,
-          currency: iou.currency,
-          date: iou.created_at,
-          isCredit: false,
-        });
+        // Don't count if I'm the creditor
+        if (iou.creditor_id !== user.id) {
+          youOwe += iou.amount - iou.amount_paid;
+          
+          activities.push({
+            id: `owe-iou-${iou.id}`,
+            type: "iou",
+            title: iou.description || "IOU",
+            amount: iou.amount,
+            currency: iou.currency,
+            date: iou.created_at,
+            isCredit: false,
+          });
+        }
       });
 
       // Sort activities by date

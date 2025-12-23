@@ -13,6 +13,7 @@ import IOUs from "./pages/IOUs";
 import Contacts from "./pages/Contacts";
 import ContactDetail from "./pages/ContactDetail";
 import Notifications from "./pages/Notifications";
+import Settings from "./pages/Settings";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient({
@@ -42,6 +43,7 @@ const App = () => (
             <Route path="/contacts" element={<Contacts />} />
             <Route path="/contacts/:id" element={<ContactDetail />} />
             <Route path="/notifications" element={<Notifications />} />
+            <Route path="/settings" element={<Settings />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>

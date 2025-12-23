@@ -4,32 +4,12 @@ import { Eye, EyeOff, Phone, User, Lock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { CountryCodePicker } from "@/components/ui/CountryCodePicker";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { APP_NAME } from "@/lib/constants";
 import { z } from "zod";
 import { normalizeToE164 } from "@/lib/phoneUtils";
-
-type CountryCode = {
-  code: string;
-  label: string;
-};
-
-const COUNTRY_CODES: CountryCode[] = [
-  { code: "+1", label: "United States" },
-  { code: "+44", label: "United Kingdom" },
-  { code: "+61", label: "Australia" },
-  { code: "+91", label: "India" },
-  { code: "+92", label: "Pakistan" },
-  { code: "+971", label: "UAE" },
-];
 
 const signUpSchema = z.object({
   username: z.string().min(2, "Username must be at least 2 characters").max(50),
@@ -176,25 +156,14 @@ export default function Auth() {
 
             <div className="space-y-2">
               <Label htmlFor="phoneNumber">Phone Number</Label>
-              <div className="grid grid-cols-[120px_1fr] gap-2">
-                <Select
+              <div className="flex gap-2">
+                <CountryCodePicker
                   value={formData.countryCode}
-                  onValueChange={(value) => {
+                  onChange={(value) => {
                     setFormData((prev) => ({ ...prev, countryCode: value }));
                     setErrors((prev) => ({ ...prev, phoneNumber: "" }));
                   }}
-                >
-                  <SelectTrigger aria-label="Select country code">
-                    <SelectValue placeholder="Code" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {COUNTRY_CODES.map((c) => (
-                      <SelectItem key={c.code} value={c.code}>
-                        {c.label} ({c.code})
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                />
 
                 <Input
                   id="phoneNumber"
@@ -205,9 +174,10 @@ export default function Auth() {
                   value={formData.phoneNumber}
                   onChange={handleChange}
                   error={!!errors.phoneNumber}
+                  className="flex-1"
                 />
               </div>
-              <p className="text-xs text-muted-foreground">We’ll save it as: {fullPhoneNumber}</p>
+              <p className="text-xs text-muted-foreground">We'll save it as: {fullPhoneNumber}</p>
               {errors.phoneNumber && <p className="text-xs text-destructive">{errors.phoneNumber}</p>}
             </div>
 
