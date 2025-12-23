@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "./useAuth";
 import { toast } from "sonner";
@@ -39,45 +39,58 @@ export interface BillInsert {
   participants: {
     phone_number: string;
     amount_owed: number;
+    status?: string;
+    amount_paid?: number;
   }[];
+}
+
+const BILLS_QUERY_KEY = ["bills"];
+
+async function fetchBills(userId: string): Promise<Bill[]> {
+  const { data, error } = await supabase
+    .from("bills")
+    .select(`
+      *,
+      participants:bill_participants(*)
+    `)
+    .is("deleted_at", null)
+    .order("created_at", { ascending: false });
+
+  if (error) throw error;
+  return data || [];
+}
+
+async function fetchBillById(billId: string): Promise<Bill | null> {
+  const { data, error } = await supabase
+    .from("bills")
+    .select(`
+      *,
+      participants:bill_participants(*)
+    `)
+    .eq("id", billId)
+    .is("deleted_at", null)
+    .maybeSingle();
+
+  if (error) throw error;
+  return data;
 }
 
 export function useBills() {
   const { user } = useAuth();
-  const [bills, setBills] = useState<Bill[]>([]);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
 
-  const fetchBills = useCallback(async () => {
-    if (!user) return;
+  const { data: bills = [], isLoading: loading } = useQuery({
+    queryKey: BILLS_QUERY_KEY,
+    queryFn: () => fetchBills(user!.id),
+    enabled: !!user,
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    gcTime: 30 * 60 * 1000, // 30 minutes (previously cacheTime)
+  });
 
-    try {
-      const { data, error } = await supabase
-        .from("bills")
-        .select(`
-          *,
-          participants:bill_participants(*)
-        `)
-        .is("deleted_at", null)
-        .order("created_at", { ascending: false });
+  const createBillMutation = useMutation({
+    mutationFn: async (bill: BillInsert) => {
+      if (!user) throw new Error("Not authenticated");
 
-      if (error) throw error;
-      setBills(data || []);
-    } catch (error: any) {
-      console.error("Error fetching bills:", error);
-      toast.error("Failed to load bills");
-    } finally {
-      setLoading(false);
-    }
-  }, [user]);
-
-  useEffect(() => {
-    fetchBills();
-  }, [fetchBills]);
-
-  const createBill = async (bill: BillInsert): Promise<Bill | null> => {
-    if (!user) return null;
-
-    try {
       // Create the bill
       const { data: billData, error: billError } = await supabase
         .from("bills")
@@ -99,8 +112,8 @@ export function useBills() {
         bill_id: billData.id,
         phone_number: p.phone_number,
         amount_owed: p.amount_owed,
-        amount_paid: 0,
-        status: "pending",
+        amount_paid: p.amount_paid || 0,
+        status: p.status || "pending",
       }));
 
       const { data: participantsData, error: participantsError } = await supabase
@@ -110,21 +123,20 @@ export function useBills() {
 
       if (participantsError) throw participantsError;
 
-      const newBill = { ...billData, participants: participantsData };
-
-      // Update local cache
-      setBills(prev => [newBill, ...prev]);
+      return { ...billData, participants: participantsData };
+    },
+    onSuccess: (newBill) => {
+      queryClient.setQueryData<Bill[]>(BILLS_QUERY_KEY, (old = []) => [newBill, ...old]);
       toast.success("Bill created successfully");
-      return newBill;
-    } catch (error: any) {
+    },
+    onError: (error: any) => {
       console.error("Error creating bill:", error);
       toast.error("Failed to create bill");
-      return null;
-    }
-  };
+    },
+  });
 
-  const updateBill = async (id: string, updates: Partial<Omit<BillInsert, 'participants'>>): Promise<boolean> => {
-    try {
+  const updateBillMutation = useMutation({
+    mutationFn: async ({ id, updates }: { id: string; updates: Partial<Omit<BillInsert, 'participants'>> }) => {
       const { data, error } = await supabase
         .from("bills")
         .update({
@@ -138,48 +150,78 @@ export function useBills() {
         .single();
 
       if (error) throw error;
-
-      // Update local cache - preserve participants
-      setBills(prev =>
-        prev.map(b =>
-          b.id === id
-            ? { ...b, ...data }
-            : b
-        )
+      return data;
+    },
+    onSuccess: (data) => {
+      queryClient.setQueryData<Bill[]>(BILLS_QUERY_KEY, (old = []) =>
+        old.map(b => b.id === data.id ? { ...b, ...data } : b)
       );
       toast.success("Bill updated");
-      return true;
-    } catch (error: any) {
+    },
+    onError: (error: any) => {
       console.error("Error updating bill:", error);
       toast.error("Failed to update bill");
-      return false;
-    }
-  };
+    },
+  });
 
-  const deleteBill = async (id: string): Promise<boolean> => {
-    try {
-      // Soft delete
+  const deleteBillMutation = useMutation({
+    mutationFn: async (id: string) => {
       const { error } = await supabase
         .from("bills")
         .update({ deleted_at: new Date().toISOString() })
         .eq("id", id);
 
       if (error) throw error;
-
-      // Update local cache
-      setBills(prev => prev.filter(b => b.id !== id));
+      return id;
+    },
+    onSuccess: (id) => {
+      queryClient.setQueryData<Bill[]>(BILLS_QUERY_KEY, (old = []) =>
+        old.filter(b => b.id !== id)
+      );
       toast.success("Bill deleted");
-      return true;
-    } catch (error: any) {
+    },
+    onError: (error: any) => {
       console.error("Error deleting bill:", error);
       toast.error("Failed to delete bill");
+    },
+  });
+
+  const createBill = async (bill: BillInsert): Promise<Bill | null> => {
+    try {
+      return await createBillMutation.mutateAsync(bill);
+    } catch {
+      return null;
+    }
+  };
+
+  const updateBill = async (id: string, updates: Partial<Omit<BillInsert, 'participants'>>): Promise<boolean> => {
+    try {
+      await updateBillMutation.mutateAsync({ id, updates });
+      return true;
+    } catch {
       return false;
     }
   };
 
-  const getBillById = useCallback((id: string): Bill | undefined => {
+  const deleteBill = async (id: string): Promise<boolean> => {
+    try {
+      await deleteBillMutation.mutateAsync(id);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  const getBillById = (id: string): Bill | undefined => {
     return bills.find(b => b.id === id);
-  }, [bills]);
+  };
+
+  // Update bill in cache locally (for optimistic updates from detail page)
+  const updateBillInCache = (id: string, updater: (bill: Bill) => Bill) => {
+    queryClient.setQueryData<Bill[]>(BILLS_QUERY_KEY, (old = []) =>
+      old.map(b => b.id === id ? updater(b) : b)
+    );
+  };
 
   return {
     bills,
@@ -188,6 +230,42 @@ export function useBills() {
     updateBill,
     deleteBill,
     getBillById,
-    refetch: fetchBills,
+    updateBillInCache,
+    refetch: () => queryClient.invalidateQueries({ queryKey: BILLS_QUERY_KEY }),
+  };
+}
+
+// Hook for single bill detail (uses cache first, then fetches if needed)
+export function useBillDetail(billId: string | undefined) {
+  const { user } = useAuth();
+  const queryClient = useQueryClient();
+
+  // Try to get from cache first
+  const cachedBills = queryClient.getQueryData<Bill[]>(BILLS_QUERY_KEY);
+  const cachedBill = cachedBills?.find(b => b.id === billId);
+
+  const { data: bill, isLoading } = useQuery({
+    queryKey: ["bill", billId],
+    queryFn: () => fetchBillById(billId!),
+    enabled: !!user && !!billId && !cachedBill,
+    initialData: cachedBill,
+    staleTime: 5 * 60 * 1000,
+    gcTime: 30 * 60 * 1000,
+  });
+
+  const updateBillLocally = (updater: (bill: Bill) => Bill) => {
+    if (bill) {
+      queryClient.setQueryData(["bill", billId], updater(bill));
+      // Also update in the bills list cache
+      queryClient.setQueryData<Bill[]>(BILLS_QUERY_KEY, (old = []) =>
+        old.map(b => b.id === billId ? updater(b) : b)
+      );
+    }
+  };
+
+  return {
+    bill: bill || cachedBill,
+    loading: isLoading && !cachedBill,
+    updateBillLocally,
   };
 }

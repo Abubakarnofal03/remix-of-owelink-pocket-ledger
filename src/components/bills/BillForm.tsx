@@ -1,7 +1,8 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useContacts, Contact } from "@/hooks/useContacts";
 import { useBills, BillInsert } from "@/hooks/useBills";
+import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -24,6 +25,7 @@ import {
   Phone,
   DollarSign,
   Check,
+  User,
 } from "lucide-react";
 
 interface Participant {
@@ -31,10 +33,13 @@ interface Participant {
   phone_number: string;
   nickname: string | null;
   amount: number;
+  isMe?: boolean;
+  status?: string;
 }
 
 export function BillForm() {
   const navigate = useNavigate();
+  const { profile } = useAuth();
   const { contacts, addContact, loading: contactsLoading } = useContacts();
   const { createBill } = useBills();
 
@@ -45,14 +50,33 @@ export function BillForm() {
   const [dueDate, setDueDate] = useState<Date | undefined>();
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [equalSplit, setEqualSplit] = useState(true);
+  const [includeMe, setIncludeMe] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [showAddContact, setShowAddContact] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
+  // Calculate split amounts
+  const total = parseFloat(totalAmount) || 0;
+  const participantCount = participants.length + (includeMe ? 1 : 0);
+  const splitAmount = participantCount > 0 ? total / participantCount : 0;
+
+  // Handle includeMe toggle
+  useEffect(() => {
+    if (equalSplit && participants.length > 0) {
+      setParticipants(prev =>
+        prev.map(p => ({ ...p, amount: splitAmount }))
+      );
+    }
+  }, [total, participantCount, equalSplit]);
+
   // Filter contacts based on search and exclude already selected
   const filteredContacts = useMemo(() => {
     const selectedPhones = new Set(participants.map((p) => p.phone_number));
+    // Also exclude current user's phone
+    if (profile?.phone_number) {
+      selectedPhones.add(profile.phone_number);
+    }
     let filtered = contacts.filter((c) => !selectedPhones.has(c.phone_number));
 
     if (searchQuery.trim()) {
@@ -64,21 +88,7 @@ export function BillForm() {
     }
 
     return filtered;
-  }, [contacts, participants, searchQuery]);
-
-  // Calculate split amounts
-  const total = parseFloat(totalAmount) || 0;
-  const splitAmount =
-    participants.length > 0 ? total / participants.length : 0;
-
-  // Update participant amounts when equal split or total changes
-  const updateParticipantAmounts = () => {
-    if (equalSplit && participants.length > 0) {
-      setParticipants((prev) =>
-        prev.map((p) => ({ ...p, amount: splitAmount }))
-      );
-    }
-  };
+  }, [contacts, participants, searchQuery, profile?.phone_number]);
 
   // Add participant from contact
   const addParticipant = (contact: Contact) => {
@@ -117,13 +127,6 @@ export function BillForm() {
     return null;
   };
 
-  // Recalculate when total or participant count changes
-  useMemo(() => {
-    if (equalSplit) {
-      updateParticipantAmounts();
-    }
-  }, [total, participants.length, equalSplit]);
-
   // Validate form
   const validate = (): boolean => {
     const newErrors: Record<string, string> = {};
@@ -136,14 +139,16 @@ export function BillForm() {
       newErrors.total = "Enter a valid amount";
     }
 
-    if (participants.length === 0) {
+    if (participants.length === 0 && !includeMe) {
       newErrors.participants = "Add at least one participant";
     }
 
     if (!equalSplit) {
       const participantTotal = participants.reduce((sum, p) => sum + p.amount, 0);
-      if (Math.abs(participantTotal - total) > 0.01) {
-        newErrors.split = `Amounts must equal $${total.toFixed(2)} (currently $${participantTotal.toFixed(2)})`;
+      const myAmount = includeMe ? splitAmount : 0;
+      const expectedTotal = participantTotal + myAmount;
+      if (Math.abs(expectedTotal - total) > 0.01) {
+        newErrors.split = `Amounts must equal $${total.toFixed(2)} (currently $${expectedTotal.toFixed(2)})`;
       }
     }
 
@@ -159,15 +164,30 @@ export function BillForm() {
 
     setSubmitting(true);
 
+    // Build participants list
+    const allParticipants = participants.map((p) => ({
+      phone_number: p.phone_number,
+      amount_owed: equalSplit ? splitAmount : p.amount,
+      status: "pending",
+      amount_paid: 0,
+    }));
+
+    // Add current user if included
+    if (includeMe && profile?.phone_number) {
+      allParticipants.push({
+        phone_number: profile.phone_number,
+        amount_owed: splitAmount,
+        status: "paid", // Marked as paid by default
+        amount_paid: splitAmount,
+      });
+    }
+
     const billData: BillInsert = {
       title: title.trim(),
       description: description.trim() || undefined,
       total_amount: total,
       due_date: dueDate?.toISOString(),
-      participants: participants.map((p) => ({
-        phone_number: p.phone_number,
-        amount_owed: equalSplit ? splitAmount : p.amount,
-      })),
+      participants: allParticipants,
     };
 
     const result = await createBill(billData);
@@ -263,6 +283,27 @@ export function BillForm() {
         </Popover>
       </div>
 
+      {/* Include Me Toggle */}
+      {profile?.phone_number && (
+        <div className="flex items-center justify-between p-4 bg-muted/50 rounded-lg border border-border">
+          <div className="flex items-center gap-3">
+            <div className="h-9 w-9 rounded-full bg-primary/10 flex items-center justify-center">
+              <User className="h-4 w-4 text-primary" />
+            </div>
+            <div>
+              <p className="font-medium text-sm">Include me in this bill</p>
+              <p className="text-xs text-muted-foreground">
+                Your share will be marked as paid by default
+              </p>
+            </div>
+          </div>
+          <Switch
+            checked={includeMe}
+            onCheckedChange={setIncludeMe}
+          />
+        </div>
+      )}
+
       {/* Participants Section */}
       <div className="space-y-3">
         <div className="flex items-center justify-between">
@@ -341,12 +382,12 @@ export function BillForm() {
           )}
         </div>
 
-        {errors.participants && participants.length === 0 && (
+        {errors.participants && participants.length === 0 && !includeMe && (
           <p className="text-sm text-destructive">{errors.participants}</p>
         )}
 
         {/* Selected Participants */}
-        {participants.length > 0 && (
+        {(participants.length > 0 || includeMe) && (
           <div className="space-y-3">
             {/* Split Toggle */}
             <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
@@ -363,6 +404,30 @@ export function BillForm() {
                 }}
               />
             </div>
+
+            {/* My Share Card (when included) */}
+            {includeMe && profile?.phone_number && (
+              <div className="flex items-center gap-3 p-3 bg-primary/5 border border-primary/20 rounded-lg">
+                <div className="h-9 w-9 rounded-full bg-primary/10 flex items-center justify-center">
+                  <User className="h-4 w-4 text-primary" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium text-sm truncate flex items-center gap-2">
+                    Me (You)
+                    <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full">
+                      Paid
+                    </span>
+                  </p>
+                  <p className="text-xs text-muted-foreground truncate flex items-center gap-1">
+                    <Phone className="h-3 w-3" />
+                    {profile.phone_number}
+                  </p>
+                </div>
+                <span className="text-sm font-semibold text-primary">
+                  ${splitAmount.toFixed(2)}
+                </span>
+              </div>
+            )}
 
             {/* Participant Cards */}
             <div className="space-y-2">
