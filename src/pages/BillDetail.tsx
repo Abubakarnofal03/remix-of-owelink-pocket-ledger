@@ -47,6 +47,7 @@ import {
   X,
   Users,
   Search,
+  User,
 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
@@ -406,6 +407,16 @@ export default function BillDetail() {
               <Calendar className="h-4 w-4 text-muted-foreground" />
               <span className="text-sm text-muted-foreground">
                 Due {format(new Date(bill.due_date), "MMMM d, yyyy")}
+              </span>
+            </div>
+          )}
+
+          {/* Show creator info for participants (non-creators) */}
+          {!isCreator && bill.creator && (
+            <div className="flex items-center gap-2 mt-4 pt-4 border-t border-border">
+              <User className="h-4 w-4 text-muted-foreground" />
+              <span className="text-sm text-muted-foreground">
+                Created by <span className="font-medium text-foreground">{bill.creator.username}</span>
               </span>
             </div>
           )}
