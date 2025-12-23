@@ -42,10 +42,10 @@ export function ContactCard({
 
   return (
     <div
-      className={`card-elevated p-4 flex items-center gap-3 transition-all ${
-        selectable ? "cursor-pointer hover:ring-2 hover:ring-primary/50" : ""
-      } ${selected ? "ring-2 ring-primary bg-primary/5" : ""}`}
-      onClick={selectable ? handleClick : undefined}
+      className={`card-elevated p-4 flex items-center gap-3 transition-all cursor-pointer hover:ring-2 hover:ring-primary/50 ${
+        selected ? "ring-2 ring-primary bg-primary/5" : ""
+      }`}
+      onClick={handleClick}
     >
       <AvatarCustom name={displayName} size="md" />
       
@@ -61,7 +61,7 @@ export function ContactCard({
 
       {(onEdit || onDelete) && !selectable && (
         <DropdownMenu>
-          <DropdownMenuTrigger asChild>
+          <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
             <Button variant="ghost" size="icon" className="h-8 w-8">
               <MoreVertical className="h-4 w-4" />
             </Button>
