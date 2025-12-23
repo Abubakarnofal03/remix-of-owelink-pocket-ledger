@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useAuth } from "@/hooks/useAuth";
-import { Navigate } from "react-router-dom";
+import { Navigate, useNavigate } from "react-router-dom";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { useContacts, Contact } from "@/hooks/useContacts";
@@ -35,6 +35,7 @@ export default function Contacts() {
   const [searchQuery, setSearchQuery] = useState("");
   const [deleteTarget, setDeleteTarget] = useState<Contact | null>(null);
   const [importing, setImporting] = useState(false);
+  const navigate = useNavigate();
 
   if (authLoading) return null;
   if (!user) return <Navigate to="/auth" replace />;
@@ -99,6 +100,7 @@ export default function Contacts() {
             contacts={filteredContacts}
             loading={contactsLoading}
             onDelete={setDeleteTarget}
+            onClick={(contact) => navigate(`/contacts/${contact.id}`)}
           />
         )}
 

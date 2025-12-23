@@ -8,16 +8,18 @@ import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import Bills from "./pages/Bills";
 import NewBill from "./pages/NewBill";
+import BillDetail from "./pages/BillDetail";
 import IOUs from "./pages/IOUs";
 import Contacts from "./pages/Contacts";
+import ContactDetail from "./pages/ContactDetail";
 import Notifications from "./pages/Notifications";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: 1000 * 60 * 5, // 5 minutes
-      gcTime: 1000 * 60 * 30, // 30 minutes (formerly cacheTime)
+      staleTime: 1000 * 60 * 5,
+      gcTime: 1000 * 60 * 30,
       refetchOnWindowFocus: false,
     },
   },
@@ -35,8 +37,10 @@ const App = () => (
             <Route path="/auth" element={<Auth />} />
             <Route path="/bills" element={<Bills />} />
             <Route path="/bills/new" element={<NewBill />} />
+            <Route path="/bills/:id" element={<BillDetail />} />
             <Route path="/ious" element={<IOUs />} />
             <Route path="/contacts" element={<Contacts />} />
+            <Route path="/contacts/:id" element={<ContactDetail />} />
             <Route path="/notifications" element={<Notifications />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
