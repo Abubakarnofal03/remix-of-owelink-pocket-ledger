@@ -1,4 +1,3 @@
-import React from "react";
 import { cn } from "@/lib/utils";
 import { STATUS_LABELS } from "@/lib/constants";
 
@@ -7,7 +6,7 @@ interface StatusBadgeProps {
   className?: string;
 }
 
-export const StatusBadge: React.FC<StatusBadgeProps> = React.memo(({ status, className }) => {
+export function StatusBadge({ status, className }: StatusBadgeProps) {
   return (
     <span
       className={cn(
@@ -24,6 +23,4 @@ export const StatusBadge: React.FC<StatusBadgeProps> = React.memo(({ status, cla
       {STATUS_LABELS[status]}
     </span>
   );
-});
-
-StatusBadge.displayName = "StatusBadge";
+}

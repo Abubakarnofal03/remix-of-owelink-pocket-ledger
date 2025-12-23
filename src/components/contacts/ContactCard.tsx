@@ -1,4 +1,3 @@
-import React, { useCallback, useMemo } from "react";
 import { Contact } from "@/hooks/useContacts";
 import { AvatarCustom } from "@/components/ui/avatar-custom";
 import { Phone, MoreVertical, Pencil, Trash2 } from "lucide-react";
@@ -19,34 +18,19 @@ interface ContactCardProps {
   selected?: boolean;
 }
 
-export const ContactCard: React.FC<ContactCardProps> = React.memo(({
+export function ContactCard({
   contact,
   onEdit,
   onDelete,
   onClick,
   selectable,
   selected,
-}) => {
-  const displayName = useMemo(() => 
-    contact.nickname || contact.phone_number, 
-    [contact.nickname, contact.phone_number]
-  );
+}: ContactCardProps) {
+  const displayName = contact.nickname || contact.phone_number;
 
-  const handleClick = useCallback(() => {
+  const handleClick = () => {
     if (onClick) onClick(contact);
-  }, [onClick, contact]);
-
-  const handleEdit = useCallback(() => {
-    if (onEdit) onEdit(contact);
-  }, [onEdit, contact]);
-
-  const handleDelete = useCallback(() => {
-    if (onDelete) onDelete(contact);
-  }, [onDelete, contact]);
-
-  const handleDropdownClick = useCallback((e: React.MouseEvent) => {
-    e.stopPropagation();
-  }, []);
+  };
 
   return (
     <div
@@ -69,21 +53,21 @@ export const ContactCard: React.FC<ContactCardProps> = React.memo(({
 
       {(onEdit || onDelete) && !selectable && (
         <DropdownMenu>
-          <DropdownMenuTrigger asChild onClick={handleDropdownClick}>
+          <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
             <Button variant="ghost" size="icon" className="h-8 w-8">
               <MoreVertical className="h-4 w-4" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             {onEdit && (
-              <DropdownMenuItem onClick={handleEdit}>
+              <DropdownMenuItem onClick={() => onEdit(contact)}>
                 <Pencil className="mr-2 h-4 w-4" />
                 Edit
               </DropdownMenuItem>
             )}
             {onDelete && (
               <DropdownMenuItem
-                onClick={handleDelete}
+                onClick={() => onDelete(contact)}
                 className="text-destructive focus:text-destructive"
               >
                 <Trash2 className="mr-2 h-4 w-4" />
@@ -95,6 +79,4 @@ export const ContactCard: React.FC<ContactCardProps> = React.memo(({
       )}
     </div>
   );
-});
-
-ContactCard.displayName = "ContactCard";
+}

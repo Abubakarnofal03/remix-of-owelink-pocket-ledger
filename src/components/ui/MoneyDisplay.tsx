@@ -1,4 +1,3 @@
-import React, { useMemo } from "react";
 import { cn } from "@/lib/utils";
 import { CURRENCY_SYMBOLS } from "@/lib/constants";
 
@@ -10,31 +9,23 @@ interface MoneyDisplayProps {
   className?: string;
 }
 
-const sizeClasses = {
-  sm: "text-sm",
-  md: "text-base",
-  lg: "text-xl font-semibold",
-  xl: "text-3xl font-bold",
-};
-
-export const MoneyDisplay: React.FC<MoneyDisplayProps> = React.memo(({
+export function MoneyDisplay({
   amount,
   currency = "USD",
   showSign = false,
   size = "md",
   className,
-}) => {
+}: MoneyDisplayProps) {
   const symbol = CURRENCY_SYMBOLS[currency] || currency;
   const isPositive = amount >= 0;
   const displayAmount = Math.abs(amount);
 
-  const formattedAmount = useMemo(() => 
-    displayAmount.toLocaleString(undefined, {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    }), 
-    [displayAmount]
-  );
+  const sizeClasses = {
+    sm: "text-sm",
+    md: "text-base",
+    lg: "text-xl font-semibold",
+    xl: "text-3xl font-bold",
+  };
 
   return (
     <span
@@ -47,9 +38,10 @@ export const MoneyDisplay: React.FC<MoneyDisplayProps> = React.memo(({
     >
       {showSign && (isPositive ? "+" : "-")}
       {symbol}
-      {formattedAmount}
+      {displayAmount.toLocaleString(undefined, {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      })}
     </span>
   );
-});
-
-MoneyDisplay.displayName = "MoneyDisplay";
+}
