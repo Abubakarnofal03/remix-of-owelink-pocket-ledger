@@ -48,10 +48,10 @@ export default function ContactDetail() {
       if (!id || !user || !profile) return;
 
       try {
-        // Fetch contact
+        // Fetch contact with linked profile info
         const { data: contactData, error: contactError } = await supabase
           .from("contacts")
-          .select("*")
+          .select("*, linked_profile:profiles!contacts_linked_profile_id_fkey(user_id, phone_suffix)")
           .eq("id", id)
           .single();
 
@@ -61,6 +61,10 @@ export default function ContactDetail() {
         // Use phone_suffix for matching
         const contactSuffix = contactData.phone_suffix || extractPhoneSuffix(contactData.phone_number);
         const mySuffix = profile.phone_suffix || extractPhoneSuffix(profile.phone_number);
+        
+        // Get the contact's user_id from linked profile (if they have an account)
+        const contactUserId = (contactData as any).linked_profile?.user_id;
+        
         const timelineItems: TimelineItem[] = [];
         let owedToYou = 0;
         let youOwe = 0;
@@ -96,7 +100,6 @@ export default function ContactDetail() {
         });
 
         // 2. Bills where I'm a participant and contact created it (I owe them)
-        // We need to find bills where contact is the creator - match by their phone_suffix
         const { data: allBillsWithParticipants } = await supabase
           .from("bill_participants")
           .select(`*, bill:bills(*)`)
@@ -106,9 +109,8 @@ export default function ContactDetail() {
           if (!participation.bill || participation.bill.deleted_at) return;
           if (participation.bill.creator_id === user.id) return; // Skip my own bills
 
-          // Check if the bill creator matches contact's linked_profile or phone
-          // We need to check the creator's profile
-          const isContactCreator = participation.bill.creator_id === contactData.linked_profile_id;
+          // Check if the bill creator matches contact's user_id (from linked_profile)
+          const isContactCreator = contactUserId && participation.bill.creator_id === contactUserId;
           
           if (isContactCreator) {
             const remaining = participation.amount_owed - participation.amount_paid;
@@ -165,8 +167,9 @@ export default function ContactDetail() {
           .or(`debtor_user_id.eq.${user.id},debtor_phone_suffix.eq.${mySuffix}`)
           .is("deleted_at", null);
 
+        // Match by contact's user_id (creditor_id is a user_id, not profile_id)
         const filteredIOwe = iOweThem?.filter(iou => 
-          iou.creditor_id === contactData.linked_profile_id
+          contactUserId && iou.creditor_id === contactUserId
         ) || [];
 
         filteredIOwe.forEach((iou) => {

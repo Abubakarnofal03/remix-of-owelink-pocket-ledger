@@ -28,6 +28,10 @@ export interface Bill {
   updated_at: string;
   deleted_at: string | null;
   participants?: BillParticipant[];
+  creator?: {
+    username: string;
+    phone_number: string;
+  };
 }
 
 export interface BillInsert {
@@ -51,13 +55,17 @@ async function fetchBills(userId: string): Promise<Bill[]> {
     .from("bills")
     .select(`
       *,
-      participants:bill_participants(*)
+      participants:bill_participants(*),
+      creator:profiles!bills_creator_id_fkey(username, phone_number)
     `)
     .is("deleted_at", null)
     .order("created_at", { ascending: false });
 
   if (error) throw error;
-  return data || [];
+  return (data || []).map(bill => ({
+    ...bill,
+    creator: Array.isArray(bill.creator) ? bill.creator[0] : bill.creator
+  }));
 }
 
 async function fetchBillById(billId: string): Promise<Bill | null> {
@@ -65,14 +73,20 @@ async function fetchBillById(billId: string): Promise<Bill | null> {
     .from("bills")
     .select(`
       *,
-      participants:bill_participants(*)
+      participants:bill_participants(*),
+      creator:profiles!bills_creator_id_fkey(username, phone_number)
     `)
     .eq("id", billId)
     .is("deleted_at", null)
     .maybeSingle();
 
   if (error) throw error;
-  return data;
+  if (!data) return null;
+  
+  return {
+    ...data,
+    creator: Array.isArray(data.creator) ? data.creator[0] : data.creator
+  };
 }
 
 export function useBills() {
