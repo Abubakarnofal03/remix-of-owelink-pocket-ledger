@@ -1,3 +1,4 @@
+import { memo, useMemo } from "react";
 import { Bill } from "@/hooks/useBills";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { MoneyDisplay } from "@/components/ui/MoneyDisplay";
@@ -10,11 +11,24 @@ interface BillCardProps {
   bill: Bill;
 }
 
-export function BillCard({ bill }: BillCardProps) {
-  const participantCount = bill.participants?.length || 0;
-  const paidCount = bill.participants?.filter(p => p.status === "paid").length || 0;
-  const totalPaid = bill.participants?.reduce((sum, p) => sum + p.amount_paid, 0) || 0;
-  const progress = bill.total_amount > 0 ? (totalPaid / bill.total_amount) * 100 : 0;
+export const BillCard = memo(function BillCard({ bill }: BillCardProps) {
+  const { participantCount, paidCount, progress } = useMemo(() => {
+    const count = bill.participants?.length || 0;
+    const paid = bill.participants?.filter(p => p.status === "paid").length || 0;
+    const totalPaid = bill.participants?.reduce((sum, p) => sum + p.amount_paid, 0) || 0;
+    const prog = bill.total_amount > 0 ? (totalPaid / bill.total_amount) * 100 : 0;
+    return { participantCount: count, paidCount: paid, progress: prog };
+  }, [bill.participants, bill.total_amount]);
+
+  const formattedDueDate = useMemo(() => 
+    bill.due_date ? format(new Date(bill.due_date), "MMM d") : null,
+    [bill.due_date]
+  );
+
+  const displayedParticipants = useMemo(() => 
+    bill.participants?.slice(0, 4) || [],
+    [bill.participants]
+  );
 
   return (
     <Link to={`/bills/${bill.id}`} className="block">
@@ -50,7 +64,7 @@ export function BillCard({ bill }: BillCardProps) {
         <div className="flex items-center justify-between">
           {/* Participant avatars */}
           <div className="flex -space-x-2">
-            {bill.participants?.slice(0, 4).map((p, i) => (
+            {displayedParticipants.map((p) => (
               <AvatarCustom
                 key={p.id}
                 name={p.phone_number}
@@ -66,10 +80,10 @@ export function BillCard({ bill }: BillCardProps) {
           </div>
 
           {/* Due date */}
-          {bill.due_date && (
+          {formattedDueDate && (
             <div className="flex items-center gap-1 text-xs text-muted-foreground">
               <Calendar className="h-3 w-3" />
-              <span>Due {format(new Date(bill.due_date), "MMM d")}</span>
+              <span>Due {formattedDueDate}</span>
             </div>
           )}
 
@@ -78,4 +92,4 @@ export function BillCard({ bill }: BillCardProps) {
       </div>
     </Link>
   );
-}
+});

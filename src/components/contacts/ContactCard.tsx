@@ -1,3 +1,4 @@
+import { memo, useCallback, useMemo } from "react";
 import { Contact } from "@/hooks/useContacts";
 import { AvatarCustom } from "@/components/ui/avatar-custom";
 import { Phone, MoreVertical, Pencil, Trash2 } from "lucide-react";
@@ -18,7 +19,7 @@ interface ContactCardProps {
   selected?: boolean;
 }
 
-export function ContactCard({
+export const ContactCard = memo(function ContactCard({
   contact,
   onEdit,
   onDelete,
@@ -26,19 +27,26 @@ export function ContactCard({
   selectable,
   selected,
 }: ContactCardProps) {
-  const displayName = contact.nickname || contact.phone_number;
-  const initials = contact.nickname
-    ? contact.nickname
-        .split(" ")
-        .map((n) => n[0])
-        .join("")
-        .toUpperCase()
-        .slice(0, 2)
-    : "#";
+  const displayName = useMemo(() => 
+    contact.nickname || contact.phone_number, 
+    [contact.nickname, contact.phone_number]
+  );
 
-  const handleClick = () => {
+  const handleClick = useCallback(() => {
     if (onClick) onClick(contact);
-  };
+  }, [onClick, contact]);
+
+  const handleEdit = useCallback(() => {
+    if (onEdit) onEdit(contact);
+  }, [onEdit, contact]);
+
+  const handleDelete = useCallback(() => {
+    if (onDelete) onDelete(contact);
+  }, [onDelete, contact]);
+
+  const handleDropdownClick = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+  }, []);
 
   return (
     <div
@@ -61,21 +69,21 @@ export function ContactCard({
 
       {(onEdit || onDelete) && !selectable && (
         <DropdownMenu>
-          <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+          <DropdownMenuTrigger asChild onClick={handleDropdownClick}>
             <Button variant="ghost" size="icon" className="h-8 w-8">
               <MoreVertical className="h-4 w-4" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             {onEdit && (
-              <DropdownMenuItem onClick={() => onEdit(contact)}>
+              <DropdownMenuItem onClick={handleEdit}>
                 <Pencil className="mr-2 h-4 w-4" />
                 Edit
               </DropdownMenuItem>
             )}
             {onDelete && (
               <DropdownMenuItem
-                onClick={() => onDelete(contact)}
+                onClick={handleDelete}
                 className="text-destructive focus:text-destructive"
               >
                 <Trash2 className="mr-2 h-4 w-4" />
@@ -87,4 +95,4 @@ export function ContactCard({
       )}
     </div>
   );
-}
+});
