@@ -89,21 +89,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signIn = async (phoneNumber: string, password: string) => {
-    // First, find the user by phone number
-    const { data: profileData, error: profileError } = await supabase
-      .from("profiles")
-      .select("user_id")
-      .eq("phone_number", phoneNumber)
-      .maybeSingle();
+    // Normalize phone number - extract digits only for email lookup
+    const digitsOnly = phoneNumber.replace(/[^0-9]/g, "");
+    
+    // Try to find user by phone number with various formats
+    const phoneVariants = [
+      phoneNumber,
+      `+${digitsOnly}`,
+      digitsOnly,
+    ];
+    
+    let profileData = null;
+    for (const variant of phoneVariants) {
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("user_id, phone_number")
+        .eq("phone_number", variant)
+        .maybeSingle();
+      
+      if (!error && data) {
+        profileData = data;
+        break;
+      }
+    }
 
-    if (profileError || !profileData) {
+    if (!profileData) {
       return { error: new Error("No account found with this phone number") };
     }
 
-    // Get the user's email from auth.users (we need to use a workaround)
-    // Since we can't query auth.users directly, we'll use the phone as email
-    // Users sign up with email format: phone@owelink.app
-    const email = `${phoneNumber.replace(/[^0-9]/g, "")}@owelink.app`;
+    // Use the digits-only format for email (matches signup)
+    const email = `${digitsOnly}@owelink.app`;
 
     const { error } = await supabase.auth.signInWithPassword({
       email,
