@@ -2,10 +2,12 @@ import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "./useAuth";
 import { toast } from "sonner";
+import { extractPhoneSuffix } from "@/lib/phoneUtils";
 
 export interface Contact {
   id: string;
   phone_number: string;
+  phone_suffix: string | null;
   nickname: string | null;
   linked_profile_id: string | null;
   created_at: string;
@@ -49,8 +51,11 @@ export function useContacts() {
   const addContact = async (contact: ContactInsert): Promise<Contact | null> => {
     if (!user) return null;
 
-    // Check for duplicate phone number
-    const existing = contacts.find(c => c.phone_number === contact.phone_number);
+    // Check for duplicate using phone_suffix matching
+    const newSuffix = extractPhoneSuffix(contact.phone_number);
+    const existing = contacts.find(c => 
+      c.phone_suffix === newSuffix || extractPhoneSuffix(c.phone_number) === newSuffix
+    );
     if (existing) {
       toast.error("Contact with this phone number already exists");
       return null;
@@ -139,11 +144,12 @@ export function useContacts() {
       let imported = 0;
       for (const contact of deviceContacts) {
         if (contact.tel && contact.tel.length > 0) {
-          const phone = contact.tel[0].replace(/\D/g, "");
+          const phone = contact.tel[0];
+          const phoneSuffix = extractPhoneSuffix(phone);
           const name = contact.name?.[0] || null;
           
-          // Skip if already exists
-          if (contacts.find(c => c.phone_number === phone)) continue;
+          // Skip if already exists (check by phone_suffix)
+          if (contacts.find(c => c.phone_suffix === phoneSuffix || extractPhoneSuffix(c.phone_number) === phoneSuffix)) continue;
           
           const result = await addContact({
             phone_number: phone,

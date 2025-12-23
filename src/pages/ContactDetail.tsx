@@ -18,7 +18,7 @@ import {
   DollarSign,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import { useAuth as useAuthHook } from "@/hooks/useAuth";
+import { extractPhoneSuffix } from "@/lib/phoneUtils";
 
 interface TimelineItem {
   id: string;
@@ -56,8 +56,9 @@ export default function ContactDetail() {
         if (contactError) throw contactError;
         setContact(contactData);
 
-        const contactPhone = contactData.phone_number;
-        const myPhone = profile.phone_number;
+        // Use phone_suffix for matching
+        const contactSuffix = contactData.phone_suffix || extractPhoneSuffix(contactData.phone_number);
+        const mySuffix = profile.phone_suffix || extractPhoneSuffix(profile.phone_number);
         const timelineItems: TimelineItem[] = [];
 
         // Fetch bills where I'm creator and contact is participant
@@ -68,8 +69,9 @@ export default function ContactDetail() {
           .is("deleted_at", null);
 
         myBills?.forEach((bill) => {
+          // Match participant by phone_suffix
           const participant = bill.participants?.find(
-            (p: any) => p.phone_number === contactPhone
+            (p: any) => (p.phone_suffix || extractPhoneSuffix(p.phone_number)) === contactSuffix
           );
           if (participant) {
             // Bill created - they owe me
@@ -77,7 +79,7 @@ export default function ContactDetail() {
               id: `bill-${bill.id}`,
               type: "bill_created",
               title: bill.title,
-              description: `Bill split with ${contactData.nickname || contactPhone}`,
+              description: `Bill split with ${contactData.nickname || contactData.phone_number}`,
               amount: participant.amount_owed,
               currency: bill.currency,
               date: bill.created_at,
@@ -90,7 +92,7 @@ export default function ContactDetail() {
                 id: `bill-payment-${bill.id}`,
                 type: "bill_payment",
                 title: `Payment for ${bill.title}`,
-                description: `${contactData.nickname || contactPhone} paid`,
+                description: `${contactData.nickname || contactData.phone_number} paid`,
                 amount: participant.amount_paid,
                 currency: bill.currency,
                 date: participant.updated_at,
@@ -100,33 +102,29 @@ export default function ContactDetail() {
           }
         });
 
-        // Fetch bills where contact is creator and I'm participant (by phone)
+        // Fetch bills where contact is creator and I'm participant (by phone_suffix)
         const { data: theirBills } = await supabase
           .from("bills")
           .select(`*, participants:bill_participants(*)`)
           .is("deleted_at", null);
 
         theirBills?.forEach((bill) => {
-          // Check if I'm a participant and they're the creator
+          // Check if I'm a participant using phone_suffix
           const imParticipant = bill.participants?.find(
-            (p: any) => p.phone_number === myPhone || p.user_id === user.id
+            (p: any) => (p.phone_suffix || extractPhoneSuffix(p.phone_number)) === mySuffix || p.user_id === user.id
           );
-          // Check if the creator is the contact (linked via phone)
+          // Check if the creator is the contact (linked via profile)
           if (imParticipant && bill.creator_id !== user.id) {
             // Check if contact's linked_profile_id matches bill creator
-            // For now, we track by checking if contact has this bill
             const creatorIsContact = contactData.linked_profile_id && 
-              bill.participants?.some((p: any) => 
-                p.phone_number === contactPhone || 
-                p.user_id === contactData.linked_profile_id
-              );
+              bill.creator_id === contactData.linked_profile_id;
             
-            if (creatorIsContact || bill.creator_id === contactData.linked_profile_id) {
+            if (creatorIsContact) {
               timelineItems.push({
                 id: `bill-owe-${bill.id}`,
                 type: "bill_created",
                 title: bill.title,
-                description: `${contactData.nickname || contactPhone} created a bill`,
+                description: `${contactData.nickname || contactData.phone_number} created a bill`,
                 amount: imParticipant.amount_owed,
                 currency: bill.currency,
                 date: bill.created_at,
@@ -136,20 +134,24 @@ export default function ContactDetail() {
           }
         });
 
-        // Fetch IOUs where I'm creditor and contact is debtor
+        // Fetch IOUs where I'm creditor and contact is debtor (use debtor_phone_suffix)
         const { data: myIOUs } = await supabase
           .from("ious")
           .select("*")
           .eq("creditor_id", user.id)
-          .eq("debtor_phone_number", contactPhone)
           .is("deleted_at", null);
 
-        myIOUs?.forEach((iou) => {
+        // Filter IOUs by debtor phone_suffix
+        const filteredMyIOUs = myIOUs?.filter(iou => 
+          (iou.debtor_phone_suffix || extractPhoneSuffix(iou.debtor_phone_number)) === contactSuffix
+        ) || [];
+
+        filteredMyIOUs.forEach((iou) => {
           timelineItems.push({
             id: `iou-${iou.id}`,
             type: "iou_created",
             title: iou.description || "IOU",
-            description: `${contactData.nickname || contactPhone} owes you`,
+            description: `${contactData.nickname || contactData.phone_number} owes you`,
             amount: iou.amount,
             currency: iou.currency,
             date: iou.created_at,
@@ -161,7 +163,7 @@ export default function ContactDetail() {
               id: `iou-payment-${iou.id}`,
               type: "iou_payment",
               title: `Payment for IOU`,
-              description: `${contactData.nickname || contactPhone} paid`,
+              description: `${contactData.nickname || contactData.phone_number} paid`,
               amount: iou.amount_paid,
               currency: iou.currency,
               date: iou.updated_at,
@@ -170,21 +172,25 @@ export default function ContactDetail() {
           }
         });
 
-        // Fetch IOUs where contact is creditor and I'm debtor
+        // Fetch IOUs where contact is creditor and I'm debtor (use debtor_phone_suffix)
         const { data: theirIOUs } = await supabase
           .from("ious")
           .select("*")
-          .eq("debtor_phone_number", myPhone)
           .is("deleted_at", null);
 
-        theirIOUs?.forEach((iou) => {
+        // Filter IOUs where I'm the debtor
+        const filteredTheirIOUs = theirIOUs?.filter(iou => 
+          (iou.debtor_phone_suffix || extractPhoneSuffix(iou.debtor_phone_number)) === mySuffix
+        ) || [];
+
+        filteredTheirIOUs.forEach((iou) => {
           // Check if creditor is linked to contact
           if (iou.creditor_id === contactData.linked_profile_id) {
             timelineItems.push({
               id: `iou-owe-${iou.id}`,
               type: "iou_created",
               title: iou.description || "IOU",
-              description: `You owe ${contactData.nickname || contactPhone}`,
+              description: `You owe ${contactData.nickname || contactData.phone_number}`,
               amount: iou.amount,
               currency: iou.currency,
               date: iou.created_at,
@@ -193,12 +199,7 @@ export default function ContactDetail() {
           }
         });
 
-        // Fetch payments
-        const { data: payments } = await supabase
-          .from("payments")
-          .select("*")
-          .or(`payer_phone_number.eq.${contactPhone},payer_phone_number.eq.${myPhone}`);
-
+        // Fetch payments (not filtering here since we use payments in aggregate)
         // Sort by date descending
         timelineItems.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
@@ -209,7 +210,7 @@ export default function ContactDetail() {
         // From my bills
         myBills?.forEach((bill) => {
           const participant = bill.participants?.find(
-            (p: any) => p.phone_number === contactPhone
+            (p: any) => (p.phone_suffix || extractPhoneSuffix(p.phone_number)) === contactSuffix
           );
           if (participant) {
             owedToYou += participant.amount_owed - participant.amount_paid;
@@ -217,21 +218,21 @@ export default function ContactDetail() {
         });
 
         // From my IOUs
-        myIOUs?.forEach((iou) => {
+        filteredMyIOUs.forEach((iou) => {
           owedToYou += iou.amount - iou.amount_paid;
         });
 
         // Calculate what I owe to contact
         theirBills?.forEach((bill) => {
           const imParticipant = bill.participants?.find(
-            (p: any) => p.phone_number === myPhone || p.user_id === user.id
+            (p: any) => (p.phone_suffix || extractPhoneSuffix(p.phone_number)) === mySuffix || p.user_id === user.id
           );
           if (imParticipant && bill.creator_id === contactData.linked_profile_id) {
             youOwe += imParticipant.amount_owed - imParticipant.amount_paid;
           }
         });
 
-        theirIOUs?.forEach((iou) => {
+        filteredTheirIOUs.forEach((iou) => {
           if (iou.creditor_id === contactData.linked_profile_id) {
             youOwe += iou.amount - iou.amount_paid;
           }

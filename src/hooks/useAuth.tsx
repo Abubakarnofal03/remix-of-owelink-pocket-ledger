@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useState, ReactNode } from "react
 import { User, Session } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import { Profile } from "@/types/database";
-
+import { normalizeToE164, phoneToEmail, extractPhoneSuffix } from "@/lib/phoneUtils";
 interface AuthContextType {
   user: User | null;
   session: Session | null;
@@ -72,15 +72,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signUp = async (email: string, password: string, username: string, phoneNumber: string) => {
     const redirectUrl = `${window.location.origin}/`;
+    
+    // Normalize phone number to E.164 format
+    const normalizedPhone = normalizeToE164(phoneNumber);
+    // Generate email from digits for consistent auth
+    const authEmail = phoneToEmail(normalizedPhone);
 
     const { error } = await supabase.auth.signUp({
-      email,
+      email: authEmail,
       password,
       options: {
         emailRedirectTo: redirectUrl,
         data: {
           username,
-          phone_number: phoneNumber,
+          phone_number: normalizedPhone,
         },
       },
     });
@@ -91,13 +96,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signIn = async (phoneNumber: string, password: string) => {
     // IMPORTANT: when logged out we can't query protected tables (RLS). Login must work
     // without reading the profiles table.
+    // Use phoneToEmail for consistent email generation
+    const email = phoneToEmail(phoneNumber);
     const digitsOnly = phoneNumber.replace(/[^0-9]/g, "");
 
     if (digitsOnly.length < 8) {
       return { error: new Error("Enter a valid phone number") };
     }
-
-    const email = `${digitsOnly}@owelink.app`;
 
     const { error } = await supabase.auth.signInWithPassword({
       email,
