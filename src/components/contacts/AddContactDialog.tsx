@@ -1,9 +1,11 @@
-import { useState } from "react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { useState, useEffect } from "react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { User, Phone, Loader2 } from "lucide-react";
+import { CountryCodePicker } from "@/components/ui/CountryCodePicker";
+import { normalizeToE164 } from "@/lib/phoneUtils";
 
 interface AddContactDialogProps {
   open: boolean;
@@ -14,13 +16,23 @@ interface AddContactDialogProps {
 
 export function AddContactDialog({ open, onOpenChange, onAdd, initialPhone = "" }: AddContactDialogProps) {
   const [nickname, setNickname] = useState("");
+  const [countryCode, setCountryCode] = useState("+1");
   const [phoneNumber, setPhoneNumber] = useState(initialPhone);
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<{ nickname?: string; phone?: string }>({});
 
+  // Reset form when dialog opens
+  useEffect(() => {
+    if (open) {
+      setNickname("");
+      setPhoneNumber(initialPhone);
+      setErrors({});
+    }
+  }, [open, initialPhone]);
+
   const validatePhone = (phone: string) => {
     const cleaned = phone.replace(/\D/g, "");
-    return cleaned.length >= 10;
+    return cleaned.length >= 6;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -40,8 +52,12 @@ export function AddContactDialog({ open, onOpenChange, onAdd, initialPhone = "" 
     }
 
     setLoading(true);
+    
+    // Normalize to E.164 format
+    const normalizedPhone = normalizeToE164(phoneNumber, countryCode);
+    
     const result = await onAdd({
-      phone_number: phoneNumber.replace(/\D/g, ""),
+      phone_number: normalizedPhone,
       nickname: nickname.trim() || undefined,
     });
     setLoading(false);
@@ -49,16 +65,22 @@ export function AddContactDialog({ open, onOpenChange, onAdd, initialPhone = "" 
     if (result) {
       setNickname("");
       setPhoneNumber("");
+      setCountryCode("+1");
       setErrors({});
       onOpenChange(false);
     }
   };
+
+  const previewPhone = normalizeToE164(phoneNumber, countryCode);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="font-display">Add Contact</DialogTitle>
+          <DialogDescription>
+            Add a new contact to easily split bills and track debts.
+          </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
@@ -74,18 +96,28 @@ export function AddContactDialog({ open, onOpenChange, onAdd, initialPhone = "" 
           
           <div className="space-y-2">
             <Label htmlFor="phone">Phone Number</Label>
-            <Input
-              id="phone"
-              type="tel"
-              placeholder="+1 (555) 000-0000"
-              value={phoneNumber}
-              onChange={(e) => {
-                setPhoneNumber(e.target.value);
-                if (errors.phone) setErrors(prev => ({ ...prev, phone: undefined }));
-              }}
-              icon={<Phone className="h-4 w-4" />}
-              error={!!errors.phone}
-            />
+            <div className="flex gap-2">
+              <CountryCodePicker
+                value={countryCode}
+                onChange={setCountryCode}
+              />
+              <Input
+                id="phone"
+                type="tel"
+                placeholder="3121729411"
+                value={phoneNumber}
+                onChange={(e) => {
+                  setPhoneNumber(e.target.value);
+                  if (errors.phone) setErrors(prev => ({ ...prev, phone: undefined }));
+                }}
+                icon={<Phone className="h-4 w-4" />}
+                error={!!errors.phone}
+                className="flex-1"
+              />
+            </div>
+            {phoneNumber && (
+              <p className="text-xs text-muted-foreground">Will be saved as: {previewPhone}</p>
+            )}
             {errors.phone && (
               <p className="text-sm text-destructive">{errors.phone}</p>
             )}
