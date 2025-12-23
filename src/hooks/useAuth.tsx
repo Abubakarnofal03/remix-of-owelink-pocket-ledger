@@ -89,35 +89,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signIn = async (phoneNumber: string, password: string) => {
-    // Normalize phone number - extract digits only for email lookup
+    // IMPORTANT: when logged out we can't query protected tables (RLS). Login must work
+    // without reading the profiles table.
     const digitsOnly = phoneNumber.replace(/[^0-9]/g, "");
-    
-    // Try to find user by phone number with various formats
-    const phoneVariants = [
-      phoneNumber,
-      `+${digitsOnly}`,
-      digitsOnly,
-    ];
-    
-    let profileData = null;
-    for (const variant of phoneVariants) {
-      const { data, error } = await supabase
-        .from("profiles")
-        .select("user_id, phone_number")
-        .eq("phone_number", variant)
-        .maybeSingle();
-      
-      if (!error && data) {
-        profileData = data;
-        break;
-      }
+
+    if (digitsOnly.length < 8) {
+      return { error: new Error("Enter a valid phone number") };
     }
 
-    if (!profileData) {
-      return { error: new Error("No account found with this phone number") };
-    }
-
-    // Use the digits-only format for email (matches signup)
     const email = `${digitsOnly}@owelink.app`;
 
     const { error } = await supabase.auth.signInWithPassword({
@@ -125,7 +104,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       password,
     });
 
-    return { error: error as Error | null };
+    if (error) {
+      const friendly =
+        error.message?.toLowerCase().includes("invalid login")
+          ? "Incorrect phone number or password"
+          : error.message;
+      return { error: new Error(friendly) };
+    }
+
+    return { error: null };
   };
 
   const signOut = async () => {
