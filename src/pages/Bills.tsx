@@ -1,5 +1,5 @@
 import { useAuth } from "@/hooks/useAuth";
-import { Navigate } from "react-router-dom";
+import { Navigate, useNavigate } from "react-router-dom";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { BillList } from "@/components/bills/BillList";
@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 
 export default function Bills() {
   const { user, loading: authLoading } = useAuth();
+  const navigate = useNavigate();
   const { bills, loading: billsLoading } = useBills();
 
   if (authLoading) return null;
@@ -37,9 +38,7 @@ export default function Bills() {
             description="Split expenses with friends and keep track of who owes what."
             action={{ 
               label: "Create Bill", 
-              onClick: () => {
-                window.location.href = "/bills/new";
-              } 
+              onClick: () => navigate("/bills/new")
             }}
           />
         ) : (

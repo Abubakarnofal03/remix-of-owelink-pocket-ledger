@@ -1,9 +1,9 @@
-import { useState, useEffect } from "react";
+import { useState, useMemo } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { Navigate, useParams, useNavigate } from "react-router-dom";
 import { AppLayout } from "@/components/layout/AppLayout";
-import { useBills, Bill, BillParticipant } from "@/hooks/useBills";
-import { useContacts } from "@/hooks/useContacts";
+import { useBillDetail, BillParticipant } from "@/hooks/useBills";
+import { useContacts, Contact } from "@/hooks/useContacts";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -46,23 +46,26 @@ import {
   Check,
   X,
   Users,
+  Search,
 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
+import { useBills } from "@/hooks/useBills";
+import { AddContactDialog } from "@/components/contacts/AddContactDialog";
 
 export default function BillDetail() {
   const { user, loading: authLoading } = useAuth();
   const { id } = useParams();
   const navigate = useNavigate();
-  const { getBillById, updateBill, deleteBill, refetch } = useBills();
-  const { contacts } = useContacts();
+  const { bill, loading, updateBillLocally } = useBillDetail(id);
+  const { updateBill, deleteBill } = useBills();
+  const { contacts, addContact } = useContacts();
 
-  const [bill, setBill] = useState<Bill | null>(null);
-  const [loading, setLoading] = useState(true);
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showPaymentDialog, setShowPaymentDialog] = useState(false);
   const [showAddParticipantDialog, setShowAddParticipantDialog] = useState(false);
+  const [showAddContactDialog, setShowAddContactDialog] = useState(false);
   const [selectedParticipant, setSelectedParticipant] = useState<BillParticipant | null>(null);
   const [paymentAmount, setPaymentAmount] = useState("");
   const [editForm, setEditForm] = useState({
@@ -75,34 +78,21 @@ export default function BillDetail() {
   const [newParticipantAmount, setNewParticipantAmount] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
 
-  // Fetch bill details directly
-  useEffect(() => {
-    const fetchBillDetail = async () => {
-      if (!id || !user) return;
+  // Filter contacts for add participant dialog
+  const filteredContacts = useMemo(() => {
+    if (!bill) return [];
+    const existingPhones = new Set(bill.participants?.map(p => p.phone_number) || []);
+    let filtered = contacts.filter(c => !existingPhones.has(c.phone_number));
 
-      try {
-        const { data, error } = await supabase
-          .from("bills")
-          .select(`
-            *,
-            participants:bill_participants(*)
-          `)
-          .eq("id", id)
-          .is("deleted_at", null)
-          .maybeSingle();
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      filtered = filtered.filter(
+        c => c.nickname?.toLowerCase().includes(q) || c.phone_number.includes(q)
+      );
+    }
 
-        if (error) throw error;
-        setBill(data);
-      } catch (error) {
-        console.error("Error fetching bill:", error);
-        toast.error("Failed to load bill details");
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchBillDetail();
-  }, [id, user]);
+    return filtered;
+  }, [contacts, bill?.participants, searchQuery]);
 
   if (authLoading || loading) {
     return (
@@ -149,13 +139,13 @@ export default function BillDetail() {
     });
 
     if (success) {
-      setBill(prev => prev ? {
+      updateBillLocally(prev => ({
         ...prev,
         title: editForm.title,
         description: editForm.description || null,
         total_amount: parseFloat(editForm.total_amount),
         due_date: editForm.due_date || null,
-      } : null);
+      }));
       setShowEditDialog(false);
     }
   };
@@ -202,28 +192,29 @@ export default function BillDetail() {
       if (error) throw error;
 
       // Update local state
-      setBill(prev => {
-        if (!prev) return null;
+      updateBillLocally(prev => {
+        const updatedParticipants = prev.participants?.map(p =>
+          p.id === selectedParticipant.id
+            ? { ...p, amount_paid: newAmountPaid, status: newStatus }
+            : p
+        );
+
+        // Check if all participants paid
+        const allPaid = updatedParticipants?.every(p => p.amount_paid >= p.amount_owed);
+        
         return {
           ...prev,
-          participants: prev.participants?.map(p =>
-            p.id === selectedParticipant.id
-              ? { ...p, amount_paid: newAmountPaid, status: newStatus }
-              : p
-          ),
+          participants: updatedParticipants,
+          status: allPaid ? "completed" : prev.status,
         };
       });
 
-      // Check if all participants paid
-      const allPaid = bill.participants?.every(p =>
+      if (bill.participants?.every(p =>
         p.id === selectedParticipant.id
           ? newAmountPaid >= p.amount_owed
           : p.amount_paid >= p.amount_owed
-      );
-
-      if (allPaid) {
+      )) {
         await supabase.from("bills").update({ status: "completed" }).eq("id", bill.id);
-        setBill(prev => prev ? { ...prev, status: "completed" } : null);
       }
 
       toast.success("Payment recorded");
@@ -250,23 +241,25 @@ export default function BillDetail() {
 
       if (error) throw error;
 
-      setBill(prev => {
-        if (!prev) return null;
-        return {
-          ...prev,
-          participants: prev.participants?.map(p =>
-            p.id === participant.id
-              ? { ...p, status: newStatus, amount_paid: amountPaid }
-              : p
-          ),
-        };
-      });
+      updateBillLocally(prev => ({
+        ...prev,
+        participants: prev.participants?.map(p =>
+          p.id === participant.id
+            ? { ...p, status: newStatus, amount_paid: amountPaid }
+            : p
+        ),
+      }));
 
       toast.success("Status updated");
     } catch (error) {
       console.error("Error updating status:", error);
       toast.error("Failed to update status");
     }
+  };
+
+  const selectContactForParticipant = (contact: Contact) => {
+    setNewParticipantPhone(contact.phone_number);
+    setSearchQuery("");
   };
 
   const handleAddParticipant = async () => {
@@ -293,13 +286,10 @@ export default function BillDetail() {
 
       if (error) throw error;
 
-      setBill(prev => {
-        if (!prev) return null;
-        return {
-          ...prev,
-          participants: [...(prev.participants || []), data],
-        };
-      });
+      updateBillLocally(prev => ({
+        ...prev,
+        participants: [...(prev.participants || []), data],
+      }));
 
       toast.success("Participant added");
       setShowAddParticipantDialog(false);
@@ -321,13 +311,10 @@ export default function BillDetail() {
 
       if (error) throw error;
 
-      setBill(prev => {
-        if (!prev) return null;
-        return {
-          ...prev,
-          participants: prev.participants?.filter(p => p.id !== participant.id),
-        };
-      });
+      updateBillLocally(prev => ({
+        ...prev,
+        participants: prev.participants?.filter(p => p.id !== participant.id),
+      }));
 
       toast.success("Participant removed");
     } catch (error) {
@@ -346,11 +333,15 @@ export default function BillDetail() {
     setShowEditDialog(true);
   };
 
-  const filteredContacts = contacts.filter(c =>
-    !bill.participants?.some(p => p.phone_number === c.phone_number) &&
-    (c.nickname?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      c.phone_number.includes(searchQuery))
-  );
+  const handleAddNewContact = async (data: { phone_number: string; nickname?: string }) => {
+    const contact = await addContact(data);
+    if (contact) {
+      setNewParticipantPhone(contact.phone_number);
+      setShowAddContactDialog(false);
+      return contact;
+    }
+    return null;
+  };
 
   return (
     <AppLayout hideNav>
@@ -609,35 +600,77 @@ export default function BillDetail() {
             <DialogTitle>Add Participant</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
-            <div>
-              <label className="text-sm font-medium">Search Contacts</label>
-              <Input
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search by name or phone..."
-              />
-            </div>
-
-            {filteredContacts.length > 0 && searchQuery && (
-              <div className="max-h-32 overflow-y-auto border rounded-md">
-                {filteredContacts.map((contact) => (
-                  <button
-                    key={contact.id}
-                    className="w-full p-2 text-left hover:bg-muted flex items-center gap-2"
-                    onClick={() => {
-                      setNewParticipantPhone(contact.phone_number);
-                      setSearchQuery("");
-                    }}
-                  >
-                    <AvatarCustom name={contact.nickname || contact.phone_number} size="sm" />
-                    <div>
-                      <p className="text-sm font-medium">{contact.nickname || contact.phone_number}</p>
-                      <p className="text-xs text-muted-foreground">{contact.phone_number}</p>
-                    </div>
-                  </button>
-                ))}
+            {/* Search Contacts */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="text-sm font-medium">Search Contacts</label>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShowAddContactDialog(true)}
+                  className="text-primary"
+                >
+                  <Plus className="h-4 w-4 mr-1" />
+                  New Contact
+                </Button>
               </div>
-            )}
+              <div className="relative">
+                <Input
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search by name or phone..."
+                  icon={<Search className="h-4 w-4" />}
+                />
+
+                {/* Contact dropdown */}
+                {searchQuery && filteredContacts.length > 0 && (
+                  <div className="absolute z-10 mt-1 w-full bg-popover border border-border rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                    {filteredContacts.map((contact) => (
+                      <button
+                        key={contact.id}
+                        type="button"
+                        className="w-full px-3 py-2 flex items-center gap-3 hover:bg-accent transition-colors text-left"
+                        onClick={() => selectContactForParticipant(contact)}
+                      >
+                        <AvatarCustom
+                          name={contact.nickname || contact.phone_number}
+                          size="sm"
+                        />
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-sm truncate">
+                            {contact.nickname || contact.phone_number}
+                          </p>
+                          {contact.nickname && (
+                            <p className="text-xs text-muted-foreground truncate">
+                              {contact.phone_number}
+                            </p>
+                          )}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {searchQuery && filteredContacts.length === 0 && (
+                  <div className="absolute z-10 mt-1 w-full bg-popover border border-border rounded-lg shadow-lg p-3">
+                    <p className="text-sm text-muted-foreground text-center mb-2">
+                      No contacts found
+                    </p>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="w-full"
+                      onClick={() => setShowAddContactDialog(true)}
+                    >
+                      <Plus className="h-4 w-4 mr-1" />
+                      Add "{searchQuery}" as new contact
+                    </Button>
+                  </div>
+                )}
+              </div>
+            </div>
 
             <div>
               <label className="text-sm font-medium">Phone Number</label>
@@ -666,6 +699,14 @@ export default function BillDetail() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Add Contact Dialog */}
+      <AddContactDialog
+        open={showAddContactDialog}
+        onOpenChange={setShowAddContactDialog}
+        onAdd={handleAddNewContact}
+        initialPhone={searchQuery.replace(/\D/g, "")}
+      />
 
       {/* Delete Confirmation */}
       <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
