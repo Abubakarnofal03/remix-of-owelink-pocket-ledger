@@ -50,22 +50,18 @@ export interface BillInsert {
 
 const BILLS_QUERY_KEY = ["bills"];
 
-async function fetchBills(userId: string): Promise<Bill[]> {
+async function fetchBills(): Promise<Bill[]> {
   const { data, error } = await supabase
     .from("bills")
     .select(`
       *,
-      participants:bill_participants(*),
-      creator:profiles!bills_creator_id_fkey(username, phone_number)
+      participants:bill_participants(*)
     `)
     .is("deleted_at", null)
     .order("created_at", { ascending: false });
 
   if (error) throw error;
-  return (data || []).map(bill => ({
-    ...bill,
-    creator: Array.isArray(bill.creator) ? bill.creator[0] : bill.creator
-  }));
+  return data || [];
 }
 
 async function fetchBillById(billId: string): Promise<Bill | null> {
@@ -73,29 +69,23 @@ async function fetchBillById(billId: string): Promise<Bill | null> {
     .from("bills")
     .select(`
       *,
-      participants:bill_participants(*),
-      creator:profiles!bills_creator_id_fkey(username, phone_number)
+      participants:bill_participants(*)
     `)
     .eq("id", billId)
     .is("deleted_at", null)
     .maybeSingle();
 
   if (error) throw error;
-  if (!data) return null;
-  
-  return {
-    ...data,
-    creator: Array.isArray(data.creator) ? data.creator[0] : data.creator
-  };
+  return data || null;
 }
 
 export function useBills() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
 
-  const { data: bills = [], isLoading: loading, refetch: refetchBills } = useQuery({
+  const { data: bills = [], isLoading: loading } = useQuery({
     queryKey: BILLS_QUERY_KEY,
-    queryFn: () => fetchBills(user!.id),
+    queryFn: () => fetchBills(),
     enabled: !!user,
     staleTime: 5 * 60 * 1000, // 5 minutes
     gcTime: 30 * 60 * 1000, // 30 minutes
