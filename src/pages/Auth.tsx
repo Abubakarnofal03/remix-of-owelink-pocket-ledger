@@ -1,22 +1,43 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Eye, EyeOff, Phone, User, Lock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { APP_NAME } from "@/lib/constants";
 import { z } from "zod";
 
+type CountryCode = {
+  code: string;
+  label: string;
+};
+
+const COUNTRY_CODES: CountryCode[] = [
+  { code: "+1", label: "United States" },
+  { code: "+44", label: "United Kingdom" },
+  { code: "+61", label: "Australia" },
+  { code: "+91", label: "India" },
+  { code: "+92", label: "Pakistan" },
+  { code: "+971", label: "UAE" },
+];
+
 const signUpSchema = z.object({
   username: z.string().min(2, "Username must be at least 2 characters").max(50),
-  phoneNumber: z.string().min(10, "Enter a valid phone number").max(20),
+  phoneNumber: z.string().min(4, "Enter a valid phone number").max(20),
   password: z.string().min(6, "Password must be at least 6 characters"),
 });
 
 const signInSchema = z.object({
-  phoneNumber: z.string().min(10, "Enter a valid phone number"),
+  phoneNumber: z.string().min(4, "Enter a valid phone number"),
   password: z.string().min(1, "Password is required"),
 });
 
@@ -26,6 +47,7 @@ export default function Auth() {
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
     username: "",
+    countryCode: "+1",
     phoneNumber: "",
     password: "",
   });
@@ -34,6 +56,15 @@ export default function Auth() {
   const { signUp, signIn } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
+
+  useEffect(() => {
+    document.title = `${isSignUp ? "Sign up" : "Sign in"} | ${APP_NAME}`;
+  }, [isSignUp]);
+
+  const fullPhoneNumber = useMemo(() => {
+    const localDigits = formData.phoneNumber.replace(/[^0-9]/g, "");
+    return `${formData.countryCode}${localDigits}`;
+  }, [formData.countryCode, formData.phoneNumber]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
@@ -59,9 +90,15 @@ export default function Auth() {
           return;
         }
 
-        const email = `${formData.phoneNumber.replace(/[^0-9]/g, "")}@owelink.app`;
-        const { error } = await signUp(email, formData.password, formData.username, formData.phoneNumber);
-        
+        const digitsOnly = fullPhoneNumber.replace(/[^0-9]/g, "");
+        const email = `${digitsOnly}@owelink.app`;
+        const { error } = await signUp(
+          email,
+          formData.password,
+          formData.username,
+          fullPhoneNumber
+        );
+
         if (error) {
           toast({ title: "Sign up failed", description: error.message, variant: "destructive" });
         } else {
@@ -80,8 +117,8 @@ export default function Auth() {
           return;
         }
 
-        const { error } = await signIn(formData.phoneNumber, formData.password);
-        
+        const { error } = await signIn(fullPhoneNumber, formData.password);
+
         if (error) {
           toast({ title: "Sign in failed", description: error.message, variant: "destructive" });
         } else {
@@ -89,7 +126,11 @@ export default function Auth() {
         }
       }
     } catch (err) {
-      toast({ title: "Error", description: "Something went wrong. Please try again.", variant: "destructive" });
+      toast({
+        title: "Error",
+        description: "Something went wrong. Please try again.",
+        variant: "destructive",
+      });
     } finally {
       setLoading(false);
     }
@@ -108,18 +149,10 @@ export default function Auth() {
 
         <div className="card-elevated p-6">
           <div className="flex gap-2 mb-6">
-            <Button
-              variant={!isSignUp ? "default" : "ghost"}
-              className="flex-1"
-              onClick={() => setIsSignUp(false)}
-            >
+            <Button variant={!isSignUp ? "default" : "ghost"} className="flex-1" onClick={() => setIsSignUp(false)}>
               Sign In
             </Button>
-            <Button
-              variant={isSignUp ? "default" : "ghost"}
-              className="flex-1"
-              onClick={() => setIsSignUp(true)}
-            >
+            <Button variant={isSignUp ? "default" : "ghost"} className="flex-1" onClick={() => setIsSignUp(true)}>
               Sign Up
             </Button>
           </div>
@@ -143,16 +176,38 @@ export default function Auth() {
 
             <div className="space-y-2">
               <Label htmlFor="phoneNumber">Phone Number</Label>
-              <Input
-                id="phoneNumber"
-                name="phoneNumber"
-                type="tel"
-                placeholder="+1 234 567 8900"
-                icon={<Phone className="h-4 w-4" />}
-                value={formData.phoneNumber}
-                onChange={handleChange}
-                error={!!errors.phoneNumber}
-              />
+              <div className="grid grid-cols-[120px_1fr] gap-2">
+                <Select
+                  value={formData.countryCode}
+                  onValueChange={(value) => {
+                    setFormData((prev) => ({ ...prev, countryCode: value }));
+                    setErrors((prev) => ({ ...prev, phoneNumber: "" }));
+                  }}
+                >
+                  <SelectTrigger aria-label="Select country code">
+                    <SelectValue placeholder="Code" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {COUNTRY_CODES.map((c) => (
+                      <SelectItem key={c.code} value={c.code}>
+                        {c.label} ({c.code})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                <Input
+                  id="phoneNumber"
+                  name="phoneNumber"
+                  type="tel"
+                  placeholder="3121729411"
+                  icon={<Phone className="h-4 w-4" />}
+                  value={formData.phoneNumber}
+                  onChange={handleChange}
+                  error={!!errors.phoneNumber}
+                />
+              </div>
+              <p className="text-xs text-muted-foreground">We’ll save it as: {fullPhoneNumber}</p>
               {errors.phoneNumber && <p className="text-xs text-destructive">{errors.phoneNumber}</p>}
             </div>
 
