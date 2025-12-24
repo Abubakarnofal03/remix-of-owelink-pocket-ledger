@@ -57,8 +57,10 @@ export function useIOUs() {
   const { user, profile } = useAuth();
   const queryClient = useQueryClient();
 
+  const iousQueryKey = ["ious", user?.id];
+
   const { data: ious = [], isLoading: loading } = useQuery({
-    queryKey: IOUS_QUERY_KEY,
+    queryKey: iousQueryKey,
     queryFn: () => fetchIOUs(),
     enabled: !!user,
     staleTime: 5 * 60 * 1000,
@@ -97,7 +99,7 @@ export function useIOUs() {
       return data;
     },
     onSuccess: (newIOU) => {
-      queryClient.setQueryData<IOU[]>(IOUS_QUERY_KEY, (old = []) => [newIOU, ...old]);
+      queryClient.setQueryData<IOU[]>(iousQueryKey, (old = []) => [newIOU, ...old]);
       toast.success("IOU created successfully");
     },
     onError: (error: any) => {
@@ -124,7 +126,7 @@ export function useIOUs() {
       return data;
     },
     onSuccess: (data) => {
-      queryClient.setQueryData<IOU[]>(IOUS_QUERY_KEY, (old = []) =>
+      queryClient.setQueryData<IOU[]>(iousQueryKey, (old = []) =>
         old.map(i => i.id === data.id ? { ...i, ...data } : i)
       );
       toast.success("IOU updated");
@@ -146,7 +148,7 @@ export function useIOUs() {
       return id;
     },
     onSuccess: (id) => {
-      queryClient.setQueryData<IOU[]>(IOUS_QUERY_KEY, (old = []) =>
+      queryClient.setQueryData<IOU[]>(iousQueryKey, (old = []) =>
         old.filter(i => i.id !== id)
       );
       toast.success("IOU deleted");
@@ -188,7 +190,7 @@ export function useIOUs() {
   };
 
   const updateIOUInCache = (id: string, updater: (iou: IOU) => IOU) => {
-    queryClient.setQueryData<IOU[]>(IOUS_QUERY_KEY, (old = []) =>
+    queryClient.setQueryData<IOU[]>(iousQueryKey, (old = []) =>
       old.map(i => i.id === id ? updater(i) : i)
     );
   };
@@ -203,7 +205,7 @@ export function useIOUs() {
     deleteIOU,
     getIOUById,
     updateIOUInCache,
-    refetch: () => queryClient.invalidateQueries({ queryKey: IOUS_QUERY_KEY }),
+    refetch: () => queryClient.invalidateQueries({ queryKey: iousQueryKey }),
   };
 }
 
@@ -212,11 +214,12 @@ export function useIOUDetail(iouId: string | undefined) {
   const { user } = useAuth();
   const queryClient = useQueryClient();
 
-  const cachedIOUs = queryClient.getQueryData<IOU[]>(IOUS_QUERY_KEY);
+  const iousQueryKey = ["ious", user?.id];
+  const cachedIOUs = queryClient.getQueryData<IOU[]>(iousQueryKey);
   const cachedIOU = cachedIOUs?.find(i => i.id === iouId);
 
   const { data: iou, isLoading } = useQuery({
-    queryKey: ["iou", iouId],
+    queryKey: ["iou", user?.id, iouId],
     queryFn: () => fetchIOUById(iouId!),
     enabled: !!user && !!iouId && !cachedIOU,
     initialData: cachedIOU,
@@ -226,8 +229,8 @@ export function useIOUDetail(iouId: string | undefined) {
 
   const updateIOULocally = (updater: (iou: IOU) => IOU) => {
     if (iou) {
-      queryClient.setQueryData(["iou", iouId], updater(iou));
-      queryClient.setQueryData<IOU[]>(IOUS_QUERY_KEY, (old = []) =>
+      queryClient.setQueryData(["iou", user?.id, iouId], updater(iou));
+      queryClient.setQueryData<IOU[]>(iousQueryKey, (old = []) =>
         old.map(i => i.id === iouId ? updater(i) : i)
       );
     }

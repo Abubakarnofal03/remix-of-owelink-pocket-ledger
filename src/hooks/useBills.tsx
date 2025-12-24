@@ -83,8 +83,10 @@ export function useBills() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
 
+  const billsQueryKey = ["bills", user?.id];
+
   const { data: bills = [], isLoading: loading } = useQuery({
-    queryKey: BILLS_QUERY_KEY,
+    queryKey: billsQueryKey,
     queryFn: () => fetchBills(),
     enabled: !!user,
     staleTime: 5 * 60 * 1000, // 5 minutes
@@ -131,7 +133,7 @@ export function useBills() {
       return { ...billData, participants: participantsData };
     },
     onSuccess: (newBill) => {
-      queryClient.setQueryData<Bill[]>(BILLS_QUERY_KEY, (old = []) => [newBill, ...old]);
+      queryClient.setQueryData<Bill[]>(billsQueryKey, (old = []) => [newBill, ...old]);
       toast.success("Bill created successfully");
     },
     onError: (error: any) => {
@@ -158,7 +160,7 @@ export function useBills() {
       return data;
     },
     onSuccess: (data) => {
-      queryClient.setQueryData<Bill[]>(BILLS_QUERY_KEY, (old = []) =>
+      queryClient.setQueryData<Bill[]>(billsQueryKey, (old = []) =>
         old.map(b => b.id === data.id ? { ...b, ...data } : b)
       );
       toast.success("Bill updated");
@@ -180,7 +182,7 @@ export function useBills() {
       return id;
     },
     onSuccess: (id) => {
-      queryClient.setQueryData<Bill[]>(BILLS_QUERY_KEY, (old = []) =>
+      queryClient.setQueryData<Bill[]>(billsQueryKey, (old = []) =>
         old.filter(b => b.id !== id)
       );
       toast.success("Bill deleted");
@@ -223,7 +225,7 @@ export function useBills() {
 
   // Update bill in cache locally (for optimistic updates from detail page)
   const updateBillInCache = (id: string, updater: (bill: Bill) => Bill) => {
-    queryClient.setQueryData<Bill[]>(BILLS_QUERY_KEY, (old = []) =>
+    queryClient.setQueryData<Bill[]>(billsQueryKey, (old = []) =>
       old.map(b => b.id === id ? updater(b) : b)
     );
   };
@@ -236,7 +238,7 @@ export function useBills() {
     deleteBill,
     getBillById,
     updateBillInCache,
-    refetch: () => queryClient.invalidateQueries({ queryKey: BILLS_QUERY_KEY }),
+    refetch: () => queryClient.invalidateQueries({ queryKey: billsQueryKey }),
   };
 }
 
@@ -245,12 +247,14 @@ export function useBillDetail(billId: string | undefined) {
   const { user } = useAuth();
   const queryClient = useQueryClient();
 
+  const billsQueryKey = ["bills", user?.id];
+
   // Try to get from cache first
-  const cachedBills = queryClient.getQueryData<Bill[]>(BILLS_QUERY_KEY);
+  const cachedBills = queryClient.getQueryData<Bill[]>(billsQueryKey);
   const cachedBill = cachedBills?.find(b => b.id === billId);
 
   const { data: bill, isLoading } = useQuery({
-    queryKey: ["bill", billId],
+    queryKey: ["bill", user?.id, billId],
     queryFn: () => fetchBillById(billId!),
     enabled: !!user && !!billId && !cachedBill,
     initialData: cachedBill,
@@ -260,9 +264,9 @@ export function useBillDetail(billId: string | undefined) {
 
   const updateBillLocally = (updater: (bill: Bill) => Bill) => {
     if (bill) {
-      queryClient.setQueryData(["bill", billId], updater(bill));
+      queryClient.setQueryData(["bill", user?.id, billId], updater(bill));
       // Also update in the bills list cache
-      queryClient.setQueryData<Bill[]>(BILLS_QUERY_KEY, (old = []) =>
+      queryClient.setQueryData<Bill[]>(billsQueryKey, (old = []) =>
         old.map(b => b.id === billId ? updater(b) : b)
       );
     }

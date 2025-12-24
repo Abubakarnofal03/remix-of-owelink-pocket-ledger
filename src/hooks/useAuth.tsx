@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useState, ReactNode } from "react
 import { User, Session } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import { Profile } from "@/types/database";
-import { normalizeToE164, phoneToEmail, extractPhoneSuffix } from "@/lib/phoneUtils";
+import { normalizeToE164, phoneToEmail } from "@/lib/phoneUtils";
 interface AuthContextType {
   user: User | null;
   session: Session | null;
@@ -121,6 +121,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signOut = async () => {
+    // Get queryClient from context - but since we're in the provider,
+    // we need to clear on the next event cycle
     await supabase.auth.signOut();
     setUser(null);
     setSession(null);

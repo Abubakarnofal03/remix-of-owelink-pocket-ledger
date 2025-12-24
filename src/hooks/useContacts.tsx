@@ -38,7 +38,7 @@ export function useContacts() {
   const queryClient = useQueryClient();
 
   const { data: contacts = [], isLoading: loading } = useQuery({
-    queryKey: CONTACTS_QUERY_KEY,
+    queryKey: ["contacts", user?.id],
     queryFn: () => fetchContacts(user!.id),
     enabled: !!user,
     staleTime: 5 * 60 * 1000, // 5 minutes
@@ -72,7 +72,7 @@ export function useContacts() {
       return data;
     },
     onSuccess: (newContact) => {
-      queryClient.setQueryData<Contact[]>(CONTACTS_QUERY_KEY, (old = []) => [...old, newContact]);
+      queryClient.setQueryData<Contact[]>(["contacts", user?.id], (old = []) => [...old, newContact]);
       toast.success("Contact added");
     },
     onError: (error: any) => {
@@ -94,7 +94,7 @@ export function useContacts() {
       return data;
     },
     onSuccess: (data) => {
-      queryClient.setQueryData<Contact[]>(CONTACTS_QUERY_KEY, (old = []) =>
+      queryClient.setQueryData<Contact[]>(["contacts", user?.id], (old = []) =>
         old.map(c => c.id === data.id ? data : c)
       );
       toast.success("Contact updated");
@@ -116,7 +116,7 @@ export function useContacts() {
       return id;
     },
     onSuccess: (id) => {
-      queryClient.setQueryData<Contact[]>(CONTACTS_QUERY_KEY, (old = []) =>
+      queryClient.setQueryData<Contact[]>(["contacts", user?.id], (old = []) =>
         old.filter(c => c.id !== id)
       );
       toast.success("Contact deleted");
@@ -222,7 +222,7 @@ export function useContacts() {
     importContactsFromDevice,
     searchContacts,
     getContactById,
-    refetch: () => queryClient.invalidateQueries({ queryKey: CONTACTS_QUERY_KEY }),
+    refetch: () => queryClient.invalidateQueries({ queryKey: ["contacts", user?.id] }),
   };
 }
 
@@ -232,7 +232,7 @@ export function useContactDetail(contactId: string | undefined) {
   const queryClient = useQueryClient();
 
   // Try to get from cache first
-  const cachedContacts = queryClient.getQueryData<Contact[]>(CONTACTS_QUERY_KEY);
+  const cachedContacts = queryClient.getQueryData<Contact[]>(["contacts", user?.id]);
   const cachedContact = cachedContacts?.find(c => c.id === contactId);
 
   const { data: contact, isLoading } = useQuery({

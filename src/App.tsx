@@ -1,9 +1,11 @@
+import { useEffect } from "react";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider, useQueryClient } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "@/hooks/useAuth";
+import { supabase } from "@/integrations/supabase/client";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import Bills from "./pages/Bills";
@@ -28,8 +30,27 @@ const queryClient = new QueryClient({
   },
 });
 
+// Component to clear cache on auth state changes
+function AuthCacheClearer() {
+  const qc = useQueryClient();
+
+  useEffect(() => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+      if (event === "SIGNED_OUT") {
+        // Clear all cached data when user signs out
+        qc.clear();
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, [qc]);
+
+  return null;
+}
+
 const App = () => (
   <QueryClientProvider client={queryClient}>
+    <AuthCacheClearer />
     <AuthProvider>
       <TooltipProvider>
         <Toaster />
