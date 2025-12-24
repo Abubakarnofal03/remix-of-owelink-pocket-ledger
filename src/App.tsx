@@ -8,6 +8,7 @@ import { AuthProvider } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { useCapacitor } from "@/hooks/useCapacitor";
 import { usePushNotifications } from "@/hooks/usePushNotifications";
+import { useBackButton } from "@/hooks/useBackButton";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import Bills from "./pages/Bills";
@@ -54,33 +55,43 @@ function AuthCacheClearer() {
 function CapacitorInitializer() {
   useCapacitor();
   usePushNotifications();
+  useBackButton();
   return null;
+}
+
+// Wrapper component that uses router hooks (must be inside BrowserRouter)
+function AppRoutes() {
+  return (
+    <>
+      <CapacitorInitializer />
+      <Routes>
+        <Route path="/" element={<Index />} />
+        <Route path="/auth" element={<Auth />} />
+        <Route path="/bills" element={<Bills />} />
+        <Route path="/bills/new" element={<NewBill />} />
+        <Route path="/bills/:id" element={<BillDetail />} />
+        <Route path="/ious" element={<IOUs />} />
+        <Route path="/ious/new" element={<NewIOU />} />
+        <Route path="/ious/:id" element={<IOUDetail />} />
+        <Route path="/contacts" element={<Contacts />} />
+        <Route path="/contacts/:id" element={<ContactDetail />} />
+        <Route path="/notifications" element={<Notifications />} />
+        <Route path="/settings" element={<Settings />} />
+        <Route path="*" element={<NotFound />} />
+      </Routes>
+    </>
+  );
 }
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <AuthCacheClearer />
     <AuthProvider>
-      <CapacitorInitializer />
       <TooltipProvider>
         <Toaster />
         <Sonner />
         <BrowserRouter>
-          <Routes>
-            <Route path="/" element={<Index />} />
-            <Route path="/auth" element={<Auth />} />
-            <Route path="/bills" element={<Bills />} />
-            <Route path="/bills/new" element={<NewBill />} />
-            <Route path="/bills/:id" element={<BillDetail />} />
-            <Route path="/ious" element={<IOUs />} />
-            <Route path="/ious/new" element={<NewIOU />} />
-            <Route path="/ious/:id" element={<IOUDetail />} />
-            <Route path="/contacts" element={<Contacts />} />
-            <Route path="/contacts/:id" element={<ContactDetail />} />
-            <Route path="/notifications" element={<Notifications />} />
-            <Route path="/settings" element={<Settings />} />
-            <Route path="*" element={<NotFound />} />
-          </Routes>
+          <AppRoutes />
         </BrowserRouter>
       </TooltipProvider>
     </AuthProvider>
