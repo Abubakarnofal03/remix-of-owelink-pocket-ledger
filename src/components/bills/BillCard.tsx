@@ -3,25 +3,46 @@ import { StatusBadge } from "@/components/ui/StatusBadge";
 import { MoneyDisplay } from "@/components/ui/MoneyDisplay";
 import { AvatarCustom } from "@/components/ui/avatar-custom";
 import { format } from "date-fns";
-import { Calendar, Users, ChevronRight } from "lucide-react";
+import { Calendar, Users, ChevronRight, Crown, UserCheck } from "lucide-react";
 import { Link } from "react-router-dom";
+import { useAuth } from "@/hooks/useAuth";
+import { cn } from "@/lib/utils";
 
 interface BillCardProps {
   bill: Bill;
 }
 
 export function BillCard({ bill }: BillCardProps) {
+  const { user } = useAuth();
   const participantCount = bill.participants?.length || 0;
   const paidCount = bill.participants?.filter(p => p.status === "paid").length || 0;
   const totalPaid = bill.participants?.reduce((sum, p) => sum + p.amount_paid, 0) || 0;
   const progress = bill.total_amount > 0 ? (totalPaid / bill.total_amount) * 100 : 0;
+  
+  const isCreator = user?.id === bill.creator_id;
 
   return (
     <Link to={`/bills/${bill.id}`} className="block">
-      <div className="card-elevated p-4 hover:ring-2 hover:ring-primary/20 transition-all">
+      <div className={cn(
+        "card-elevated p-4 hover:ring-2 hover:ring-primary/20 transition-all",
+        isCreator ? "border-l-4 border-l-primary" : "border-l-4 border-l-secondary"
+      )}>
         <div className="flex items-start justify-between mb-3">
           <div className="flex-1 min-w-0">
-            <h3 className="font-semibold text-foreground truncate">{bill.title}</h3>
+            <div className="flex items-center gap-2">
+              <h3 className="font-semibold text-foreground truncate">{bill.title}</h3>
+              {isCreator ? (
+                <span className="inline-flex items-center gap-1 text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full shrink-0">
+                  <Crown className="h-3 w-3" />
+                  Creator
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 text-xs bg-secondary/50 text-secondary-foreground px-2 py-0.5 rounded-full shrink-0">
+                  <UserCheck className="h-3 w-3" />
+                  Shared
+                </span>
+              )}
+            </div>
             {bill.description && (
               <p className="text-sm text-muted-foreground truncate mt-0.5">
                 {bill.description}
