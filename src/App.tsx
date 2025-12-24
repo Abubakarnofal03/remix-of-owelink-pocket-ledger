@@ -60,8 +60,8 @@ function CapacitorInitializer() {
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <AuthCacheClearer />
-    <CapacitorInitializer />
     <AuthProvider>
+      <CapacitorInitializer />
       <TooltipProvider>
         <Toaster />
         <Sonner />
