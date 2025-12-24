@@ -94,11 +94,15 @@ export function useMatchedContacts() {
     try {
       // Check/request permission
       if (!Capacitor.isNativePlatform()) {
+        console.log('Not a native platform, skipping contact matching');
         setError('Device contacts not available on web');
         return [];
       }
 
+      console.log('Requesting contacts permission for matching...');
       const permResult = await Contacts.requestPermissions();
+      console.log('Permission result:', permResult);
+      
       if (permResult.contacts !== 'granted') {
         setError('Contacts permission denied');
         setHasPermission(false);
@@ -106,6 +110,7 @@ export function useMatchedContacts() {
       }
       setHasPermission(true);
 
+      console.log('Fetching device contacts...');
       // Get device contacts
       const result = await Contacts.getContacts({
         projection: {
@@ -114,14 +119,14 @@ export function useMatchedContacts() {
         },
       });
 
+      console.log(`Got ${result.contacts?.length || 0} contacts from device`);
+
       if (!result.contacts || result.contacts.length === 0) {
         console.log('No contacts found on device');
         setMatchedContacts([]);
         setCache([]);
         return [];
       }
-
-      console.log(`Found ${result.contacts.length} device contacts`);
 
       // Extract unique phone suffixes
       const phoneSet = new Set<string>();
@@ -152,16 +157,13 @@ export function useMatchedContacts() {
       for (let i = 0; i < phoneSuffixes.length; i += PAGE_SIZE) {
         const batch = phoneSuffixes.slice(i, i + PAGE_SIZE);
         
-        const { data: sessionData } = await supabase.auth.getSession();
-        const token = sessionData.session?.access_token;
-
-        if (!token) {
-          throw new Error('No authentication token');
-        }
+        console.log(`Sending batch ${i / PAGE_SIZE + 1} with ${batch.length} phone suffixes`);
 
         const response = await supabase.functions.invoke('match-contacts', {
           body: { phone_suffixes: batch },
         });
+
+        console.log('Match contacts response:', response);
 
         if (response.error) {
           console.error('Match contacts error:', response.error);

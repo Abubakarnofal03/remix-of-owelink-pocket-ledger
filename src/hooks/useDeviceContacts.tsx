@@ -12,9 +12,13 @@ export function useDeviceContacts() {
   const [deviceContacts, setDeviceContacts] = useState<DeviceContact[]>([]);
   const [loading, setLoading] = useState(false);
   const [hasPermission, setHasPermission] = useState<boolean | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const fetchDeviceContacts = useCallback(async (): Promise<DeviceContact[]> => {
+    setError(null);
+    
     if (!Capacitor.isNativePlatform()) {
+      console.log("Not native platform, trying web Contacts API...");
       // Web fallback - use Contact Picker API if available
       if ("contacts" in navigator && "ContactsManager" in window) {
         try {
@@ -36,22 +40,30 @@ export function useDeviceContacts() {
         } catch (error: any) {
           if (error.name !== "AbortError") {
             console.error("Error fetching web contacts:", error);
+            setError("Failed to fetch contacts");
           }
           return [];
         }
       }
+      console.log("Web Contacts API not available");
       return [];
     }
 
     setLoading(true);
     try {
+      console.log("Requesting contacts permission...");
       // Request permission first
       const permResult = await Contacts.requestPermissions();
+      console.log("Permission result:", permResult);
+      
       if (permResult.contacts !== "granted") {
+        console.log("Contacts permission denied");
         setHasPermission(false);
+        setError("Contacts permission denied");
         return [];
       }
       setHasPermission(true);
+      console.log("Contacts permission granted, fetching contacts...");
 
       // Get all contacts from device
       const result = await Contacts.getContacts({
@@ -61,7 +73,9 @@ export function useDeviceContacts() {
         },
       });
 
-      const mapped: DeviceContact[] = result.contacts
+      console.log(`Fetched ${result.contacts?.length || 0} contacts from device`);
+
+      const mapped: DeviceContact[] = (result.contacts || [])
         .filter(c => c.phones && c.phones.length > 0 && c.phones[0].number)
         .map((c, index) => ({
           id: c.contactId || `device-${index}`,
@@ -69,10 +83,12 @@ export function useDeviceContacts() {
           phone_number: c.phones![0].number!,
         }));
 
+      console.log(`Mapped ${mapped.length} valid contacts with phone numbers`);
       setDeviceContacts(mapped);
       return mapped;
-    } catch (error) {
-      console.error("Error fetching device contacts:", error);
+    } catch (err: any) {
+      console.error("Error fetching device contacts:", err);
+      setError(err?.message || "Failed to fetch contacts");
       return [];
     } finally {
       setLoading(false);
@@ -93,6 +109,7 @@ export function useDeviceContacts() {
     deviceContacts,
     loading,
     hasPermission,
+    error,
     fetchDeviceContacts,
     searchDeviceContacts,
   };
