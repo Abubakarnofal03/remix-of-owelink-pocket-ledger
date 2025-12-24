@@ -6,6 +6,7 @@ import { QueryClient, QueryClientProvider, useQueryClient } from "@tanstack/reac
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
+import { useCapacitor } from "@/hooks/useCapacitor";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import Bills from "./pages/Bills";
@@ -48,9 +49,16 @@ function AuthCacheClearer() {
   return null;
 }
 
+// Component to initialize Capacitor native features
+function CapacitorInitializer() {
+  useCapacitor();
+  return null;
+}
+
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <AuthCacheClearer />
+    <CapacitorInitializer />
     <AuthProvider>
       <TooltipProvider>
         <Toaster />
