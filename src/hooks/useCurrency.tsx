@@ -1,9 +1,10 @@
 import { createContext, useContext, ReactNode } from "react";
 import { useAuth } from "./useAuth";
-import { DEFAULT_CURRENCY } from "@/lib/currencies";
+import { DEFAULT_CURRENCY, getCurrencySymbol } from "@/lib/currencies";
 
 interface CurrencyContextType {
   currency: string;
+  symbol: string;
 }
 
 const CurrencyContext = createContext<CurrencyContextType | undefined>(undefined);
@@ -13,9 +14,10 @@ export function CurrencyProvider({ children }: { children: ReactNode }) {
   
   // Get currency from profile settings, default to USD
   const currency = (profile?.settings as any)?.currency || DEFAULT_CURRENCY;
+  const symbol = getCurrencySymbol(currency);
 
   return (
-    <CurrencyContext.Provider value={{ currency }}>
+    <CurrencyContext.Provider value={{ currency, symbol }}>
       {children}
     </CurrencyContext.Provider>
   );
