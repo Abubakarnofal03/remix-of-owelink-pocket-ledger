@@ -160,8 +160,7 @@
   body {
     @apply bg-background text-foreground font-sans antialiased;
     font-feature-settings: "rlig" 1, "calt" 1;
-    /* Apply safe area padding for native apps */
-    padding-top: var(--safe-area-inset-top);
+    /* Apply safe area padding for native apps - skip top since header handles it */
     padding-bottom: var(--safe-area-inset-bottom);
     padding-left: var(--safe-area-inset-left);
     padding-right: var(--safe-area-inset-right);

@@ -16,7 +16,7 @@ export function Header() {
   const { profile, signOut } = useAuth();
 
   return (
-    <header className="sticky top-0 z-40 bg-background/95 backdrop-blur-xl border-b border-border/50">
+    <header className="sticky top-0 z-40 bg-background/95 backdrop-blur-xl border-b border-border/50 pt-[env(safe-area-inset-top)]">
       <div className="container flex items-center justify-between h-14 px-4">
         <Link to="/" className="flex items-center gap-2">
           <div className="h-8 w-8 rounded-lg bg-primary flex items-center justify-center">
