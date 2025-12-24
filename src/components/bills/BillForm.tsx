@@ -123,10 +123,15 @@ export function BillForm() {
 
   // Fetch device contacts when showing
   const handleShowDeviceContacts = async () => {
-    if (deviceContacts.length === 0) {
-      await fetchDeviceContacts();
+    console.log("handleShowDeviceContacts called");
+    console.log("Current deviceContacts:", deviceContacts.length);
+    
+    const result = await fetchDeviceContacts();
+    console.log("fetchDeviceContacts returned:", result.length, "contacts");
+    
+    if (result.length > 0) {
+      setShowDeviceContacts(true);
     }
-    setShowDeviceContacts(true);
   };
 
   // Add participant from contact
@@ -393,10 +398,10 @@ export function BillForm() {
         </div>
 
         {/* Device Contacts List */}
-        {showDeviceContacts && filteredDeviceContacts.length > 0 && (
+        {showDeviceContacts && (
           <div className="border border-border rounded-lg overflow-hidden max-h-48 overflow-y-auto">
             <div className="px-3 py-2 bg-muted/50 border-b border-border flex items-center justify-between">
-              <span className="text-xs font-medium text-muted-foreground">Phone Contacts</span>
+              <span className="text-xs font-medium text-muted-foreground">Phone Contacts ({filteredDeviceContacts.length})</span>
               <Button
                 type="button"
                 variant="ghost"
@@ -407,30 +412,36 @@ export function BillForm() {
                 <X className="h-3 w-3" />
               </Button>
             </div>
-            {filteredDeviceContacts.map((deviceContact) => (
-              <button
-                key={deviceContact.id}
-                type="button"
-                className="w-full px-3 py-2 flex items-center gap-3 hover:bg-accent transition-colors text-left border-b border-border last:border-b-0"
-                onClick={() => addParticipantFromDevice(deviceContact)}
-              >
-                <AvatarCustom
-                  name={deviceContact.name || deviceContact.phone_number}
-                  size="sm"
-                />
-                <div className="flex-1 min-w-0">
-                  <p className="font-medium text-sm truncate">
-                    {deviceContact.name || deviceContact.phone_number}
-                  </p>
-                  {deviceContact.name && (
-                    <p className="text-xs text-muted-foreground truncate">
-                      {deviceContact.phone_number}
+            {filteredDeviceContacts.length === 0 ? (
+              <div className="p-4 text-center text-sm text-muted-foreground">
+                No contacts found on your device
+              </div>
+            ) : (
+              filteredDeviceContacts.map((deviceContact) => (
+                <button
+                  key={deviceContact.id}
+                  type="button"
+                  className="w-full px-3 py-2 flex items-center gap-3 hover:bg-accent transition-colors text-left border-b border-border last:border-b-0"
+                  onClick={() => addParticipantFromDevice(deviceContact)}
+                >
+                  <AvatarCustom
+                    name={deviceContact.name || deviceContact.phone_number}
+                    size="sm"
+                  />
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-sm truncate">
+                      {deviceContact.name || deviceContact.phone_number}
                     </p>
-                  )}
-                </div>
-                <Plus className="h-4 w-4 text-muted-foreground" />
-              </button>
-            ))}
+                    {deviceContact.name && (
+                      <p className="text-xs text-muted-foreground truncate">
+                        {deviceContact.phone_number}
+                      </p>
+                    )}
+                  </div>
+                  <Plus className="h-4 w-4 text-muted-foreground" />
+                </button>
+              ))
+            )}
           </div>
         )}
 
