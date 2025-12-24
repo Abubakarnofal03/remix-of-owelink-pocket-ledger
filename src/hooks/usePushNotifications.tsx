@@ -43,6 +43,45 @@ export function usePushNotifications() {
     }
 
     try {
+      // Set up listeners BEFORE requesting permission to catch all events
+      await PushNotifications.addListener('registration', (token: Token) => {
+        console.log('Push registration success, token:', token.value);
+        try {
+          registerToken(token.value);
+        } catch (err) {
+          console.error('Error in registerToken:', err);
+        }
+      });
+
+      await PushNotifications.addListener('registrationError', (error: any) => {
+        console.error('Push registration error:', error);
+      });
+
+      await PushNotifications.addListener('pushNotificationReceived', (notification: PushNotificationSchema) => {
+        console.log('Push notification received:', notification);
+        try {
+          toast(notification.title || 'Notification', {
+            description: notification.body,
+          });
+        } catch (err) {
+          console.error('Error showing toast:', err);
+        }
+      });
+
+      await PushNotifications.addListener('pushNotificationActionPerformed', (action: ActionPerformed) => {
+        console.log('Push notification action:', action);
+        try {
+          const data = action.notification.data;
+          if (data?.type === 'bill' && data?.id) {
+            window.location.href = `/bills/${data.id}`;
+          } else if (data?.type === 'iou' && data?.id) {
+            window.location.href = `/ious/${data.id}`;
+          }
+        } catch (err) {
+          console.error('Error handling notification action:', err);
+        }
+      });
+
       // Request permission
       const permStatus = await PushNotifications.requestPermissions();
       
@@ -52,39 +91,6 @@ export function usePushNotifications() {
       } else {
         console.log('Push notification permission denied');
       }
-
-      // Listen for registration
-      PushNotifications.addListener('registration', (token: Token) => {
-        console.log('Push registration success, token:', token.value);
-        registerToken(token.value);
-      });
-
-      // Listen for registration errors
-      PushNotifications.addListener('registrationError', (error: any) => {
-        console.error('Push registration error:', error);
-      });
-
-      // Listen for push notifications received while app is in foreground
-      PushNotifications.addListener('pushNotificationReceived', (notification: PushNotificationSchema) => {
-        console.log('Push notification received:', notification);
-        toast(notification.title || 'Notification', {
-          description: notification.body,
-        });
-      });
-
-      // Listen for push notification actions (taps)
-      PushNotifications.addListener('pushNotificationActionPerformed', (action: ActionPerformed) => {
-        console.log('Push notification action:', action);
-        const data = action.notification.data;
-        
-        // Navigate based on notification type
-        if (data?.type === 'bill' && data?.id) {
-          window.location.href = `/bills/${data.id}`;
-        } else if (data?.type === 'iou' && data?.id) {
-          window.location.href = `/ious/${data.id}`;
-        }
-      });
-
     } catch (err) {
       console.error('Error initializing push notifications:', err);
     }
