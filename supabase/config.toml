@@ -1,7 +1,1 @@
-project_id = "xxwdjfzcuudkxrbsjxto"
-
-[functions.send-push-notification]
-verify_jwt = false
-
-[functions.match-contacts]
-verify_jwt = true
+project_id = "jdoautwckoaxnwhdrzku"
