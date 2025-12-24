@@ -3,15 +3,19 @@ import { User, Session } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import { Profile } from "@/types/database";
 import { normalizeToE164, phoneToEmail } from "@/lib/phoneUtils";
+import { DEFAULT_CURRENCY } from "@/lib/currencies";
+
 interface AuthContextType {
   user: User | null;
   session: Session | null;
   profile: Profile | null;
   loading: boolean;
-  signUp: (email: string, password: string, username: string, phoneNumber: string) => Promise<{ error: Error | null }>;
+  currency: string;
+  signUp: (email: string, password: string, username: string, phoneNumber: string, currency?: string) => Promise<{ error: Error | null }>;
   signIn: (phoneNumber: string, password: string) => Promise<{ error: Error | null }>;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
+  updateSettings: (settings: Record<string, unknown>) => Promise<{ error: Error | null }>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -21,6 +25,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
+
+  const currency = (profile?.settings as any)?.currency || DEFAULT_CURRENCY;
 
   const fetchProfile = async (userId: string) => {
     const { data, error } = await supabase
@@ -70,7 +76,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => subscription.unsubscribe();
   }, []);
 
-  const signUp = async (email: string, password: string, username: string, phoneNumber: string) => {
+  const signUp = async (email: string, password: string, username: string, phoneNumber: string, userCurrency: string = DEFAULT_CURRENCY) => {
     const redirectUrl = `${window.location.origin}/`;
     
     // Normalize phone number to E.164 format
@@ -86,6 +92,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         data: {
           username,
           phone_number: normalizedPhone,
+          settings: { currency: userCurrency },
         },
       },
     });
@@ -94,9 +101,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signIn = async (phoneNumber: string, password: string) => {
-    // IMPORTANT: when logged out we can't query protected tables (RLS). Login must work
-    // without reading the profiles table.
-    // Use phoneToEmail for consistent email generation
     const email = phoneToEmail(phoneNumber);
     const digitsOnly = phoneNumber.replace(/[^0-9]/g, "");
 
@@ -121,8 +125,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signOut = async () => {
-    // Get queryClient from context - but since we're in the provider,
-    // we need to clear on the next event cycle
     await supabase.auth.signOut();
     setUser(null);
     setSession(null);
@@ -135,8 +137,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const updateSettings = async (newSettings: Record<string, unknown>) => {
+    if (!profile) return { error: new Error("No profile") };
+
+    const currentSettings = (profile.settings as Record<string, unknown>) || {};
+    const mergedSettings = { ...currentSettings, ...newSettings };
+
+    const { error } = await supabase
+      .from("profiles")
+      .update({ settings: mergedSettings as any })
+      .eq("id", profile.id);
+
+    if (!error) {
+      setProfile({ ...profile, settings: mergedSettings });
+    }
+
+    return { error: error as Error | null };
+  };
+
   return (
-    <AuthContext.Provider value={{ user, session, profile, loading, signUp, signIn, signOut, refreshProfile }}>
+    <AuthContext.Provider value={{ 
+      user, 
+      session, 
+      profile, 
+      loading, 
+      currency,
+      signUp, 
+      signIn, 
+      signOut, 
+      refreshProfile,
+      updateSettings 
+    }}>
       {children}
     </AuthContext.Provider>
   );

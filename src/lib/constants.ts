@@ -4,10 +4,21 @@ export const CURRENCY_SYMBOLS: Record<string, string> = {
   USD: "$",
   EUR: "€",
   GBP: "£",
+  PKR: "₨",
   INR: "₹",
-  JPY: "¥",
-  AUD: "A$",
+  AED: "د.إ",
+  SAR: "﷼",
   CAD: "C$",
+  AUD: "A$",
+  JPY: "¥",
+  CNY: "¥",
+  BDT: "৳",
+  MYR: "RM",
+  SGD: "S$",
+  QAR: "﷼",
+  KWD: "د.ك",
+  BHD: "ب.د",
+  OMR: "ر.ع.",
 };
 
 export const DEFAULT_CURRENCY = "USD";

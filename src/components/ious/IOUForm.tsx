@@ -2,6 +2,7 @@ import { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useContacts, Contact } from "@/hooks/useContacts";
 import { useIOUs, IOUInsert } from "@/hooks/useIOUs";
+import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -11,6 +12,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { AddContactDialog } from "@/components/contacts/AddContactDialog";
 import { AvatarCustom } from "@/components/ui/avatar-custom";
 import { cn } from "@/lib/utils";
+import { getCurrencySymbol } from "@/lib/currencies";
 import { format } from "date-fns";
 import {
   CalendarIcon,
@@ -25,8 +27,11 @@ import {
 
 export function IOUForm() {
   const navigate = useNavigate();
+  const { currency } = useAuth();
   const { contacts, addContact, loading: contactsLoading } = useContacts();
   const { createIOU } = useIOUs();
+
+  const currencySymbol = getCurrencySymbol(currency);
 
   // Form state
   const [description, setDescription] = useState("");
@@ -97,6 +102,7 @@ export function IOUForm() {
     const iouData: IOUInsert = {
       debtor_phone_number: selectedDebtor!.phone_number,
       amount: total,
+      currency,
       description: description.trim() || undefined,
       due_date: dueDate?.toISOString(),
     };

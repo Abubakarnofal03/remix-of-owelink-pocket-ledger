@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useAuth } from "@/hooks/useAuth";
+import { useTheme } from "@/hooks/useTheme";
 import { Navigate, useNavigate } from "react-router-dom";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
@@ -7,15 +8,36 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { AvatarCustom } from "@/components/ui/avatar-custom";
-import { ArrowLeft, User, Phone, Bell, Moon, Shield, LogOut } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { ArrowLeft, User, Phone, Bell, Moon, Shield, LogOut, Coins } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { CURRENCIES, getCurrencySymbol } from "@/lib/currencies";
+import { hapticSuccess } from "@/lib/haptics";
 
 export default function Settings() {
-  const { user, profile, loading: authLoading, signOut } = useAuth();
+  const { user, profile, loading: authLoading, signOut, currency, updateSettings } = useAuth();
+  const { theme, setTheme, resolvedTheme } = useTheme();
   const navigate = useNavigate();
   const [username, setUsername] = useState(profile?.username || "");
+  const [selectedCurrency, setSelectedCurrency] = useState(currency);
   const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (profile?.username) {
+      setUsername(profile.username);
+    }
+  }, [profile?.username]);
+
+  useEffect(() => {
+    setSelectedCurrency(currency);
+  }, [currency]);
 
   if (authLoading) return null;
   if (!user) return <Navigate to="/auth" replace />;
@@ -31,6 +53,7 @@ export default function Settings() {
         .eq("id", profile.id);
 
       if (error) throw error;
+      hapticSuccess();
       toast.success("Username updated");
     } catch (error) {
       console.error("Error updating username:", error);
@@ -38,6 +61,23 @@ export default function Settings() {
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleCurrencyChange = async (newCurrency: string) => {
+    setSelectedCurrency(newCurrency);
+    const { error } = await updateSettings({ currency: newCurrency });
+    if (error) {
+      toast.error("Failed to update currency");
+      setSelectedCurrency(currency);
+    } else {
+      hapticSuccess();
+      toast.success("Currency updated");
+    }
+  };
+
+  const handleDarkModeToggle = (checked: boolean) => {
+    setTheme(checked ? "dark" : "light");
+    hapticSuccess();
   };
 
   return (
@@ -87,6 +127,40 @@ export default function Settings() {
           </div>
         </div>
 
+        {/* Currency */}
+        <div className="card-elevated p-4 space-y-4">
+          <h3 className="font-semibold text-foreground flex items-center gap-2">
+            <Coins className="h-4 w-4" />
+            Currency
+          </h3>
+
+          <div className="space-y-2">
+            <Label>Default Currency</Label>
+            <Select value={selectedCurrency} onValueChange={handleCurrencyChange}>
+              <SelectTrigger className="w-full">
+                <SelectValue>
+                  <span className="flex items-center gap-2">
+                    <span className="font-medium">{getCurrencySymbol(selectedCurrency)}</span>
+                    <span>{selectedCurrency}</span>
+                  </span>
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {CURRENCIES.map((curr) => (
+                  <SelectItem key={curr.code} value={curr.code}>
+                    <span className="font-medium">{curr.symbol}</span>
+                    <span className="ml-2">{curr.code}</span>
+                    <span className="ml-2 text-muted-foreground">- {curr.name}</span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              This currency will be used as default for new bills and IOUs
+            </p>
+          </div>
+        </div>
+
         {/* Preferences */}
         <div className="card-elevated p-4 space-y-4">
           <h3 className="font-semibold text-foreground flex items-center gap-2">
@@ -103,11 +177,17 @@ export default function Settings() {
           </div>
 
           <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium">Dark Mode</p>
-              <p className="text-xs text-muted-foreground">Toggle dark/light theme</p>
+            <div className="flex items-center gap-2">
+              <Moon className="h-4 w-4 text-muted-foreground" />
+              <div>
+                <p className="text-sm font-medium">Dark Mode</p>
+                <p className="text-xs text-muted-foreground">Toggle dark/light theme</p>
+              </div>
             </div>
-            <Switch />
+            <Switch 
+              checked={resolvedTheme === "dark"}
+              onCheckedChange={handleDarkModeToggle}
+            />
           </div>
         </div>
 
