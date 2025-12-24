@@ -1,6 +1,7 @@
 import { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useContacts, Contact } from "@/hooks/useContacts";
+import { useDeviceContacts, DeviceContact } from "@/hooks/useDeviceContacts";
 import { useIOUs, IOUInsert } from "@/hooks/useIOUs";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
@@ -23,12 +24,14 @@ import {
   Phone,
   DollarSign,
   FileText,
+  Smartphone,
 } from "lucide-react";
 
 export function IOUForm() {
   const navigate = useNavigate();
   const { currency } = useAuth();
   const { contacts, addContact, loading: contactsLoading } = useContacts();
+  const { deviceContacts, fetchDeviceContacts, loading: deviceContactsLoading } = useDeviceContacts();
   const { createIOU } = useIOUs();
 
   const currencySymbol = getCurrencySymbol(currency);
@@ -37,11 +40,12 @@ export function IOUForm() {
   const [description, setDescription] = useState("");
   const [amount, setAmount] = useState("");
   const [dueDate, setDueDate] = useState<Date | undefined>();
-  const [selectedDebtor, setSelectedDebtor] = useState<Contact | null>(null);
+  const [selectedDebtor, setSelectedDebtor] = useState<{ phone_number: string; nickname: string | null } | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [showAddContact, setShowAddContact] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [showDeviceContacts, setShowDeviceContacts] = useState(false);
 
   const total = parseFloat(amount) || 0;
 
@@ -55,10 +59,46 @@ export function IOUForm() {
     );
   }, [contacts, searchQuery]);
 
-  // Select debtor
+  // Filter device contacts based on search
+  const filteredDeviceContacts = useMemo(() => {
+    const appContactPhones = new Set(contacts.map(c => c.phone_number));
+    
+    let filtered = deviceContacts.filter(
+      (c) => !appContactPhones.has(c.phone_number)
+    );
+
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      filtered = filtered.filter(
+        (c) =>
+          c.name?.toLowerCase().includes(q) || c.phone_number.includes(q)
+      );
+    }
+
+    return filtered;
+  }, [deviceContacts, contacts, searchQuery]);
+
+  // Fetch device contacts when showing
+  const handleShowDeviceContacts = async () => {
+    if (deviceContacts.length === 0) {
+      await fetchDeviceContacts();
+    }
+    setShowDeviceContacts(true);
+  };
+
+  // Select debtor from app contact
   const selectDebtor = (contact: Contact) => {
-    setSelectedDebtor(contact);
+    setSelectedDebtor({ phone_number: contact.phone_number, nickname: contact.nickname });
     setSearchQuery("");
+    setShowDeviceContacts(false);
+    if (errors.debtor) setErrors((prev) => ({ ...prev, debtor: "" }));
+  };
+
+  // Select debtor from device contact
+  const selectDebtorFromDevice = (deviceContact: DeviceContact) => {
+    setSelectedDebtor({ phone_number: deviceContact.phone_number, nickname: deviceContact.name });
+    setSearchQuery("");
+    setShowDeviceContacts(false);
     if (errors.debtor) setErrors((prev) => ({ ...prev, debtor: "" }));
   };
 
@@ -151,36 +191,40 @@ export function IOUForm() {
             </Button>
           </div>
         ) : (
-          <div className="relative">
-            <Input
-              placeholder="Search contacts by name or phone..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              icon={<Search className="h-4 w-4" />}
-              error={!!errors.debtor}
-            />
-
-            {/* Contact dropdown */}
-            {searchQuery && filteredContacts.length > 0 && (
-              <div className="absolute z-10 mt-1 w-full bg-popover border border-border rounded-lg shadow-lg max-h-48 overflow-y-auto">
-                {filteredContacts.map((contact) => (
-                  <button
-                    key={contact.id}
+          <>
+            {/* Device Contacts List */}
+            {showDeviceContacts && filteredDeviceContacts.length > 0 && (
+              <div className="border border-border rounded-lg overflow-hidden max-h-48 overflow-y-auto">
+                <div className="px-3 py-2 bg-muted/50 border-b border-border flex items-center justify-between">
+                  <span className="text-xs font-medium text-muted-foreground">Phone Contacts</span>
+                  <Button
                     type="button"
-                    className="w-full px-3 py-2 flex items-center gap-3 hover:bg-accent transition-colors text-left"
-                    onClick={() => selectDebtor(contact)}
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 px-2 text-xs"
+                    onClick={() => setShowDeviceContacts(false)}
+                  >
+                    <X className="h-3 w-3" />
+                  </Button>
+                </div>
+                {filteredDeviceContacts.map((deviceContact) => (
+                  <button
+                    key={deviceContact.id}
+                    type="button"
+                    className="w-full px-3 py-2 flex items-center gap-3 hover:bg-accent transition-colors text-left border-b border-border last:border-b-0"
+                    onClick={() => selectDebtorFromDevice(deviceContact)}
                   >
                     <AvatarCustom
-                      name={contact.nickname || contact.phone_number}
+                      name={deviceContact.name || deviceContact.phone_number}
                       size="sm"
                     />
                     <div className="flex-1 min-w-0">
                       <p className="font-medium text-sm truncate">
-                        {contact.nickname || contact.phone_number}
+                        {deviceContact.name || deviceContact.phone_number}
                       </p>
-                      {contact.nickname && (
+                      {deviceContact.name && (
                         <p className="text-xs text-muted-foreground truncate">
-                          {contact.phone_number}
+                          {deviceContact.phone_number}
                         </p>
                       )}
                     </div>
@@ -189,40 +233,96 @@ export function IOUForm() {
               </div>
             )}
 
-            {searchQuery && filteredContacts.length === 0 && !contactsLoading && (
-              <div className="absolute z-10 mt-1 w-full bg-popover border border-border rounded-lg shadow-lg p-3">
-                <p className="text-sm text-muted-foreground text-center mb-2">
-                  No contacts found
-                </p>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="w-full"
-                  onClick={() => setShowAddContact(true)}
-                >
-                  <Plus className="h-4 w-4 mr-1" />
-                  Add "{searchQuery}" as new contact
-                </Button>
-              </div>
-            )}
-          </div>
+            <div className="relative">
+              <Input
+                placeholder="Search contacts by name or phone..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                icon={<Search className="h-4 w-4" />}
+                error={!!errors.debtor}
+              />
+
+              {/* Contact dropdown */}
+              {searchQuery && filteredContacts.length > 0 && (
+                <div className="absolute z-10 mt-1 w-full bg-popover border border-border rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                  {filteredContacts.map((contact) => (
+                    <button
+                      key={contact.id}
+                      type="button"
+                      className="w-full px-3 py-2 flex items-center gap-3 hover:bg-accent transition-colors text-left"
+                      onClick={() => selectDebtor(contact)}
+                    >
+                      <AvatarCustom
+                        name={contact.nickname || contact.phone_number}
+                        size="sm"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium text-sm truncate">
+                          {contact.nickname || contact.phone_number}
+                        </p>
+                        {contact.nickname && (
+                          <p className="text-xs text-muted-foreground truncate">
+                            {contact.phone_number}
+                          </p>
+                        )}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {searchQuery && filteredContacts.length === 0 && !contactsLoading && (
+                <div className="absolute z-10 mt-1 w-full bg-popover border border-border rounded-lg shadow-lg p-3">
+                  <p className="text-sm text-muted-foreground text-center mb-2">
+                    No contacts found
+                  </p>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="w-full"
+                    onClick={() => setShowAddContact(true)}
+                  >
+                    <Plus className="h-4 w-4 mr-1" />
+                    Add "{searchQuery}" as new contact
+                  </Button>
+                </div>
+              )}
+            </div>
+          </>
         )}
 
         {errors.debtor && !selectedDebtor && (
           <p className="text-sm text-destructive">{errors.debtor}</p>
         )}
 
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          onClick={() => setShowAddContact(true)}
-          className="text-primary"
-        >
-          <Plus className="h-4 w-4 mr-1" />
-          New Contact
-        </Button>
+        <div className="flex gap-2">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={handleShowDeviceContacts}
+            className="text-primary"
+            disabled={deviceContactsLoading || !!selectedDebtor}
+          >
+            {deviceContactsLoading ? (
+              <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+            ) : (
+              <Smartphone className="h-4 w-4 mr-1" />
+            )}
+            From Phone
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => setShowAddContact(true)}
+            className="text-primary"
+          >
+            <Plus className="h-4 w-4 mr-1" />
+            New Contact
+          </Button>
+        </div>
       </div>
 
       {/* Amount */}
