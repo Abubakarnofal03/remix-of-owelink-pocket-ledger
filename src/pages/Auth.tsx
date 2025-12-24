@@ -1,13 +1,21 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Eye, EyeOff, Phone, User, Lock } from "lucide-react";
+import { Eye, EyeOff, Phone, User, Lock, Coins } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { CountryCodePicker } from "@/components/ui/CountryCodePicker";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { APP_NAME } from "@/lib/constants";
+import { CURRENCIES, DEFAULT_CURRENCY } from "@/lib/currencies";
 import { z } from "zod";
 import { normalizeToE164 } from "@/lib/phoneUtils";
 
@@ -15,6 +23,7 @@ const signUpSchema = z.object({
   username: z.string().min(2, "Username must be at least 2 characters").max(50),
   phoneNumber: z.string().min(4, "Enter a valid phone number").max(20),
   password: z.string().min(6, "Password must be at least 6 characters"),
+  currency: z.string().min(1, "Select a currency"),
 });
 
 const signInSchema = z.object({
@@ -31,6 +40,7 @@ export default function Auth() {
     countryCode: "+1",
     phoneNumber: "",
     password: "",
+    currency: DEFAULT_CURRENCY,
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
 
@@ -71,12 +81,12 @@ export default function Auth() {
           return;
         }
 
-        // signUp now handles email generation internally
         const { error } = await signUp(
-          "", // email is generated in useAuth from phone number
+          "",
           formData.password,
           formData.username,
-          fullPhoneNumber
+          fullPhoneNumber,
+          formData.currency
         );
 
         if (error) {
@@ -139,19 +149,49 @@ export default function Auth() {
 
           <form onSubmit={handleSubmit} className="space-y-4">
             {isSignUp && (
-              <div className="space-y-2">
-                <Label htmlFor="username">Username</Label>
-                <Input
-                  id="username"
-                  name="username"
-                  placeholder="Your name"
-                  icon={<User className="h-4 w-4" />}
-                  value={formData.username}
-                  onChange={handleChange}
-                  error={!!errors.username}
-                />
-                {errors.username && <p className="text-xs text-destructive">{errors.username}</p>}
-              </div>
+              <>
+                <div className="space-y-2">
+                  <Label htmlFor="username">Username</Label>
+                  <Input
+                    id="username"
+                    name="username"
+                    placeholder="Your name"
+                    icon={<User className="h-4 w-4" />}
+                    value={formData.username}
+                    onChange={handleChange}
+                    error={!!errors.username}
+                  />
+                  {errors.username && <p className="text-xs text-destructive">{errors.username}</p>}
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="currency">Default Currency</Label>
+                  <Select
+                    value={formData.currency}
+                    onValueChange={(value) => {
+                      setFormData((prev) => ({ ...prev, currency: value }));
+                      setErrors((prev) => ({ ...prev, currency: "" }));
+                    }}
+                  >
+                    <SelectTrigger className="w-full">
+                      <div className="flex items-center gap-2">
+                        <Coins className="h-4 w-4 text-muted-foreground" />
+                        <SelectValue placeholder="Select currency" />
+                      </div>
+                    </SelectTrigger>
+                    <SelectContent>
+                      {CURRENCIES.map((curr) => (
+                        <SelectItem key={curr.code} value={curr.code}>
+                          <span className="font-medium">{curr.symbol}</span>
+                          <span className="ml-2">{curr.code}</span>
+                          <span className="ml-2 text-muted-foreground">- {curr.name}</span>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {errors.currency && <p className="text-xs text-destructive">{errors.currency}</p>}
+                </div>
+              </>
             )}
 
             <div className="space-y-2">

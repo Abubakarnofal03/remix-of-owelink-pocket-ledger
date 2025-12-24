@@ -13,6 +13,7 @@ import { Switch } from "@/components/ui/switch";
 import { AddContactDialog } from "@/components/contacts/AddContactDialog";
 import { AvatarCustom } from "@/components/ui/avatar-custom";
 import { cn } from "@/lib/utils";
+import { getCurrencySymbol } from "@/lib/currencies";
 import { format } from "date-fns";
 import {
   Receipt,
@@ -39,9 +40,11 @@ interface Participant {
 
 export function BillForm() {
   const navigate = useNavigate();
-  const { profile } = useAuth();
+  const { profile, currency } = useAuth();
   const { contacts, addContact, loading: contactsLoading } = useContacts();
   const { createBill } = useBills();
+
+  const currencySymbol = getCurrencySymbol(currency);
 
   // Form state
   const [title, setTitle] = useState("");
@@ -148,7 +151,7 @@ export function BillForm() {
       const myAmount = includeMe ? splitAmount : 0;
       const expectedTotal = participantTotal + myAmount;
       if (Math.abs(expectedTotal - total) > 0.01) {
-        newErrors.split = `Amounts must equal $${total.toFixed(2)} (currently $${expectedTotal.toFixed(2)})`;
+        newErrors.split = `Amounts must equal ${currencySymbol}${total.toFixed(2)} (currently ${currencySymbol}${expectedTotal.toFixed(2)})`;
       }
     }
 
@@ -186,6 +189,7 @@ export function BillForm() {
       title: title.trim(),
       description: description.trim() || undefined,
       total_amount: total,
+      currency,
       due_date: dueDate?.toISOString(),
       participants: allParticipants,
     };
