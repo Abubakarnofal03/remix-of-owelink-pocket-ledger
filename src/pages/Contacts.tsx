@@ -6,9 +6,11 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { useContacts, Contact } from "@/hooks/useContacts";
 import { ContactList } from "@/components/contacts/ContactList";
 import { AddContactDialog } from "@/components/contacts/AddContactDialog";
+import { MatchedContactsList } from "@/components/contacts/MatchedContactsList";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PullToRefresh } from "@/components/ui/PullToRefresh";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -19,7 +21,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Users, Plus, Search, Download } from "lucide-react";
+import { Users, Plus, Search, Download, Smartphone } from "lucide-react";
 
 export default function Contacts() {
   const { user, loading: authLoading } = useAuth();
@@ -37,6 +39,7 @@ export default function Contacts() {
   const [searchQuery, setSearchQuery] = useState("");
   const [deleteTarget, setDeleteTarget] = useState<Contact | null>(null);
   const [importing, setImporting] = useState(false);
+  const [activeTab, setActiveTab] = useState("all");
   const navigate = useNavigate();
 
   if (authLoading) return null;
@@ -65,7 +68,7 @@ export default function Contacts() {
     <AppLayout>
       <PullToRefresh onRefresh={handleRefresh}>
         <div className="animate-fade-in">
-          <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center justify-between mb-4">
             <h1 className="font-display text-2xl font-bold text-foreground">Contacts</h1>
             <div className="flex gap-2">
               <Button 
@@ -75,7 +78,7 @@ export default function Contacts() {
                 disabled={importing}
               >
                 <Download className="h-4 w-4 mr-1" />
-                {importing ? "Importing..." : "Import"}
+                {importing ? "..." : "Import"}
               </Button>
               <Button size="sm" onClick={() => setShowAddDialog(true)}>
                 <Plus className="h-4 w-4 mr-1" />
@@ -84,32 +87,53 @@ export default function Contacts() {
             </div>
           </div>
 
-          {contacts.length > 0 && (
-            <div className="mb-4">
-              <Input
-                placeholder="Search contacts..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                icon={<Search className="h-4 w-4" />}
-              />
-            </div>
-          )}
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="mb-4">
+            <TabsList className="grid w-full grid-cols-2">
+              <TabsTrigger value="all" className="flex items-center gap-2">
+                <Users className="h-4 w-4" />
+                My Contacts
+              </TabsTrigger>
+              <TabsTrigger value="owelink" className="flex items-center gap-2">
+                <Smartphone className="h-4 w-4" />
+                On Owelink
+              </TabsTrigger>
+            </TabsList>
 
-          {contacts.length === 0 && !contactsLoading ? (
-            <EmptyState
-              icon={Users}
-              title="No contacts yet"
-              description="Add contacts to quickly split bills and track debts."
-              action={{ label: "Add Contact", onClick: () => setShowAddDialog(true) }}
-            />
-          ) : (
-            <ContactList
-              contacts={filteredContacts}
-              loading={contactsLoading}
-              onDelete={setDeleteTarget}
-              onClick={(contact) => navigate(`/contacts/${contact.id}`)}
-            />
-          )}
+            <TabsContent value="all" className="mt-4">
+              {contacts.length > 0 && (
+                <div className="mb-4">
+                  <Input
+                    placeholder="Search contacts..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    icon={<Search className="h-4 w-4" />}
+                  />
+                </div>
+              )}
+
+              {contacts.length === 0 && !contactsLoading ? (
+                <EmptyState
+                  icon={Users}
+                  title="No contacts yet"
+                  description="Add contacts to quickly split bills and track debts."
+                  action={{ label: "Add Contact", onClick: () => setShowAddDialog(true) }}
+                />
+              ) : (
+                <ContactList
+                  contacts={filteredContacts}
+                  loading={contactsLoading}
+                  onDelete={setDeleteTarget}
+                  onClick={(contact) => navigate(`/contacts/${contact.id}`)}
+                />
+              )}
+            </TabsContent>
+
+            <TabsContent value="owelink" className="mt-4">
+              <div className="card-elevated overflow-hidden">
+                <MatchedContactsList />
+              </div>
+            </TabsContent>
+          </Tabs>
 
           <AddContactDialog
             open={showAddDialog}
