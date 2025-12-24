@@ -111,13 +111,41 @@ const handler = async (req: Request): Promise<Response> => {
   }
 
   try {
-    const serviceAccountJson = Deno.env.get("FIREBASE_SERVICE_ACCOUNT");
-    if (!serviceAccountJson) {
+    const serviceAccountRaw = Deno.env.get("FIREBASE_SERVICE_ACCOUNT");
+    if (!serviceAccountRaw) {
       throw new Error("FIREBASE_SERVICE_ACCOUNT not configured");
     }
 
-    const serviceAccount = JSON.parse(serviceAccountJson);
+    // Parse service account JSON safely (also supports base64-encoded JSON)
+    const parseServiceAccount = (raw: string) => {
+      let jsonStr = raw.trim();
+
+      if (!jsonStr.startsWith("{")) {
+        try {
+          const decoded = atob(jsonStr);
+          if (decoded.trim().startsWith("{")) jsonStr = decoded.trim();
+        } catch {
+          // ignore
+        }
+      }
+
+      try {
+        return JSON.parse(jsonStr);
+      } catch {
+        const hint = jsonStr.length < 200
+          ? "It looks like a short key/id was saved instead of the full JSON."
+          : "The saved value isn't valid JSON.";
+        throw new Error(
+          `FIREBASE_SERVICE_ACCOUNT is invalid. Please paste the full Firebase service account JSON into the backend secret. ${hint}`
+        );
+      }
+    };
+
+    const serviceAccount = parseServiceAccount(serviceAccountRaw);
     const projectId = serviceAccount.project_id;
+    if (!projectId || !serviceAccount.client_email || !serviceAccount.private_key) {
+      throw new Error("FIREBASE_SERVICE_ACCOUNT is missing required fields (project_id, client_email, private_key)");
+    }
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
