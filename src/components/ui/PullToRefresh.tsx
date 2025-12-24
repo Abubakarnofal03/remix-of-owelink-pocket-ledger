@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback, ReactNode } from "react";
 import { Loader2 } from "lucide-react";
+import { hapticMedium, hapticLight } from "@/lib/haptics";
 
 interface PullToRefreshProps {
   onRefresh: () => Promise<void>;
@@ -13,6 +14,7 @@ export function PullToRefresh({ onRefresh, children }: PullToRefreshProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const startY = useRef(0);
   const isPulling = useRef(false);
+  const hasTriggeredHaptic = useRef(false);
 
   const THRESHOLD = 60;
 
@@ -22,6 +24,7 @@ export function PullToRefresh({ onRefresh, children }: PullToRefreshProps) {
     
     startY.current = e.touches[0].clientY;
     isPulling.current = true;
+    hasTriggeredHaptic.current = false;
   }, []);
 
   const handleTouchMove = useCallback((e: React.TouchEvent) => {
@@ -43,6 +46,14 @@ export function PullToRefresh({ onRefresh, children }: PullToRefreshProps) {
       const distance = Math.min(diff * 0.5, 100);
       setPullDistance(distance);
       setPulling(true);
+      
+      // Haptic when crossing threshold
+      if (distance >= THRESHOLD && !hasTriggeredHaptic.current) {
+        hasTriggeredHaptic.current = true;
+        hapticLight();
+      } else if (distance < THRESHOLD && hasTriggeredHaptic.current) {
+        hasTriggeredHaptic.current = false;
+      }
     }
   }, [refreshing]);
 
@@ -51,6 +62,7 @@ export function PullToRefresh({ onRefresh, children }: PullToRefreshProps) {
     isPulling.current = false;
     
     if (pullDistance >= THRESHOLD && !refreshing) {
+      hapticMedium(); // Stronger haptic on refresh trigger
       setRefreshing(true);
       setPullDistance(THRESHOLD);
       try {
