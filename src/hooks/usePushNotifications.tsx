@@ -4,6 +4,7 @@ import { PushNotifications, Token, PushNotificationSchema, ActionPerformed } fro
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
+import { saveNotification } from '@/lib/localNotifications';
 
 export function usePushNotifications() {
   const { user, profile } = useAuth();
@@ -60,18 +61,39 @@ export function usePushNotifications() {
       await PushNotifications.addListener('pushNotificationReceived', (notification: PushNotificationSchema) => {
         console.log('Push notification received:', notification);
         try {
+          // Save notification to local storage
+          saveNotification({
+            title: notification.title || 'Notification',
+            body: notification.body || '',
+            data: notification.data,
+          });
+          
+          // Dispatch event to update UI
+          window.dispatchEvent(new Event('notification-update'));
+          
+          // Show toast
           toast(notification.title || 'Notification', {
             description: notification.body,
           });
         } catch (err) {
-          console.error('Error showing toast:', err);
+          console.error('Error handling notification:', err);
         }
       });
 
       await PushNotifications.addListener('pushNotificationActionPerformed', (action: ActionPerformed) => {
         console.log('Push notification action:', action);
         try {
-          const data = action.notification.data;
+          // Also save when user taps on notification
+          const notification = action.notification;
+          saveNotification({
+            title: notification.title || 'Notification',
+            body: notification.body || '',
+            data: notification.data,
+          });
+          
+          window.dispatchEvent(new Event('notification-update'));
+          
+          const data = notification.data;
           if (data?.type === 'bill' && data?.id) {
             window.location.href = `/bills/${data.id}`;
           } else if (data?.type === 'iou' && data?.id) {
