@@ -8,6 +8,7 @@ import { ContactList } from "@/components/contacts/ContactList";
 import { AddContactDialog } from "@/components/contacts/AddContactDialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PullToRefresh } from "@/components/ui/PullToRefresh";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -28,7 +29,8 @@ export default function Contacts() {
     addContact, 
     deleteContact,
     importContactsFromDevice,
-    searchContacts 
+    searchContacts,
+    refetch
   } = useContacts();
 
   const [showAddDialog, setShowAddDialog] = useState(false);
@@ -55,82 +57,88 @@ export default function Contacts() {
     }
   };
 
+  const handleRefresh = async () => {
+    await refetch();
+  };
+
   return (
     <AppLayout>
-      <div className="animate-fade-in">
-        <div className="flex items-center justify-between mb-6">
-          <h1 className="font-display text-2xl font-bold text-foreground">Contacts</h1>
-          <div className="flex gap-2">
-            <Button 
-              variant="outline" 
-              size="sm"
-              onClick={handleImport}
-              disabled={importing}
-            >
-              <Download className="h-4 w-4 mr-1" />
-              {importing ? "Importing..." : "Import"}
-            </Button>
-            <Button size="sm" onClick={() => setShowAddDialog(true)}>
-              <Plus className="h-4 w-4 mr-1" />
-              Add
-            </Button>
+      <PullToRefresh onRefresh={handleRefresh}>
+        <div className="animate-fade-in">
+          <div className="flex items-center justify-between mb-6">
+            <h1 className="font-display text-2xl font-bold text-foreground">Contacts</h1>
+            <div className="flex gap-2">
+              <Button 
+                variant="outline" 
+                size="sm"
+                onClick={handleImport}
+                disabled={importing}
+              >
+                <Download className="h-4 w-4 mr-1" />
+                {importing ? "Importing..." : "Import"}
+              </Button>
+              <Button size="sm" onClick={() => setShowAddDialog(true)}>
+                <Plus className="h-4 w-4 mr-1" />
+                Add
+              </Button>
+            </div>
           </div>
-        </div>
 
-        {contacts.length > 0 && (
-          <div className="mb-4">
-            <Input
-              placeholder="Search contacts..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              icon={<Search className="h-4 w-4" />}
+          {contacts.length > 0 && (
+            <div className="mb-4">
+              <Input
+                placeholder="Search contacts..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                icon={<Search className="h-4 w-4" />}
+              />
+            </div>
+          )}
+
+          {contacts.length === 0 && !contactsLoading ? (
+            <EmptyState
+              icon={Users}
+              title="No contacts yet"
+              description="Add contacts to quickly split bills and track debts."
+              action={{ label: "Add Contact", onClick: () => setShowAddDialog(true) }}
             />
-          </div>
-        )}
+          ) : (
+            <ContactList
+              contacts={filteredContacts}
+              loading={contactsLoading}
+              onDelete={setDeleteTarget}
+              onClick={(contact) => navigate(`/contacts/${contact.id}`)}
+            />
+          )}
 
-        {contacts.length === 0 && !contactsLoading ? (
-          <EmptyState
-            icon={Users}
-            title="No contacts yet"
-            description="Add contacts to quickly split bills and track debts."
-            action={{ label: "Add Contact", onClick: () => setShowAddDialog(true) }}
+          <AddContactDialog
+            open={showAddDialog}
+            onOpenChange={setShowAddDialog}
+            onAdd={addContact}
           />
-        ) : (
-          <ContactList
-            contacts={filteredContacts}
-            loading={contactsLoading}
-            onDelete={setDeleteTarget}
-            onClick={(contact) => navigate(`/contacts/${contact.id}`)}
-          />
-        )}
 
-        <AddContactDialog
-          open={showAddDialog}
-          onOpenChange={setShowAddDialog}
-          onAdd={addContact}
-        />
-
-        <AlertDialog open={!!deleteTarget} onOpenChange={() => setDeleteTarget(null)}>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Delete Contact</AlertDialogTitle>
-              <AlertDialogDescription>
-                Are you sure you want to delete{" "}
-                <span className="font-medium">
-                  {deleteTarget?.nickname || deleteTarget?.phone_number}
-                </span>
-                ? This action cannot be undone.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel>Cancel</AlertDialogCancel>
-              <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
-                Delete
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-      </div>
+          <AlertDialog open={!!deleteTarget} onOpenChange={() => setDeleteTarget(null)}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Delete Contact</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Are you sure you want to delete{" "}
+                  <span className="font-medium">
+                    {deleteTarget?.nickname || deleteTarget?.phone_number}
+                  </span>
+                  ? This action cannot be undone.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                  Delete
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </div>
+      </PullToRefresh>
     </AppLayout>
   );
 }
