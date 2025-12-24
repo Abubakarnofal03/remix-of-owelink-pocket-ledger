@@ -10,6 +10,8 @@ import Bills from "./pages/Bills";
 import NewBill from "./pages/NewBill";
 import BillDetail from "./pages/BillDetail";
 import IOUs from "./pages/IOUs";
+import NewIOU from "./pages/NewIOU";
+import IOUDetail from "./pages/IOUDetail";
 import Contacts from "./pages/Contacts";
 import ContactDetail from "./pages/ContactDetail";
 import Notifications from "./pages/Notifications";
@@ -40,6 +42,8 @@ const App = () => (
             <Route path="/bills/new" element={<NewBill />} />
             <Route path="/bills/:id" element={<BillDetail />} />
             <Route path="/ious" element={<IOUs />} />
+            <Route path="/ious/new" element={<NewIOU />} />
+            <Route path="/ious/:id" element={<IOUDetail />} />
             <Route path="/contacts" element={<Contacts />} />
             <Route path="/contacts/:id" element={<ContactDetail />} />
             <Route path="/notifications" element={<Notifications />} />
