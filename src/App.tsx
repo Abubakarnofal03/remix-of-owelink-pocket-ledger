@@ -7,6 +7,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { useCapacitor } from "@/hooks/useCapacitor";
+import { usePushNotifications } from "@/hooks/usePushNotifications";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import Bills from "./pages/Bills";
@@ -52,6 +53,7 @@ function AuthCacheClearer() {
 // Component to initialize Capacitor native features
 function CapacitorInitializer() {
   useCapacitor();
+  usePushNotifications();
   return null;
 }
 

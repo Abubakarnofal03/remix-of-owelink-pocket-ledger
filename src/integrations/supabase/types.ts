@@ -174,6 +174,36 @@ export type Database = {
           },
         ]
       }
+      device_tokens: {
+        Row: {
+          created_at: string
+          device_platform: string | null
+          fcm_token: string
+          id: string
+          phone_suffix: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          device_platform?: string | null
+          fcm_token: string
+          id?: string
+          phone_suffix: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          device_platform?: string | null
+          fcm_token?: string
+          id?: string
+          phone_suffix?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       invoices: {
         Row: {
           amount_paid: number

@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "./useAuth";
 import { toast } from "sonner";
+import { sendPushNotification, getPhoneSuffix } from "@/lib/notifications";
 
 export interface IOU {
   id: string;
@@ -101,6 +102,17 @@ export function useIOUs() {
     onSuccess: (newIOU) => {
       queryClient.setQueryData<IOU[]>(iousQueryKey, (old = []) => [newIOU, ...old]);
       toast.success("IOU created successfully");
+      
+      // Send push notification to debtor
+      const phoneSuffix = getPhoneSuffix(newIOU.debtor_phone_number);
+      if (phoneSuffix) {
+        sendPushNotification({
+          phoneSuffixes: [phoneSuffix],
+          title: "New IOU",
+          body: `You owe ${newIOU.currency} ${newIOU.amount}${newIOU.description ? ` for "${newIOU.description}"` : ""}`,
+          data: { type: "iou", id: newIOU.id },
+        });
+      }
     },
     onError: (error: any) => {
       console.error("Error creating IOU:", error);
@@ -130,6 +142,17 @@ export function useIOUs() {
         old.map(i => i.id === data.id ? { ...i, ...data } : i)
       );
       toast.success("IOU updated");
+      
+      // Send push notification to debtor
+      const phoneSuffix = getPhoneSuffix(data.debtor_phone_number);
+      if (phoneSuffix) {
+        sendPushNotification({
+          phoneSuffixes: [phoneSuffix],
+          title: "IOU Updated",
+          body: `Your IOU${data.description ? ` for "${data.description}"` : ""} has been updated`,
+          data: { type: "iou", id: data.id },
+        });
+      }
     },
     onError: (error: any) => {
       console.error("Error updating IOU:", error);
@@ -148,10 +171,24 @@ export function useIOUs() {
       return id;
     },
     onSuccess: (id) => {
+      const deletedIOU = queryClient.getQueryData<IOU[]>(iousQueryKey)?.find(i => i.id === id);
       queryClient.setQueryData<IOU[]>(iousQueryKey, (old = []) =>
         old.filter(i => i.id !== id)
       );
       toast.success("IOU deleted");
+      
+      // Send push notification to debtor
+      if (deletedIOU) {
+        const phoneSuffix = getPhoneSuffix(deletedIOU.debtor_phone_number);
+        if (phoneSuffix) {
+          sendPushNotification({
+            phoneSuffixes: [phoneSuffix],
+            title: "IOU Removed",
+            body: `An IOU${deletedIOU.description ? ` for "${deletedIOU.description}"` : ""} has been removed`,
+            data: { type: "iou", id },
+          });
+        }
+      }
     },
     onError: (error: any) => {
       console.error("Error deleting IOU:", error);

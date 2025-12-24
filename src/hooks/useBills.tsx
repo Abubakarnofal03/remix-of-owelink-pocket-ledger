@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "./useAuth";
 import { toast } from "sonner";
+import { sendPushNotification, getPhoneSuffix } from "@/lib/notifications";
 
 export interface BillParticipant {
   id: string;
@@ -135,6 +136,19 @@ export function useBills() {
     onSuccess: (newBill) => {
       queryClient.setQueryData<Bill[]>(billsQueryKey, (old = []) => [newBill, ...old]);
       toast.success("Bill created successfully");
+      
+      // Send push notifications to participants
+      const phoneSuffixes = newBill.participants
+        ?.map(p => getPhoneSuffix(p.phone_number))
+        .filter(Boolean) || [];
+      if (phoneSuffixes.length > 0) {
+        sendPushNotification({
+          phoneSuffixes,
+          title: "New Bill Added",
+          body: `You've been added to "${newBill.title}" - ${newBill.currency} ${newBill.total_amount}`,
+          data: { type: "bill", id: newBill.id },
+        });
+      }
     },
     onError: (error: any) => {
       console.error("Error creating bill:", error);
@@ -160,10 +174,24 @@ export function useBills() {
       return data;
     },
     onSuccess: (data) => {
+      const existingBill = queryClient.getQueryData<Bill[]>(billsQueryKey)?.find(b => b.id === data.id);
       queryClient.setQueryData<Bill[]>(billsQueryKey, (old = []) =>
         old.map(b => b.id === data.id ? { ...b, ...data } : b)
       );
       toast.success("Bill updated");
+      
+      // Send push notifications to participants
+      const phoneSuffixes = existingBill?.participants
+        ?.map(p => getPhoneSuffix(p.phone_number))
+        .filter(Boolean) || [];
+      if (phoneSuffixes.length > 0) {
+        sendPushNotification({
+          phoneSuffixes,
+          title: "Bill Updated",
+          body: `"${data.title}" has been updated`,
+          data: { type: "bill", id: data.id },
+        });
+      }
     },
     onError: (error: any) => {
       console.error("Error updating bill:", error);
@@ -181,11 +209,25 @@ export function useBills() {
       if (error) throw error;
       return id;
     },
-    onSuccess: (id) => {
+    onSuccess: (id, _, context) => {
+      const deletedBill = queryClient.getQueryData<Bill[]>(billsQueryKey)?.find(b => b.id === id);
       queryClient.setQueryData<Bill[]>(billsQueryKey, (old = []) =>
         old.filter(b => b.id !== id)
       );
       toast.success("Bill deleted");
+      
+      // Send push notifications to participants
+      const phoneSuffixes = deletedBill?.participants
+        ?.map(p => getPhoneSuffix(p.phone_number))
+        .filter(Boolean) || [];
+      if (phoneSuffixes.length > 0 && deletedBill) {
+        sendPushNotification({
+          phoneSuffixes,
+          title: "Bill Deleted",
+          body: `"${deletedBill.title}" has been removed`,
+          data: { type: "bill", id },
+        });
+      }
     },
     onError: (error: any) => {
       console.error("Error deleting bill:", error);
