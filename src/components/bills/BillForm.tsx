@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useContacts, Contact } from "@/hooks/useContacts";
+import { useDeviceContacts, DeviceContact } from "@/hooks/useDeviceContacts";
 import { useBills, BillInsert } from "@/hooks/useBills";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
@@ -27,6 +28,7 @@ import {
   DollarSign,
   Check,
   User,
+  Smartphone,
 } from "lucide-react";
 
 interface Participant {
@@ -42,6 +44,7 @@ export function BillForm() {
   const navigate = useNavigate();
   const { profile, currency } = useAuth();
   const { contacts, addContact, loading: contactsLoading } = useContacts();
+  const { deviceContacts, fetchDeviceContacts, loading: deviceContactsLoading } = useDeviceContacts();
   const { createBill } = useBills();
 
   const currencySymbol = getCurrencySymbol(currency);
@@ -58,6 +61,7 @@ export function BillForm() {
   const [showAddContact, setShowAddContact] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [showDeviceContacts, setShowDeviceContacts] = useState(false);
 
   // Calculate split amounts
   const total = parseFloat(totalAmount) || 0;
@@ -93,12 +97,56 @@ export function BillForm() {
     return filtered;
   }, [contacts, participants, searchQuery, profile?.phone_number]);
 
+  // Filter device contacts based on search and exclude already selected
+  const filteredDeviceContacts = useMemo(() => {
+    const selectedPhones = new Set(participants.map((p) => p.phone_number));
+    if (profile?.phone_number) {
+      selectedPhones.add(profile.phone_number);
+    }
+    // Also exclude contacts that are already in app contacts
+    const appContactPhones = new Set(contacts.map(c => c.phone_number));
+    
+    let filtered = deviceContacts.filter(
+      (c) => !selectedPhones.has(c.phone_number) && !appContactPhones.has(c.phone_number)
+    );
+
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      filtered = filtered.filter(
+        (c) =>
+          c.name?.toLowerCase().includes(q) || c.phone_number.includes(q)
+      );
+    }
+
+    return filtered;
+  }, [deviceContacts, contacts, participants, searchQuery, profile?.phone_number]);
+
+  // Fetch device contacts when showing
+  const handleShowDeviceContacts = async () => {
+    if (deviceContacts.length === 0) {
+      await fetchDeviceContacts();
+    }
+    setShowDeviceContacts(true);
+  };
+
   // Add participant from contact
   const addParticipant = (contact: Contact) => {
     const newParticipant: Participant = {
       id: contact.id,
       phone_number: contact.phone_number,
       nickname: contact.nickname,
+      amount: equalSplit ? splitAmount : 0,
+    };
+    setParticipants((prev) => [...prev, newParticipant]);
+    setSearchQuery("");
+  };
+
+  // Add participant from device contact
+  const addParticipantFromDevice = (deviceContact: DeviceContact) => {
+    const newParticipant: Participant = {
+      id: deviceContact.id,
+      phone_number: deviceContact.phone_number,
+      nickname: deviceContact.name,
       amount: equalSplit ? splitAmount : 0,
     };
     setParticipants((prev) => [...prev, newParticipant]);
@@ -315,17 +363,76 @@ export function BillForm() {
             <Users className="h-4 w-4" />
             Participants
           </Label>
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            onClick={() => setShowAddContact(true)}
-            className="text-primary"
-          >
-            <Plus className="h-4 w-4 mr-1" />
-            New Contact
-          </Button>
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={handleShowDeviceContacts}
+              className="text-primary"
+              disabled={deviceContactsLoading}
+            >
+              {deviceContactsLoading ? (
+                <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+              ) : (
+                <Smartphone className="h-4 w-4 mr-1" />
+              )}
+              From Phone
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => setShowAddContact(true)}
+              className="text-primary"
+            >
+              <Plus className="h-4 w-4 mr-1" />
+              New
+            </Button>
+          </div>
         </div>
+
+        {/* Device Contacts List */}
+        {showDeviceContacts && filteredDeviceContacts.length > 0 && (
+          <div className="border border-border rounded-lg overflow-hidden max-h-48 overflow-y-auto">
+            <div className="px-3 py-2 bg-muted/50 border-b border-border flex items-center justify-between">
+              <span className="text-xs font-medium text-muted-foreground">Phone Contacts</span>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-6 px-2 text-xs"
+                onClick={() => setShowDeviceContacts(false)}
+              >
+                <X className="h-3 w-3" />
+              </Button>
+            </div>
+            {filteredDeviceContacts.map((deviceContact) => (
+              <button
+                key={deviceContact.id}
+                type="button"
+                className="w-full px-3 py-2 flex items-center gap-3 hover:bg-accent transition-colors text-left border-b border-border last:border-b-0"
+                onClick={() => addParticipantFromDevice(deviceContact)}
+              >
+                <AvatarCustom
+                  name={deviceContact.name || deviceContact.phone_number}
+                  size="sm"
+                />
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium text-sm truncate">
+                    {deviceContact.name || deviceContact.phone_number}
+                  </p>
+                  {deviceContact.name && (
+                    <p className="text-xs text-muted-foreground truncate">
+                      {deviceContact.phone_number}
+                    </p>
+                  )}
+                </div>
+                <Plus className="h-4 w-4 text-muted-foreground" />
+              </button>
+            ))}
+          </div>
+        )}
 
         {/* Search Contacts */}
         <div className="relative">
