@@ -7,7 +7,9 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "@/hooks/useAuth";
 import { ThemeProvider } from "@/hooks/useTheme";
 import { CurrencyProvider } from "@/hooks/useCurrency";
+import { OfflineProvider } from "@/hooks/useOffline";
 import { supabase } from "@/integrations/supabase/client";
+import { offlineDb } from "@/lib/offline/db";
 import { useCapacitor } from "@/hooks/useCapacitor";
 import { usePushNotifications } from "@/hooks/usePushNotifications";
 import { useBackButton } from "@/hooks/useBackButton";
@@ -44,6 +46,7 @@ function AuthCacheClearer() {
       if (event === "SIGNED_OUT") {
         // Clear all cached data when user signs out
         qc.clear();
+        offlineDb.clearAllData();
       }
     });
 
@@ -90,15 +93,17 @@ const App = () => (
     <QueryClientProvider client={queryClient}>
       <AuthCacheClearer />
       <AuthProvider>
-        <CurrencyProvider>
-          <TooltipProvider>
-            <Toaster />
-            <Sonner />
-            <BrowserRouter>
-              <AppRoutes />
-            </BrowserRouter>
-          </TooltipProvider>
-        </CurrencyProvider>
+        <OfflineProvider>
+          <CurrencyProvider>
+            <TooltipProvider>
+              <Toaster />
+              <Sonner />
+              <BrowserRouter>
+                <AppRoutes />
+              </BrowserRouter>
+            </TooltipProvider>
+          </CurrencyProvider>
+        </OfflineProvider>
       </AuthProvider>
     </QueryClientProvider>
   </ThemeProvider>
