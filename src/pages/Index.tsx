@@ -4,6 +4,7 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import { MoneyDisplay } from "@/components/ui/MoneyDisplay";
 import { Button } from "@/components/ui/button";
 import { useBalances } from "@/hooks/useBalances";
+import { useCurrency } from "@/hooks/useCurrency";
 import { PullToRefresh } from "@/components/ui/PullToRefresh";
 import { format } from "date-fns";
 import {
@@ -20,6 +21,7 @@ import {
 export default function Index() {
   const { user, profile, loading } = useAuth();
   const { owedToYou, youOwe, netBalance, recentActivity, loading: balancesLoading, refetch } = useBalances();
+  const { currency } = useCurrency();
 
   if (loading) {
     return (
@@ -70,6 +72,7 @@ export default function Index() {
               </div>
               <MoneyDisplay 
                 amount={balancesLoading ? 0 : owedToYou} 
+                currency={currency}
                 size="lg" 
                 className="text-foreground" 
               />
@@ -84,6 +87,7 @@ export default function Index() {
               </div>
               <MoneyDisplay 
                 amount={balancesLoading ? 0 : youOwe} 
+                currency={currency}
                 size="lg" 
                 className="text-foreground" 
               />
@@ -97,6 +101,7 @@ export default function Index() {
                 <p className="text-sm text-muted-foreground mb-1">Net Balance</p>
                 <MoneyDisplay 
                   amount={balancesLoading ? 0 : netBalance} 
+                  currency={currency}
                   size="xl" 
                   showSign 
                 />
