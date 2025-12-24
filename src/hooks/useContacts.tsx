@@ -4,6 +4,8 @@ import { useAuth } from "./useAuth";
 import { toast } from "sonner";
 import { extractPhoneSuffix } from "@/lib/phoneUtils";
 import { useCallback } from "react";
+import { Capacitor } from "@capacitor/core";
+import { Contacts } from "@capacitor-community/contacts";
 
 export interface Contact {
   id: string;
@@ -154,47 +156,98 @@ export function useContacts() {
   };
 
   const importContactsFromDevice = async (): Promise<number> => {
-    // Check if Contacts API is available (for PWA/Capacitor)
-    if (!("contacts" in navigator && "ContactsManager" in window)) {
+    // Check if running on native platform
+    if (!Capacitor.isNativePlatform()) {
+      // Fallback to Web Contact Picker API for PWA
+      if ("contacts" in navigator && "ContactsManager" in window) {
+        try {
+          const props = ["tel", "name"];
+          const opts = { multiple: true };
+          // @ts-ignore - Contacts API is experimental
+          const deviceContacts = await navigator.contacts.select(props, opts);
+          
+          let imported = 0;
+          for (const contact of deviceContacts) {
+            if (contact.tel && contact.tel.length > 0) {
+              const phone = contact.tel[0];
+              const phoneSuffix = extractPhoneSuffix(phone);
+              const name = contact.name?.[0] || null;
+              
+              if (contacts.find(c => c.phone_suffix === phoneSuffix || extractPhoneSuffix(c.phone_number) === phoneSuffix)) continue;
+              
+              const result = await addContact({
+                phone_number: phone,
+                nickname: name || undefined,
+              });
+              
+              if (result) imported++;
+            }
+          }
+          
+          if (imported > 0) {
+            toast.success(`Imported ${imported} contacts`);
+          }
+          return imported;
+        } catch (error: any) {
+          if (error.name !== "AbortError") {
+            console.error("Error importing contacts:", error);
+            toast.error("Failed to import contacts");
+          }
+          return 0;
+        }
+      }
       toast.error("Contact import not supported on this device");
       return 0;
     }
 
+    // Native Capacitor contacts
     try {
-      const props = ["tel", "name"];
-      const opts = { multiple: true };
-      
-      // @ts-ignore - Contacts API is experimental
-      const deviceContacts = await navigator.contacts.select(props, opts);
-      
+      // Request permission first
+      const permResult = await Contacts.requestPermissions();
+      if (permResult.contacts !== "granted") {
+        toast.error("Contact permission denied");
+        return 0;
+      }
+
+      // Get all contacts from device
+      const result = await Contacts.getContacts({
+        projection: {
+          name: true,
+          phones: true,
+        },
+      });
+
       let imported = 0;
-      for (const contact of deviceContacts) {
-        if (contact.tel && contact.tel.length > 0) {
-          const phone = contact.tel[0];
-          const phoneSuffix = extractPhoneSuffix(phone);
-          const name = contact.name?.[0] || null;
+      for (const deviceContact of result.contacts) {
+        const phones = deviceContact.phones;
+        if (phones && phones.length > 0) {
+          const phone = phones[0].number;
+          if (!phone) continue;
           
-          // Skip if already exists (check by phone_suffix)
+          const phoneSuffix = extractPhoneSuffix(phone);
+          const name = deviceContact.name?.display || deviceContact.name?.given || null;
+          
+          // Skip if already exists
           if (contacts.find(c => c.phone_suffix === phoneSuffix || extractPhoneSuffix(c.phone_number) === phoneSuffix)) continue;
           
-          const result = await addContact({
+          const contactResult = await addContact({
             phone_number: phone,
             nickname: name || undefined,
           });
           
-          if (result) imported++;
+          if (contactResult) imported++;
         }
       }
       
       if (imported > 0) {
         toast.success(`Imported ${imported} contacts`);
+      } else {
+        toast.info("No new contacts to import");
       }
       return imported;
     } catch (error: any) {
-      if (error.name !== "AbortError") {
-        console.error("Error importing contacts:", error);
-        toast.error("Failed to import contacts");
-      }
+      console.error("Error importing contacts:", error);
+      toast.error("Failed to import contacts");
       return 0;
     }
   };
