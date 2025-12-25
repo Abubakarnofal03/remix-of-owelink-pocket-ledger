@@ -3,7 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "./useAuth";
 import { toast } from "sonner";
 import { sendPushNotification, getPhoneSuffix } from "@/lib/notifications";
-
+import { offlineDb } from "@/lib/offline/db";
 export interface IOU {
   id: string;
   creditor_id: string;
@@ -162,12 +162,30 @@ export function useIOUs() {
 
   const deleteIOUMutation = useMutation({
     mutationFn: async (id: string) => {
-      const { error } = await supabase
+      // Try soft delete first
+      const { error: softDeleteError } = await supabase
         .from("ious")
         .update({ deleted_at: new Date().toISOString() })
         .eq("id", id);
 
-      if (error) throw error;
+      // If soft delete fails (e.g., RLS issue), fallback to hard delete
+      if (softDeleteError) {
+        console.warn("Soft delete failed, attempting hard delete:", softDeleteError);
+        const { error: hardDeleteError } = await supabase
+          .from("ious")
+          .delete()
+          .eq("id", id);
+
+        if (hardDeleteError) throw hardDeleteError;
+      }
+
+      // Also remove from offline storage
+      try {
+        await offlineDb.ious.delete(id);
+      } catch (e) {
+        console.warn("Failed to delete IOU from offline storage:", e);
+      }
+
       return id;
     },
     onSuccess: (id) => {
