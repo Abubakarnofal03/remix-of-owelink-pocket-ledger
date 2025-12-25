@@ -101,23 +101,46 @@ export function useBills() {
     queryFn: async () => {
       if (!user) return [];
 
-      // 1. Get local data first (instant)
-      const localBills = await fetchBillsOfflineFirst(user.id);
-      const mappedBills = localBills.map(localBillToBill);
+      // 1. Try to get local data first (instant)
+      try {
+        const localBills = await fetchBillsOfflineFirst(user.id);
+        const mappedBills = localBills.map(localBillToBill);
 
-      // 2. If online, sync from server in background
-      if (navigator.onLine) {
-        try {
-          await syncBillsFromServer(user.id);
-          // Get updated local data after sync
-          const updatedLocal = await fetchBillsOfflineFirst(user.id);
-          return updatedLocal.map(localBillToBill);
-        } catch (e) {
-          console.warn("Failed to sync bills from server, using local data:", e);
+        // 2. If online, sync from server in background
+        if (navigator.onLine) {
+          try {
+            await syncBillsFromServer(user.id);
+            // Get updated local data after sync
+            const updatedLocal = await fetchBillsOfflineFirst(user.id);
+            if (updatedLocal.length > 0) {
+              return updatedLocal.map(localBillToBill);
+            }
+          } catch (e) {
+            console.warn("Failed to sync bills from server:", e);
+          }
         }
+
+        // Return local data if we have it
+        if (mappedBills.length > 0) {
+          return mappedBills;
+        }
+      } catch (localError) {
+        console.warn("Local DB not available, falling back to server:", localError);
       }
 
-      return mappedBills;
+      // 3. Fallback: fetch directly from server (for when IndexedDB fails)
+      if (navigator.onLine) {
+        const { data, error } = await supabase
+          .from("bills")
+          .select(`*, participants:bill_participants(*)`)
+          .is("deleted_at", null)
+          .order("created_at", { ascending: false });
+
+        if (error) throw error;
+        return (data || []) as Bill[];
+      }
+
+      return [];
     },
     enabled: !!user,
     staleTime: 30 * 1000, // 30 seconds - shorter since we use local first
@@ -128,8 +151,16 @@ export function useBills() {
     mutationFn: async (bill: BillInsert) => {
       if (!user) throw new Error("Not authenticated");
 
-      // Always create locally first
-      const localBill = await createBillOfflineFirst(user.id, bill as BillInsertOffline);
+      let localBill: LocalBill | null = null;
+      let localDbAvailable = false;
+
+      // Try to create locally first
+      try {
+        localBill = await createBillOfflineFirst(user.id, bill as BillInsertOffline);
+        localDbAvailable = !!localBill;
+      } catch (localError) {
+        console.warn("Local DB not available for create:", localError);
+      }
 
       // If online, try to sync immediately
       if (navigator.onLine) {
@@ -167,35 +198,48 @@ export function useBills() {
 
           if (participantsError) throw participantsError;
 
-          // Update local DB with server data (replace local entry)
-          await offlineDb.bills.delete(localBill.id);
-          await offlineDb.billParticipants.where("bill_id").equals(localBill.id).delete();
-          
-          await offlineDb.bills.put({
-            ...billData,
-            is_local: false,
-          });
-          
-          for (const p of participantsData) {
-            await offlineDb.billParticipants.put({
-              ...p,
-              is_local: false,
-            });
-          }
+          // Update local DB with server data (if available)
+          if (localDbAvailable && localBill) {
+            try {
+              await offlineDb.bills.delete(localBill.id);
+              await offlineDb.billParticipants.where("bill_id").equals(localBill.id).delete();
+              
+              await offlineDb.bills.put({
+                ...billData,
+                is_local: false,
+              });
+              
+              for (const p of participantsData) {
+                await offlineDb.billParticipants.put({
+                  ...p,
+                  is_local: false,
+                });
+              }
 
-          // Clear sync queue for this item
-          await offlineDb.syncQueue.where("entity_id").equals(localBill.id).delete();
+              // Clear sync queue for this item
+              await offlineDb.syncQueue.where("entity_id").equals(localBill.id).delete();
+            } catch (dbError) {
+              console.warn("Failed to update local DB:", dbError);
+            }
+          }
 
           return { ...billData, participants: participantsData };
         } catch (e) {
-          console.warn("Failed to sync bill to server, will retry later:", e);
-          // Return local data - it's already queued for sync
-          return localBillToBill(localBill as LocalBill & { participants?: LocalBillParticipant[] });
+          console.warn("Failed to sync bill to server:", e);
+          // If we have local data, return it - it's queued for sync
+          if (localBill) {
+            return localBillToBill(localBill as LocalBill & { participants?: LocalBillParticipant[] });
+          }
+          throw e; // No local fallback, rethrow
         }
       }
 
-      // Offline - return local data
-      return localBillToBill(localBill as LocalBill & { participants?: LocalBillParticipant[] });
+      // Offline - return local data if we have it
+      if (localBill) {
+        return localBillToBill(localBill as LocalBill & { participants?: LocalBillParticipant[] });
+      }
+
+      throw new Error("Cannot create bill: offline and local storage unavailable");
     },
     onSuccess: (newBill) => {
       queryClient.setQueryData<Bill[]>(billsQueryKey, (old = []) => [newBill, ...old]);

@@ -1,4 +1,27 @@
 import Dexie, { Table } from 'dexie';
+import { Capacitor } from '@capacitor/core';
+
+// Check if IndexedDB is available
+export function isIndexedDBAvailable(): boolean {
+  try {
+    // Check if indexedDB exists
+    if (!window.indexedDB) {
+      console.warn('IndexedDB not available');
+      return false;
+    }
+    
+    // Try a test operation
+    const testDb = window.indexedDB.open('__test_db__');
+    testDb.onerror = () => {
+      console.warn('IndexedDB test failed');
+    };
+    
+    return true;
+  } catch (e) {
+    console.warn('IndexedDB check failed:', e);
+    return false;
+  }
+}
 
 // Define interfaces for local storage
 export interface LocalProfile {
@@ -158,6 +181,9 @@ class OfflineDatabase extends Dexie {
   localAppContacts!: Table<LocalAppContact, string>;
   nicknameOverrides!: Table<NicknameOverride, string>;
 
+  private _isReady = false;
+  private _initPromise: Promise<void> | null = null;
+
   constructor() {
     super('owelink_offline_db');
 
@@ -188,10 +214,72 @@ class OfflineDatabase extends Dexie {
       localAppContacts: 'id, phone_suffix, nickname, created_at',
       nicknameOverrides: 'phone_suffix, updated_at',
     });
+
+    // Add error handlers
+    this.on('blocked', () => {
+      console.warn('Database blocked - another tab may have the database open');
+    });
+
+    this.on('versionchange', () => {
+      console.log('Database version change detected');
+      this.close();
+    });
+  }
+
+  // Ensure DB is ready before operations
+  async ensureReady(): Promise<boolean> {
+    if (this._isReady) return true;
+    
+    if (this._initPromise) {
+      await this._initPromise;
+      return this._isReady;
+    }
+
+    this._initPromise = this._initialize();
+    await this._initPromise;
+    return this._isReady;
+  }
+
+  private async _initialize(): Promise<void> {
+    try {
+      // Check if we're on a native platform
+      const isNative = Capacitor.isNativePlatform();
+      console.log(`Initializing IndexedDB (Native: ${isNative}, Platform: ${Capacitor.getPlatform()})`);
+
+      // Open the database
+      await this.open();
+      this._isReady = true;
+      console.log('IndexedDB initialized successfully');
+    } catch (error) {
+      console.error('Failed to initialize IndexedDB:', error);
+      this._isReady = false;
+      
+      // On Android, try to delete and recreate if there's an issue
+      if (Capacitor.getPlatform() === 'android') {
+        console.log('Attempting to recover IndexedDB on Android...');
+        try {
+          await this.delete();
+          await this.open();
+          this._isReady = true;
+          console.log('IndexedDB recovered successfully');
+        } catch (retryError) {
+          console.error('Failed to recover IndexedDB:', retryError);
+        }
+      }
+    }
+  }
+
+  get isReady(): boolean {
+    return this._isReady;
   }
 
   // Clear all user data (for logout)
   async clearAllData() {
+    if (!await this.ensureReady()) {
+      console.warn('Cannot clear data - IndexedDB not ready');
+      return;
+    }
+    
     await Promise.all([
       this.profiles.clear(),
       this.bills.clear(),
@@ -207,11 +295,26 @@ class OfflineDatabase extends Dexie {
 
   // Get pending sync count
   async getPendingSyncCount(): Promise<number> {
-    return this.syncQueue.where('status').anyOf(['pending', 'failed']).count();
+    if (!await this.ensureReady()) return 0;
+    
+    try {
+      return await this.syncQueue.where('status').anyOf(['pending', 'failed']).count();
+    } catch (e) {
+      console.error('Error getting pending sync count:', e);
+      return 0;
+    }
   }
 }
 
+// Create singleton instance
 export const offlineDb = new OfflineDatabase();
+
+// Initialize on load
+offlineDb.ensureReady().then(ready => {
+  console.log(`Offline DB ready: ${ready}`);
+}).catch(e => {
+  console.error('Failed to initialize offline DB:', e);
+});
 
 // Generate a unique action ID for sync queue
 export function generateActionId(): string {
@@ -221,4 +324,21 @@ export function generateActionId(): string {
 // Generate a temporary local ID for new entities
 export function generateLocalId(): string {
   return `local-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+}
+
+// Safe wrapper for database operations
+export async function safeDbOperation<T>(
+  operation: () => Promise<T>,
+  fallback: T
+): Promise<T> {
+  try {
+    if (!await offlineDb.ensureReady()) {
+      console.warn('Database not ready, using fallback');
+      return fallback;
+    }
+    return await operation();
+  } catch (error) {
+    console.error('Database operation failed:', error);
+    return fallback;
+  }
 }
