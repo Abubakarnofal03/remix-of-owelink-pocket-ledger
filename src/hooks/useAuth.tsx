@@ -5,6 +5,8 @@ import { Profile } from "@/types/database";
 import { normalizeToE164, phoneToEmail } from "@/lib/phoneUtils";
 import { DEFAULT_CURRENCY } from "@/lib/currencies";
 
+const PROFILE_STORAGE_KEY = "cached_profile";
+
 interface AuthContextType {
   user: User | null;
   session: Session | null;
@@ -20,6 +22,34 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+// Cache profile to localStorage for offline access
+const cacheProfile = (profile: Profile | null) => {
+  try {
+    if (profile) {
+      localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(profile));
+      console.log('[Auth] Profile cached locally');
+    } else {
+      localStorage.removeItem(PROFILE_STORAGE_KEY);
+    }
+  } catch (e) {
+    console.warn('[Auth] Failed to cache profile:', e);
+  }
+};
+
+// Load cached profile from localStorage
+const loadCachedProfile = (): Profile | null => {
+  try {
+    const cached = localStorage.getItem(PROFILE_STORAGE_KEY);
+    if (cached) {
+      console.log('[Auth] Using cached profile');
+      return JSON.parse(cached);
+    }
+  } catch (e) {
+    console.warn('[Auth] Failed to load cached profile:', e);
+  }
+  return null;
+};
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
@@ -29,14 +59,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const currency = (profile?.settings as any)?.currency || DEFAULT_CURRENCY;
 
   const fetchProfile = async (userId: string) => {
-    const { data, error } = await supabase
-      .from("profiles")
-      .select("*")
-      .eq("user_id", userId)
-      .maybeSingle();
+    try {
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("*")
+        .eq("user_id", userId)
+        .maybeSingle();
 
-    if (!error && data) {
-      setProfile(data as Profile);
+      if (!error && data) {
+        setProfile(data as Profile);
+        cacheProfile(data as Profile);
+      } else if (error) {
+        console.warn('[Auth] Failed to fetch profile from server:', error.message);
+        // Fallback to cached profile if server fetch fails (offline)
+        const cached = loadCachedProfile();
+        if (cached && cached.user_id === userId) {
+          setProfile(cached);
+        }
+      }
+    } catch (e) {
+      console.warn('[Auth] Error fetching profile:', e);
+      // Fallback to cached profile
+      const cached = loadCachedProfile();
+      if (cached && cached.user_id === userId) {
+        setProfile(cached);
+      }
     }
   };
 
@@ -49,6 +96,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         // Defer profile fetch to avoid deadlock
         if (session?.user) {
+          // First try to load cached profile immediately for UI
+          const cached = loadCachedProfile();
+          if (cached && cached.user_id === session.user.id) {
+            setProfile(cached);
+          }
+          // Then fetch from server to update
           setTimeout(() => {
             fetchProfile(session.user.id);
           }, 0);
@@ -58,6 +111,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         if (event === "SIGNED_OUT") {
           setProfile(null);
+          cacheProfile(null);
         }
       }
     );
@@ -67,6 +121,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setSession(session);
       setUser(session?.user ?? null);
       if (session?.user) {
+        // Load cached profile immediately for UI
+        const cached = loadCachedProfile();
+        if (cached && cached.user_id === session.user.id) {
+          setProfile(cached);
+        }
+        // Then fetch from server
         fetchProfile(session.user.id).finally(() => setLoading(false));
       } else {
         setLoading(false);
@@ -129,6 +189,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
     setSession(null);
     setProfile(null);
+    cacheProfile(null);
   };
 
   const refreshProfile = async () => {
@@ -149,7 +210,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .eq("id", profile.id);
 
     if (!error) {
-      setProfile({ ...profile, settings: mergedSettings });
+      const updatedProfile = { ...profile, settings: mergedSettings };
+      setProfile(updatedProfile);
+      cacheProfile(updatedProfile as Profile);
     }
 
     return { error: error as Error | null };
