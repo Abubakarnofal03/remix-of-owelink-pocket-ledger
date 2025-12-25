@@ -1,6 +1,6 @@
 import { Contact } from "@/hooks/useContacts";
 import { AvatarCustom } from "@/components/ui/avatar-custom";
-import { Phone, MoreVertical, Pencil, Trash2 } from "lucide-react";
+import { Phone, MoreVertical, Pencil, Trash2, Smartphone } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -8,6 +8,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 
 interface ContactCardProps {
   contact: Contact;
@@ -27,6 +28,7 @@ export function ContactCard({
   selected,
 }: ContactCardProps) {
   const displayName = contact.nickname || contact.phone_number;
+  const isDeviceContact = contact.source === 'device';
 
   const handleClick = () => {
     if (onClick) onClick(contact);
@@ -42,7 +44,15 @@ export function ContactCard({
       <AvatarCustom name={displayName} size="md" />
       
       <div className="flex-1 min-w-0">
-        <p className="font-medium text-foreground truncate">{displayName}</p>
+        <div className="flex items-center gap-2">
+          <p className="font-medium text-foreground truncate">{displayName}</p>
+          {isDeviceContact && (
+            <Badge variant="outline" className="text-xs py-0 px-1.5 gap-1">
+              <Smartphone className="h-3 w-3" />
+              Phone
+            </Badge>
+          )}
+        </div>
         {contact.nickname && (
           <div className="flex items-center gap-1 text-sm text-muted-foreground">
             <Phone className="h-3 w-3" />
@@ -62,10 +72,10 @@ export function ContactCard({
             {onEdit && (
               <DropdownMenuItem onClick={() => onEdit(contact)}>
                 <Pencil className="mr-2 h-4 w-4" />
-                Edit
+                {isDeviceContact ? "Set Nickname" : "Edit"}
               </DropdownMenuItem>
             )}
-            {onDelete && (
+            {onDelete && !isDeviceContact && (
               <DropdownMenuItem
                 onClick={() => onDelete(contact)}
                 className="text-destructive focus:text-destructive"

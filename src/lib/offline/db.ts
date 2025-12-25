@@ -80,6 +80,7 @@ export interface LocalPayment {
   is_local?: boolean;
 }
 
+// Legacy LocalContact for sync (deprecated - kept for migration)
 export interface LocalContact {
   id: string;
   user_id: string;
@@ -91,6 +92,23 @@ export interface LocalContact {
   updated_at: string;
   synced_at?: number;
   is_local?: boolean;
+}
+
+// NEW: Local-only app contacts (never synced to server)
+export interface LocalAppContact {
+  id: string;
+  phone_number: string;
+  phone_suffix: string;
+  nickname: string | null;
+  created_at: number;
+  updated_at: number;
+}
+
+// NEW: Nickname overrides for device contacts
+export interface NicknameOverride {
+  phone_suffix: string; // Primary key
+  nickname: string;
+  updated_at: number;
 }
 
 export interface LocalNotification {
@@ -136,6 +154,9 @@ class OfflineDatabase extends Dexie {
   notifications!: Table<LocalNotification, string>;
   syncQueue!: Table<SyncQueueItem, number>;
   syncMetadata!: Table<SyncMetadata, string>;
+  // NEW: Local-only tables (not synced to server)
+  localAppContacts!: Table<LocalAppContact, string>;
+  nicknameOverrides!: Table<NicknameOverride, string>;
 
   constructor() {
     super('owelink_offline_db');
@@ -150,6 +171,22 @@ class OfflineDatabase extends Dexie {
       notifications: 'id, user_id, read, created_at, synced_at',
       syncQueue: '++id, action_id, entity_type, operation, entity_id, status, created_at',
       syncMetadata: 'id, entity_type, last_synced_at',
+    });
+
+    // Version 2: Add local-only contacts tables
+    this.version(2).stores({
+      profiles: 'id, user_id, phone_suffix, synced_at',
+      bills: 'id, creator_id, status, created_at, updated_at, synced_at',
+      billParticipants: 'id, bill_id, phone_number, phone_suffix, user_id, synced_at',
+      ious: 'id, creditor_id, debtor_phone_suffix, debtor_user_id, status, created_at, synced_at',
+      payments: 'id, reference_type, reference_id, payer_phone_number, synced_at',
+      contacts: 'id, user_id, phone_number, phone_suffix, synced_at',
+      notifications: 'id, user_id, read, created_at, synced_at',
+      syncQueue: '++id, action_id, entity_type, operation, entity_id, status, created_at',
+      syncMetadata: 'id, entity_type, last_synced_at',
+      // NEW local-only tables
+      localAppContacts: 'id, phone_suffix, nickname, created_at',
+      nicknameOverrides: 'phone_suffix, updated_at',
     });
   }
 

@@ -21,7 +21,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Users, Plus, Search, Download, Smartphone } from "lucide-react";
+import { Users, Plus, Search, Smartphone } from "lucide-react";
 
 export default function Contacts() {
   const { user, loading: authLoading } = useAuth();
@@ -30,7 +30,6 @@ export default function Contacts() {
     loading: contactsLoading, 
     addContact, 
     deleteContact,
-    importContactsFromDevice,
     searchContacts,
     refetch
   } = useContacts();
@@ -38,7 +37,6 @@ export default function Contacts() {
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [deleteTarget, setDeleteTarget] = useState<Contact | null>(null);
-  const [importing, setImporting] = useState(false);
   const [activeTab, setActiveTab] = useState("all");
   const navigate = useNavigate();
 
@@ -46,12 +44,6 @@ export default function Contacts() {
   if (!user) return <Navigate to="/auth" replace />;
 
   const filteredContacts = searchQuery ? searchContacts(searchQuery) : contacts;
-
-  const handleImport = async () => {
-    setImporting(true);
-    await importContactsFromDevice();
-    setImporting(false);
-  };
 
   const handleDelete = async () => {
     if (deleteTarget) {
@@ -71,15 +63,6 @@ export default function Contacts() {
           <div className="flex items-center justify-between mb-4">
             <h1 className="font-display text-2xl font-bold text-foreground">Contacts</h1>
             <div className="flex gap-2">
-              <Button 
-                variant="outline" 
-                size="sm"
-                onClick={handleImport}
-                disabled={importing}
-              >
-                <Download className="h-4 w-4 mr-1" />
-                {importing ? "..." : "Import"}
-              </Button>
               <Button size="sm" onClick={() => setShowAddDialog(true)}>
                 <Plus className="h-4 w-4 mr-1" />
                 Add
