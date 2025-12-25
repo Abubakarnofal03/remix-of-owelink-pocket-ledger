@@ -122,7 +122,7 @@ export async function createBillOfflineFirst(
 
 export async function updateBillOfflineFirst(
   billId: string,
-  updates: Partial<BillInsertOffline>
+  updates: Partial<BillInsertOffline> & { status?: string }
 ): Promise<LocalBill | null> {
   const existing = await offlineDb.bills.get(billId);
   if (!existing) return null;
@@ -134,6 +134,7 @@ export async function updateBillOfflineFirst(
     description: updates.description ?? existing.description,
     total_amount: updates.total_amount ?? existing.total_amount,
     due_date: updates.due_date ?? existing.due_date,
+    status: updates.status ?? existing.status,
     updated_at: now,
     is_local: true,
   };
@@ -145,6 +146,7 @@ export async function updateBillOfflineFirst(
     description: updatedBill.description,
     total_amount: updatedBill.total_amount,
     due_date: updatedBill.due_date,
+    status: updatedBill.status,
   });
 
   const participants = await offlineDb.billParticipants

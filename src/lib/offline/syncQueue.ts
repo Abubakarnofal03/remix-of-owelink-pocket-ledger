@@ -30,7 +30,7 @@ export async function addToSyncQueue(
 }
 
 // Process a single sync queue item
-async function processSyncItem(item: SyncQueueItem): Promise<boolean> {
+export async function processSyncItem(item: SyncQueueItem): Promise<boolean> {
   try {
     await offlineDb.syncQueue.update(item.id!, { status: 'processing' });
 

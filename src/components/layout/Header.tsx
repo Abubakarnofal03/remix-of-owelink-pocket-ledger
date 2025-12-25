@@ -16,7 +16,12 @@ import {
 
 export function Header() {
   const { profile, signOut } = useAuth();
-  const { status, pendingCount } = useOffline();
+  const { status, pendingCount, sync } = useOffline();
+
+  const handleSyncComplete = () => {
+    // Trigger a full sync to update counts
+    sync();
+  };
 
   return (
     <header className="sticky top-0 z-40 bg-background/95 backdrop-blur-xl border-b border-border/50 pt-[env(safe-area-inset-top)]">
@@ -31,7 +36,11 @@ export function Header() {
         </Link>
 
         <div className="flex items-center gap-2">
-          <SyncStatus status={status} pendingCount={pendingCount} />
+          <SyncStatus 
+            status={status} 
+            pendingCount={pendingCount} 
+            onSyncComplete={handleSyncComplete}
+          />
           
           {profile && (
             <DropdownMenu>
