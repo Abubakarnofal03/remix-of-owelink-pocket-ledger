@@ -3,7 +3,16 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "./useAuth";
 import { toast } from "sonner";
 import { sendPushNotification, getPhoneSuffix } from "@/lib/notifications";
-import { offlineDb } from "@/lib/offline/db";
+import { offlineDb, LocalIOU } from "@/lib/offline/db";
+import {
+  fetchIOUsOfflineFirst,
+  createIOUOfflineFirst,
+  updateIOUOfflineFirst,
+  deleteIOUOfflineFirst,
+  IOUInsertOffline,
+} from "@/lib/offline/offlineDataLayer";
+import { syncIOUsFromServer } from "@/lib/offline/dataSync";
+
 export interface IOU {
   id: string;
   creditor_id: string;
@@ -19,6 +28,7 @@ export interface IOU {
   created_at: string;
   updated_at: string;
   deleted_at: string | null;
+  is_local?: boolean;
 }
 
 export interface IOUInsert {
@@ -29,39 +39,25 @@ export interface IOUInsert {
   due_date?: string;
 }
 
-const IOUS_QUERY_KEY = ["ious"];
-
-async function fetchIOUs(userId: string): Promise<IOU[]> {
-  // Fetch all IOUs the user can see (RLS handles visibility)
-  // Then filter: hide archived IOUs only if user is the creditor
-  const { data, error } = await supabase
-    .from("ious")
-    .select("*")
-    .order("created_at", { ascending: false });
-
-  if (error) throw error;
-  
-  // Filter out archived IOUs only for the creditor - debtors should still see them
-  return (data || []).filter(iou => 
-    iou.deleted_at === null || iou.creditor_id !== userId
-  );
-}
-
-async function fetchIOUById(iouId: string, userId: string): Promise<IOU | null> {
-  const { data, error } = await supabase
-    .from("ious")
-    .select("*")
-    .eq("id", iouId)
-    .maybeSingle();
-
-  if (error) throw error;
-  
-  // Hide archived IOUs only for the creditor - debtors should still see them
-  if (data && data.deleted_at !== null && data.creditor_id === userId) {
-    return null;
-  }
-  
-  return data || null;
+// Convert LocalIOU to IOU interface
+function localIOUToIOU(local: LocalIOU): IOU {
+  return {
+    id: local.id,
+    creditor_id: local.creditor_id,
+    debtor_phone_number: local.debtor_phone_number,
+    debtor_phone_suffix: local.debtor_phone_suffix,
+    debtor_user_id: local.debtor_user_id,
+    amount: local.amount,
+    amount_paid: local.amount_paid,
+    currency: local.currency,
+    description: local.description,
+    due_date: local.due_date,
+    status: local.status,
+    created_at: local.created_at,
+    updated_at: local.updated_at,
+    deleted_at: local.deleted_at,
+    is_local: local.is_local,
+  };
 }
 
 export function useIOUs() {
@@ -72,16 +68,35 @@ export function useIOUs() {
 
   const { data: ious = [], isLoading: loading } = useQuery({
     queryKey: iousQueryKey,
-    queryFn: () => fetchIOUs(user!.id),
+    queryFn: async () => {
+      if (!user) return [];
+
+      // 1. Get local data first (instant)
+      const localIOUs = await fetchIOUsOfflineFirst(user.id, profile?.phone_suffix || null);
+      const mappedIOUs = localIOUs.map(localIOUToIOU);
+
+      // 2. If online, sync from server in background
+      if (navigator.onLine) {
+        try {
+          await syncIOUsFromServer(user.id, profile?.phone_suffix || null);
+          // Get updated local data after sync
+          const updatedLocal = await fetchIOUsOfflineFirst(user.id, profile?.phone_suffix || null);
+          return updatedLocal.map(localIOUToIOU);
+        } catch (e) {
+          console.warn("Failed to sync IOUs from server, using local data:", e);
+        }
+      }
+
+      return mappedIOUs;
+    },
     enabled: !!user,
-    staleTime: 5 * 60 * 1000,
+    staleTime: 30 * 1000, // 30 seconds
     gcTime: 30 * 60 * 1000,
-    refetchOnMount: "always",
   });
 
   // Filter IOUs by perspective
-  const owedToMe = ious.filter(iou => iou.creditor_id === user?.id);
-  const iOwe = ious.filter(iou => {
+  const owedToMe = ious.filter((iou) => iou.creditor_id === user?.id);
+  const iOwe = ious.filter((iou) => {
     if (iou.debtor_user_id === user?.id) return true;
     if (profile?.phone_suffix && iou.debtor_phone_suffix === profile.phone_suffix) return true;
     return false;
@@ -91,40 +106,69 @@ export function useIOUs() {
     mutationFn: async (iou: IOUInsert) => {
       if (!user) throw new Error("Not authenticated");
 
-      const { data, error } = await supabase
-        .from("ious")
-        .insert({
-          creditor_id: user.id,
-          debtor_phone_number: iou.debtor_phone_number,
-          amount: iou.amount,
-          amount_paid: 0,
-          currency: iou.currency || "USD",
-          description: iou.description || null,
-          due_date: iou.due_date || null,
-          status: "pending",
-        })
-        .select()
-        .single();
+      // Always create locally first
+      const localIOU = await createIOUOfflineFirst(user.id, iou as IOUInsertOffline);
 
-      if (error) throw error;
-      return data;
+      // If online, try to sync immediately
+      if (navigator.onLine) {
+        try {
+          const { data, error } = await supabase
+            .from("ious")
+            .insert({
+              creditor_id: user.id,
+              debtor_phone_number: iou.debtor_phone_number,
+              amount: iou.amount,
+              amount_paid: 0,
+              currency: iou.currency || "USD",
+              description: iou.description || null,
+              due_date: iou.due_date || null,
+              status: "pending",
+            })
+            .select()
+            .single();
+
+          if (error) throw error;
+
+          // Update local DB with server data
+          await offlineDb.ious.delete(localIOU.id);
+          await offlineDb.ious.put({
+            ...data,
+            is_local: false,
+          });
+
+          // Clear sync queue for this item
+          await offlineDb.syncQueue.where("entity_id").equals(localIOU.id).delete();
+
+          return localIOUToIOU({ ...data, is_local: false });
+        } catch (e) {
+          console.warn("Failed to sync IOU to server, will retry later:", e);
+          return localIOUToIOU(localIOU);
+        }
+      }
+
+      return localIOUToIOU(localIOU);
     },
     onSuccess: (newIOU) => {
       queryClient.setQueryData<IOU[]>(iousQueryKey, (old = []) => [newIOU, ...old]);
-      toast.success("IOU created successfully");
-      
-      // Send push notification to debtor
-      const phoneSuffix = getPhoneSuffix(newIOU.debtor_phone_number);
-      if (phoneSuffix) {
-        sendPushNotification({
-          phoneSuffixes: [phoneSuffix],
-          title: "New IOU",
-          body: `You owe ${newIOU.currency} ${newIOU.amount}${newIOU.description ? ` for "${newIOU.description}"` : ""}`,
-          data: { type: "iou", id: newIOU.id },
-        });
+
+      if (newIOU.is_local) {
+        toast.success("IOU saved locally, will sync when online");
+      } else {
+        toast.success("IOU created successfully");
+
+        // Send push notification to debtor
+        const phoneSuffix = getPhoneSuffix(newIOU.debtor_phone_number);
+        if (phoneSuffix) {
+          sendPushNotification({
+            phoneSuffixes: [phoneSuffix],
+            title: "New IOU",
+            body: `You owe ${newIOU.currency} ${newIOU.amount}${newIOU.description ? ` for "${newIOU.description}"` : ""}`,
+            data: { type: "iou", id: newIOU.id },
+          });
+        }
       }
     },
-    onError: (error: any) => {
+    onError: (error: Error) => {
       console.error("Error creating IOU:", error);
       toast.error("Failed to create IOU");
     },
@@ -132,39 +176,52 @@ export function useIOUs() {
 
   const updateIOUMutation = useMutation({
     mutationFn: async ({ id, updates }: { id: string; updates: Partial<IOUInsert> }) => {
-      const { data, error } = await supabase
-        .from("ious")
-        .update({
-          debtor_phone_number: updates.debtor_phone_number,
-          amount: updates.amount,
-          description: updates.description,
-          due_date: updates.due_date,
-        })
-        .eq("id", id)
-        .select()
-        .single();
+      // Update locally first
+      const localIOU = await updateIOUOfflineFirst(id, updates);
+      if (!localIOU) throw new Error("IOU not found");
 
-      if (error) throw error;
-      return data;
+      // If online and not local-only, sync to server
+      if (navigator.onLine && !id.startsWith("local-")) {
+        try {
+          const { data, error } = await supabase
+            .from("ious")
+            .update({
+              debtor_phone_number: updates.debtor_phone_number,
+              amount: updates.amount,
+              description: updates.description,
+              due_date: updates.due_date,
+            })
+            .eq("id", id)
+            .select()
+            .single();
+
+          if (error) throw error;
+
+          // Update local with server data
+          await offlineDb.ious.update(id, { ...data, is_local: false });
+
+          // Clear sync queue
+          await offlineDb.syncQueue
+            .where("entity_id")
+            .equals(id)
+            .and((item) => item.operation === "update")
+            .delete();
+
+          return localIOUToIOU({ ...data, is_local: false });
+        } catch (e) {
+          console.warn("Failed to sync update to server:", e);
+        }
+      }
+
+      return localIOUToIOU(localIOU);
     },
     onSuccess: (data) => {
       queryClient.setQueryData<IOU[]>(iousQueryKey, (old = []) =>
-        old.map(i => i.id === data.id ? { ...i, ...data } : i)
+        old.map((i) => (i.id === data.id ? { ...i, ...data } : i))
       );
-      toast.success("IOU updated");
-      
-      // Send push notification to debtor
-      const phoneSuffix = getPhoneSuffix(data.debtor_phone_number);
-      if (phoneSuffix) {
-        sendPushNotification({
-          phoneSuffixes: [phoneSuffix],
-          title: "IOU Updated",
-          body: `Your IOU${data.description ? ` for "${data.description}"` : ""} has been updated`,
-          data: { type: "iou", id: data.id },
-        });
-      }
+      toast.success(data.is_local ? "IOU updated locally" : "IOU updated");
     },
-    onError: (error: any) => {
+    onError: (error: Error) => {
       console.error("Error updating IOU:", error);
       toast.error("Failed to update IOU");
     },
@@ -172,44 +229,33 @@ export function useIOUs() {
 
   const deleteIOUMutation = useMutation({
     mutationFn: async (id: string) => {
-      // Soft delete only - ledger entries should never be hard deleted
-      const { error } = await supabase
-        .from("ious")
-        .update({ deleted_at: new Date().toISOString() })
-        .eq("id", id);
+      // Delete locally first
+      await deleteIOUOfflineFirst(id);
 
-      if (error) throw error;
+      // If online and not local-only, sync to server
+      if (navigator.onLine && !id.startsWith("local-")) {
+        try {
+          const { error } = await supabase
+            .from("ious")
+            .update({ deleted_at: new Date().toISOString() })
+            .eq("id", id);
 
-      // Mark as deleted in offline storage (don't remove - preserve ledger)
-      try {
-        await offlineDb.ious.update(id, { deleted_at: new Date().toISOString() });
-      } catch (e) {
-        console.warn("Failed to update IOU in offline storage:", e);
+          if (error) throw error;
+
+          // Clear sync queue
+          await offlineDb.syncQueue.where("entity_id").equals(id).delete();
+        } catch (e) {
+          console.warn("Failed to sync delete to server:", e);
+        }
       }
 
       return id;
     },
     onSuccess: (id) => {
-      const deletedIOU = queryClient.getQueryData<IOU[]>(iousQueryKey)?.find(i => i.id === id);
-      queryClient.setQueryData<IOU[]>(iousQueryKey, (old = []) =>
-        old.filter(i => i.id !== id)
-      );
+      queryClient.setQueryData<IOU[]>(iousQueryKey, (old = []) => old.filter((i) => i.id !== id));
       toast.success("IOU archived");
-      
-      // Send push notification to debtor
-      if (deletedIOU) {
-        const phoneSuffix = getPhoneSuffix(deletedIOU.debtor_phone_number);
-        if (phoneSuffix) {
-          sendPushNotification({
-            phoneSuffixes: [phoneSuffix],
-            title: "IOU Archived",
-            body: `An IOU${deletedIOU.description ? ` for "${deletedIOU.description}"` : ""} has been archived by creditor`,
-            data: { type: "iou", id },
-          });
-        }
-      }
     },
-    onError: (error: any) => {
+    onError: (error: Error) => {
       console.error("Error deleting IOU:", error);
       toast.error("Failed to delete IOU");
     },
@@ -242,12 +288,12 @@ export function useIOUs() {
   };
 
   const getIOUById = (id: string): IOU | undefined => {
-    return ious.find(i => i.id === id);
+    return ious.find((i) => i.id === id);
   };
 
   const updateIOUInCache = (id: string, updater: (iou: IOU) => IOU) => {
     queryClient.setQueryData<IOU[]>(iousQueryKey, (old = []) =>
-      old.map(i => i.id === id ? updater(i) : i)
+      old.map((i) => (i.id === id ? updater(i) : i))
     );
   };
 
@@ -272,11 +318,29 @@ export function useIOUDetail(iouId: string | undefined) {
 
   const iousQueryKey = ["ious", user?.id];
   const cachedIOUs = queryClient.getQueryData<IOU[]>(iousQueryKey);
-  const cachedIOU = cachedIOUs?.find(i => i.id === iouId);
+  const cachedIOU = cachedIOUs?.find((i) => i.id === iouId);
 
   const { data: iou, isLoading } = useQuery({
     queryKey: ["iou", user?.id, iouId],
-    queryFn: () => fetchIOUById(iouId!, user!.id),
+    queryFn: async () => {
+      if (!iouId || !user) return null;
+
+      // Try local first
+      const localIOU = await offlineDb.ious.get(iouId);
+      if (localIOU) {
+        return localIOUToIOU(localIOU);
+      }
+
+      // If online, fetch from server
+      if (navigator.onLine) {
+        const { data, error } = await supabase.from("ious").select("*").eq("id", iouId).maybeSingle();
+
+        if (error) throw error;
+        return data ? localIOUToIOU(data as LocalIOU) : null;
+      }
+
+      return null;
+    },
     enabled: !!user && !!iouId && !cachedIOU,
     initialData: cachedIOU,
     staleTime: 5 * 60 * 1000,
@@ -287,7 +351,7 @@ export function useIOUDetail(iouId: string | undefined) {
     if (iou) {
       queryClient.setQueryData(["iou", user?.id, iouId], updater(iou));
       queryClient.setQueryData<IOU[]>(iousQueryKey, (old = []) =>
-        old.map(i => i.id === iouId ? updater(i) : i)
+        old.map((i) => (i.id === iouId ? updater(i) : i))
       );
     }
   };

@@ -3,12 +3,21 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "./useAuth";
 import { toast } from "sonner";
 import { sendPushNotification, getPhoneSuffix } from "@/lib/notifications";
-import { offlineDb } from "@/lib/offline/db";
+import { offlineDb, LocalBill, LocalBillParticipant } from "@/lib/offline/db";
+import {
+  fetchBillsOfflineFirst,
+  createBillOfflineFirst,
+  updateBillOfflineFirst,
+  deleteBillOfflineFirst,
+  BillInsertOffline,
+} from "@/lib/offline/offlineDataLayer";
+import { syncBillsFromServer } from "@/lib/offline/dataSync";
 
 export interface BillParticipant {
   id: string;
   bill_id: string;
   phone_number: string;
+  phone_suffix?: string | null;
   user_id: string | null;
   amount_owed: number;
   amount_paid: number;
@@ -30,6 +39,7 @@ export interface Bill {
   updated_at: string;
   deleted_at: string | null;
   participants?: BillParticipant[];
+  is_local?: boolean;
   creator?: {
     username: string;
     phone_number: string;
@@ -50,45 +60,34 @@ export interface BillInsert {
   }[];
 }
 
-const BILLS_QUERY_KEY = ["bills"];
-
-async function fetchBills(userId: string): Promise<Bill[]> {
-  // Fetch all bills the user can see (RLS handles visibility)
-  // Then filter: hide archived bills only if user is the creator
-  const { data, error } = await supabase
-    .from("bills")
-    .select(`
-      *,
-      participants:bill_participants(*)
-    `)
-    .order("created_at", { ascending: false });
-
-  if (error) throw error;
-  
-  // Filter out archived bills only for the creator - participants should still see them
-  return (data || []).filter(bill => 
-    bill.deleted_at === null || bill.creator_id !== userId
-  );
-}
-
-async function fetchBillById(billId: string, userId: string): Promise<Bill | null> {
-  const { data, error } = await supabase
-    .from("bills")
-    .select(`
-      *,
-      participants:bill_participants(*)
-    `)
-    .eq("id", billId)
-    .maybeSingle();
-
-  if (error) throw error;
-  
-  // Hide archived bills only for the creator - participants should still see them
-  if (data && data.deleted_at !== null && data.creator_id === userId) {
-    return null;
-  }
-  
-  return data || null;
+// Convert LocalBill to Bill interface
+function localBillToBill(local: LocalBill & { participants?: LocalBillParticipant[] }): Bill {
+  return {
+    id: local.id,
+    creator_id: local.creator_id,
+    title: local.title,
+    description: local.description,
+    total_amount: local.total_amount,
+    currency: local.currency,
+    status: local.status,
+    due_date: local.due_date,
+    created_at: local.created_at,
+    updated_at: local.updated_at,
+    deleted_at: local.deleted_at,
+    is_local: local.is_local,
+    participants: local.participants?.map((p) => ({
+      id: p.id,
+      bill_id: p.bill_id,
+      phone_number: p.phone_number,
+      phone_suffix: p.phone_suffix,
+      user_id: p.user_id,
+      amount_owed: p.amount_owed,
+      amount_paid: p.amount_paid,
+      status: p.status,
+      created_at: p.created_at,
+      updated_at: p.updated_at,
+    })),
+  };
 }
 
 export function useBills() {
@@ -99,112 +98,182 @@ export function useBills() {
 
   const { data: bills = [], isLoading: loading } = useQuery({
     queryKey: billsQueryKey,
-    queryFn: () => fetchBills(user!.id),
+    queryFn: async () => {
+      if (!user) return [];
+
+      // 1. Get local data first (instant)
+      const localBills = await fetchBillsOfflineFirst(user.id);
+      const mappedBills = localBills.map(localBillToBill);
+
+      // 2. If online, sync from server in background
+      if (navigator.onLine) {
+        try {
+          await syncBillsFromServer(user.id);
+          // Get updated local data after sync
+          const updatedLocal = await fetchBillsOfflineFirst(user.id);
+          return updatedLocal.map(localBillToBill);
+        } catch (e) {
+          console.warn("Failed to sync bills from server, using local data:", e);
+        }
+      }
+
+      return mappedBills;
+    },
     enabled: !!user,
-    staleTime: 5 * 60 * 1000, // 5 minutes
-    gcTime: 30 * 60 * 1000, // 30 minutes
-    refetchOnMount: "always", // Always refetch on mount to ensure fresh data
+    staleTime: 30 * 1000, // 30 seconds - shorter since we use local first
+    gcTime: 30 * 60 * 1000,
   });
 
   const createBillMutation = useMutation({
     mutationFn: async (bill: BillInsert) => {
       if (!user) throw new Error("Not authenticated");
 
-      // Create the bill
-      const { data: billData, error: billError } = await supabase
-        .from("bills")
-        .insert({
-          creator_id: user.id,
-          title: bill.title,
-          description: bill.description || null,
-          total_amount: bill.total_amount,
-          currency: bill.currency || "USD",
-          due_date: bill.due_date || null,
-        })
-        .select()
-        .single();
+      // Always create locally first
+      const localBill = await createBillOfflineFirst(user.id, bill as BillInsertOffline);
 
-      if (billError) throw billError;
+      // If online, try to sync immediately
+      if (navigator.onLine) {
+        try {
+          // Create the bill on server
+          const { data: billData, error: billError } = await supabase
+            .from("bills")
+            .insert({
+              creator_id: user.id,
+              title: bill.title,
+              description: bill.description || null,
+              total_amount: bill.total_amount,
+              currency: bill.currency || "USD",
+              due_date: bill.due_date || null,
+            })
+            .select()
+            .single();
 
-      // Add participants
-      const participantsToInsert = bill.participants.map(p => ({
-        bill_id: billData.id,
-        phone_number: p.phone_number,
-        amount_owed: p.amount_owed,
-        amount_paid: p.amount_paid || 0,
-        status: p.status || "pending",
-      }));
+          if (billError) throw billError;
 
-      const { data: participantsData, error: participantsError } = await supabase
-        .from("bill_participants")
-        .insert(participantsToInsert)
-        .select();
+          // Add participants
+          const participantsToInsert = bill.participants.map((p) => ({
+            bill_id: billData.id,
+            phone_number: p.phone_number,
+            phone_suffix: getPhoneSuffix(p.phone_number) || null,
+            amount_owed: p.amount_owed,
+            amount_paid: p.amount_paid || 0,
+            status: p.status || "pending",
+          }));
 
-      if (participantsError) throw participantsError;
+          const { data: participantsData, error: participantsError } = await supabase
+            .from("bill_participants")
+            .insert(participantsToInsert)
+            .select();
 
-      return { ...billData, participants: participantsData };
+          if (participantsError) throw participantsError;
+
+          // Update local DB with server data (replace local entry)
+          await offlineDb.bills.delete(localBill.id);
+          await offlineDb.billParticipants.where("bill_id").equals(localBill.id).delete();
+          
+          await offlineDb.bills.put({
+            ...billData,
+            is_local: false,
+          });
+          
+          for (const p of participantsData) {
+            await offlineDb.billParticipants.put({
+              ...p,
+              is_local: false,
+            });
+          }
+
+          // Clear sync queue for this item
+          await offlineDb.syncQueue.where("entity_id").equals(localBill.id).delete();
+
+          return { ...billData, participants: participantsData };
+        } catch (e) {
+          console.warn("Failed to sync bill to server, will retry later:", e);
+          // Return local data - it's already queued for sync
+          return localBillToBill(localBill as LocalBill & { participants?: LocalBillParticipant[] });
+        }
+      }
+
+      // Offline - return local data
+      return localBillToBill(localBill as LocalBill & { participants?: LocalBillParticipant[] });
     },
     onSuccess: (newBill) => {
       queryClient.setQueryData<Bill[]>(billsQueryKey, (old = []) => [newBill, ...old]);
-      toast.success("Bill created successfully");
       
-      // Send push notifications to participants
-      const phoneSuffixes = newBill.participants
-        ?.map(p => getPhoneSuffix(p.phone_number))
-        .filter(Boolean) || [];
-      if (phoneSuffixes.length > 0) {
-        sendPushNotification({
-          phoneSuffixes,
-          title: "New Bill Added",
-          body: `You've been added to "${newBill.title}" - ${newBill.currency} ${newBill.total_amount}`,
-          data: { type: "bill", id: newBill.id },
-        });
+      if (newBill.is_local) {
+        toast.success("Bill saved locally, will sync when online");
+      } else {
+        toast.success("Bill created successfully");
+        
+        // Send push notifications to participants
+        const phoneSuffixes = newBill.participants
+          ?.map((p) => getPhoneSuffix(p.phone_number))
+          .filter(Boolean) || [];
+        if (phoneSuffixes.length > 0) {
+          sendPushNotification({
+            phoneSuffixes: phoneSuffixes as string[],
+            title: "New Bill Added",
+            body: `You've been added to "${newBill.title}" - ${newBill.currency} ${newBill.total_amount}`,
+            data: { type: "bill", id: newBill.id },
+          });
+        }
       }
     },
-    onError: (error: any) => {
+    onError: (error: Error) => {
       console.error("Error creating bill:", error);
       toast.error("Failed to create bill");
     },
   });
 
   const updateBillMutation = useMutation({
-    mutationFn: async ({ id, updates }: { id: string; updates: Partial<Omit<BillInsert, 'participants'>> }) => {
-      const { data, error } = await supabase
-        .from("bills")
-        .update({
-          title: updates.title,
-          description: updates.description,
-          total_amount: updates.total_amount,
-          due_date: updates.due_date,
-        })
-        .eq("id", id)
-        .select()
-        .single();
+    mutationFn: async ({ id, updates }: { id: string; updates: Partial<Omit<BillInsert, "participants">> }) => {
+      // Update locally first
+      const localBill = await updateBillOfflineFirst(id, updates);
+      if (!localBill) throw new Error("Bill not found");
 
-      if (error) throw error;
-      return data;
+      // If online, sync to server
+      if (navigator.onLine && !id.startsWith("local-")) {
+        try {
+          const { data, error } = await supabase
+            .from("bills")
+            .update({
+              title: updates.title,
+              description: updates.description,
+              total_amount: updates.total_amount,
+              due_date: updates.due_date,
+            })
+            .eq("id", id)
+            .select()
+            .single();
+
+          if (error) throw error;
+
+          // Update local with server data
+          await offlineDb.bills.update(id, { ...data, is_local: false });
+
+          // Clear sync queue
+          await offlineDb.syncQueue
+            .where("entity_id")
+            .equals(id)
+            .and((item) => item.operation === "update")
+            .delete();
+
+          return data;
+        } catch (e) {
+          console.warn("Failed to sync update to server:", e);
+        }
+      }
+
+      return localBillToBill(localBill as LocalBill & { participants?: LocalBillParticipant[] });
     },
     onSuccess: (data) => {
-      const existingBill = queryClient.getQueryData<Bill[]>(billsQueryKey)?.find(b => b.id === data.id);
       queryClient.setQueryData<Bill[]>(billsQueryKey, (old = []) =>
-        old.map(b => b.id === data.id ? { ...b, ...data } : b)
+        old.map((b) => (b.id === data.id ? { ...b, ...data } : b))
       );
-      toast.success("Bill updated");
-      
-      // Send push notifications to participants
-      const phoneSuffixes = existingBill?.participants
-        ?.map(p => getPhoneSuffix(p.phone_number))
-        .filter(Boolean) || [];
-      if (phoneSuffixes.length > 0) {
-        sendPushNotification({
-          phoneSuffixes,
-          title: "Bill Updated",
-          body: `"${data.title}" has been updated`,
-          data: { type: "bill", id: data.id },
-        });
-      }
+      const isLocal = 'is_local' in data && data.is_local;
+      toast.success(isLocal ? "Bill updated locally" : "Bill updated");
     },
-    onError: (error: any) => {
+    onError: (error: Error) => {
       console.error("Error updating bill:", error);
       toast.error("Failed to update bill");
     },
@@ -212,52 +281,41 @@ export function useBills() {
 
   const deleteBillMutation = useMutation({
     mutationFn: async ({ id, bill }: { id: string; bill: Bill }) => {
-      // Check if all participants have paid before allowing archive
-      const unpaidParticipants = bill.participants?.filter(p => p.status !== "paid") || [];
+      // Check if all participants have paid
+      const unpaidParticipants = bill.participants?.filter((p) => p.status !== "paid") || [];
       if (unpaidParticipants.length > 0) {
         throw new Error(`Cannot archive: ${unpaidParticipants.length} participant(s) haven't paid yet`);
       }
 
-      // Soft delete only - ledger entries should never be hard deleted
-      const { error } = await supabase
-        .from("bills")
-        .update({ deleted_at: new Date().toISOString() })
-        .eq("id", id);
+      // Delete locally first
+      await deleteBillOfflineFirst(id);
 
-      if (error) throw error;
+      // If online and not a local-only item, sync to server
+      if (navigator.onLine && !id.startsWith("local-")) {
+        try {
+          const { error } = await supabase
+            .from("bills")
+            .update({ deleted_at: new Date().toISOString() })
+            .eq("id", id);
 
-      // Mark as deleted in offline storage (don't remove - preserve ledger)
-      try {
-        await offlineDb.bills.update(id, { deleted_at: new Date().toISOString() });
-      } catch (e) {
-        console.warn("Failed to update bill in offline storage:", e);
+          if (error) throw error;
+
+          // Clear sync queue
+          await offlineDb.syncQueue.where("entity_id").equals(id).delete();
+        } catch (e) {
+          console.warn("Failed to sync delete to server:", e);
+        }
       }
 
       return id;
     },
     onSuccess: (id) => {
-      const deletedBill = queryClient.getQueryData<Bill[]>(billsQueryKey)?.find(b => b.id === id);
-      queryClient.setQueryData<Bill[]>(billsQueryKey, (old = []) =>
-        old.filter(b => b.id !== id)
-      );
+      queryClient.setQueryData<Bill[]>(billsQueryKey, (old = []) => old.filter((b) => b.id !== id));
       toast.success("Bill archived");
-      
-      // Send push notifications to participants
-      const phoneSuffixes = deletedBill?.participants
-        ?.map(p => getPhoneSuffix(p.phone_number))
-        .filter(Boolean) || [];
-      if (phoneSuffixes.length > 0 && deletedBill) {
-        sendPushNotification({
-          phoneSuffixes,
-          title: "Bill Archived",
-          body: `"${deletedBill.title}" has been archived by creator`,
-          data: { type: "bill", id },
-        });
-      }
     },
-    onError: (error: any) => {
+    onError: (error: Error) => {
       console.error("Error deleting bill:", error);
-      toast.error("Failed to delete bill");
+      toast.error(error.message || "Failed to delete bill");
     },
   });
 
@@ -269,7 +327,7 @@ export function useBills() {
     }
   };
 
-  const updateBill = async (id: string, updates: Partial<Omit<BillInsert, 'participants'>>): Promise<boolean> => {
+  const updateBill = async (id: string, updates: Partial<Omit<BillInsert, "participants">>): Promise<boolean> => {
     try {
       await updateBillMutation.mutateAsync({ id, updates });
       return true;
@@ -288,13 +346,12 @@ export function useBills() {
   };
 
   const getBillById = (id: string): Bill | undefined => {
-    return bills.find(b => b.id === id);
+    return bills.find((b) => b.id === id);
   };
 
-  // Update bill in cache locally (for optimistic updates from detail page)
   const updateBillInCache = (id: string, updater: (bill: Bill) => Bill) => {
     queryClient.setQueryData<Bill[]>(billsQueryKey, (old = []) =>
-      old.map(b => b.id === id ? updater(b) : b)
+      old.map((b) => (b.id === id ? updater(b) : b))
     );
   };
 
@@ -310,38 +367,61 @@ export function useBills() {
   };
 }
 
-// Hook for single bill detail (uses cache first, then fetches if needed)
+// Hook for single bill detail
 export function useBillDetail(billId: string | undefined) {
   const { user } = useAuth();
   const queryClient = useQueryClient();
 
   const billsQueryKey = ["bills", user?.id];
-
-  // Try to get from cache first
   const cachedBills = queryClient.getQueryData<Bill[]>(billsQueryKey);
-  const cachedBill = cachedBills?.find(b => b.id === billId);
+  const cachedBill = cachedBills?.find((b) => b.id === billId);
 
   const { data: bill, isLoading } = useQuery({
     queryKey: ["bill", user?.id, billId],
-    queryFn: () => fetchBillById(billId!, user!.id),
+    queryFn: async () => {
+      if (!billId || !user) return null;
+
+      // Try local first
+      const localBill = await offlineDb.bills.get(billId);
+      if (localBill) {
+        const participants = await offlineDb.billParticipants.where("bill_id").equals(billId).toArray();
+        return localBillToBill({ ...localBill, participants });
+      }
+
+      // If online, fetch from server
+      if (navigator.onLine) {
+        const { data, error } = await supabase
+          .from("bills")
+          .select(`*, participants:bill_participants(*)`)
+          .eq("id", billId)
+          .maybeSingle();
+
+        if (error) throw error;
+        return data;
+      }
+
+      return null;
+    },
     enabled: !!user && !!billId && !cachedBill,
     initialData: cachedBill,
     staleTime: 5 * 60 * 1000,
     gcTime: 30 * 60 * 1000,
   });
 
+  // Ensure the result conforms to Bill type
+  const resultBill = bill as Bill | undefined;
+
   const updateBillLocally = (updater: (bill: Bill) => Bill) => {
-    if (bill) {
-      queryClient.setQueryData(["bill", user?.id, billId], updater(bill));
-      // Also update in the bills list cache
+    if (resultBill) {
+      queryClient.setQueryData(["bill", user?.id, billId], updater(resultBill));
       queryClient.setQueryData<Bill[]>(billsQueryKey, (old = []) =>
-        old.map(b => b.id === billId ? updater(b) : b)
+        old.map((b) => (b.id === billId ? updater(b) : b))
       );
     }
   };
 
   return {
-    bill: bill || cachedBill,
+    bill: resultBill || cachedBill,
     loading: isLoading && !cachedBill,
     updateBillLocally,
   };
