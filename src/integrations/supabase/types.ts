@@ -267,6 +267,53 @@ export type Database = {
         }
         Relationships: []
       }
+      iou_payment_requests: {
+        Row: {
+          amount_claimed: number
+          created_at: string
+          creator_response: string | null
+          id: string
+          iou_id: string
+          message: string | null
+          receipt_url: string | null
+          requester_phone_suffix: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          amount_claimed?: number
+          created_at?: string
+          creator_response?: string | null
+          id?: string
+          iou_id: string
+          message?: string | null
+          receipt_url?: string | null
+          requester_phone_suffix: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          amount_claimed?: number
+          created_at?: string
+          creator_response?: string | null
+          id?: string
+          iou_id?: string
+          message?: string | null
+          receipt_url?: string | null
+          requester_phone_suffix?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "iou_payment_requests_iou_id_fkey"
+            columns: ["iou_id"]
+            isOneToOne: false
+            referencedRelation: "ious"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       ious: {
         Row: {
           amount: number
