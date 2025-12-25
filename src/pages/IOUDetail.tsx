@@ -413,19 +413,19 @@ export default function IOUDetail() {
           </DialogContent>
         </Dialog>
 
-        {/* Delete Confirmation */}
+        {/* Archive Confirmation */}
         <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>Delete IOU?</AlertDialogTitle>
+              <AlertDialogTitle>Archive IOU?</AlertDialogTitle>
               <AlertDialogDescription>
-                This will permanently delete this IOU. This action cannot be undone.
+                This will archive this IOU. It will be hidden from your view but the debtor can still see it.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel>Cancel</AlertDialogCancel>
               <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
-                Delete
+                Archive
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>

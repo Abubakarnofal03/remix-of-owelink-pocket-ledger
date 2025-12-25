@@ -730,13 +730,13 @@ export default function BillDetail() {
         initialPhone={searchQuery.replace(/\D/g, "")}
       />
 
-      {/* Delete Confirmation */}
+      {/* Archive Confirmation */}
       <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete Bill</AlertDialogTitle>
+            <AlertDialogTitle>Archive Bill</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to delete "{bill.title}"? This action cannot be undone.
+              Are you sure you want to archive "{bill.title}"? It will be hidden from your view but participants can still see it.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -745,7 +745,7 @@ export default function BillDetail() {
               onClick={handleDelete}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              Delete
+              Archive
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

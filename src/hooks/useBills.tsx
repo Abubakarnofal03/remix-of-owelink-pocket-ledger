@@ -224,7 +224,7 @@ export function useBills() {
       queryClient.setQueryData<Bill[]>(billsQueryKey, (old = []) =>
         old.filter(b => b.id !== id)
       );
-      toast.success("Bill deleted");
+      toast.success("Bill archived");
       
       // Send push notifications to participants
       const phoneSuffixes = deletedBill?.participants
@@ -233,8 +233,8 @@ export function useBills() {
       if (phoneSuffixes.length > 0 && deletedBill) {
         sendPushNotification({
           phoneSuffixes,
-          title: "Bill Deleted",
-          body: `"${deletedBill.title}" has been removed`,
+          title: "Bill Archived",
+          body: `"${deletedBill.title}" has been archived by creator`,
           data: { type: "bill", id },
         });
       }
