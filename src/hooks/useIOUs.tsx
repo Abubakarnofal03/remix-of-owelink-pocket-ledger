@@ -184,7 +184,7 @@ export function useIOUs() {
       queryClient.setQueryData<IOU[]>(iousQueryKey, (old = []) =>
         old.filter(i => i.id !== id)
       );
-      toast.success("IOU deleted");
+      toast.success("IOU archived");
       
       // Send push notification to debtor
       if (deletedIOU) {
@@ -192,8 +192,8 @@ export function useIOUs() {
         if (phoneSuffix) {
           sendPushNotification({
             phoneSuffixes: [phoneSuffix],
-            title: "IOU Removed",
-            body: `An IOU${deletedIOU.description ? ` for "${deletedIOU.description}"` : ""} has been removed`,
+            title: "IOU Archived",
+            body: `An IOU${deletedIOU.description ? ` for "${deletedIOU.description}"` : ""} has been archived by creditor`,
             data: { type: "iou", id },
           });
         }
