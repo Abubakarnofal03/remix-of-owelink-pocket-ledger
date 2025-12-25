@@ -1,10 +1,19 @@
 import { supabase } from "@/integrations/supabase/client";
-import { offlineDb, generateLocalId, LocalBill, LocalBillParticipant, LocalIOU } from "./db";
+import { offlineDb, generateLocalId, LocalBill, LocalBillParticipant, LocalIOU, safeDbOperation } from "./db";
 import { addToSyncQueue } from "./syncQueue";
 import { getPhoneSuffix } from "@/lib/notifications";
 
 // Check if we're online
 export const isOnline = () => navigator.onLine;
+
+// Check if local DB is available
+export const isLocalDbAvailable = async (): Promise<boolean> => {
+  try {
+    return await offlineDb.ensureReady();
+  } catch {
+    return false;
+  }
+};
 
 // ==================== BILLS ====================
 
@@ -23,23 +32,33 @@ export interface BillInsertOffline {
 }
 
 export async function fetchBillsOfflineFirst(userId: string): Promise<LocalBill[]> {
-  // Always return local data first (instant)
-  const localBills = await offlineDb.bills
-    .filter(b => !b.deleted_at)
-    .toArray();
+  // Check if local DB is available
+  const dbReady = await isLocalDbAvailable();
+  
+  if (!dbReady) {
+    console.log('Local DB not available, returning empty array');
+    return [];
+  }
 
-  // Include participants
-  const billsWithParticipants = await Promise.all(
-    localBills.map(async (bill) => {
-      const participants = await offlineDb.billParticipants
-        .where("bill_id")
-        .equals(bill.id)
-        .toArray();
-      return { ...bill, participants };
-    })
-  );
+  return safeDbOperation(async () => {
+    // Always return local data first (instant)
+    const localBills = await offlineDb.bills
+      .filter(b => !b.deleted_at)
+      .toArray();
 
-  return billsWithParticipants;
+    // Include participants
+    const billsWithParticipants = await Promise.all(
+      localBills.map(async (bill) => {
+        const participants = await offlineDb.billParticipants
+          .where("bill_id")
+          .equals(bill.id)
+          .toArray();
+        return { ...bill, participants };
+      })
+    );
+
+    return billsWithParticipants;
+  }, []);
 }
 
 export async function createBillOfflineFirst(
@@ -157,19 +176,29 @@ export async function fetchIOUsOfflineFirst(
   userId: string,
   phoneSuffix: string | null
 ): Promise<LocalIOU[]> {
-  // Get all local IOUs
-  const localIOUs = await offlineDb.ious
-    .filter((iou) => {
-      if (iou.deleted_at) return false;
-      // Show IOUs where user is creditor or debtor
-      if (iou.creditor_id === userId) return true;
-      if (iou.debtor_user_id === userId) return true;
-      if (phoneSuffix && iou.debtor_phone_suffix === phoneSuffix) return true;
-      return false;
-    })
-    .toArray();
+  // Check if local DB is available
+  const dbReady = await isLocalDbAvailable();
+  
+  if (!dbReady) {
+    console.log('Local DB not available for IOUs, returning empty array');
+    return [];
+  }
 
-  return localIOUs;
+  return safeDbOperation(async () => {
+    // Get all local IOUs
+    const localIOUs = await offlineDb.ious
+      .filter((iou) => {
+        if (iou.deleted_at) return false;
+        // Show IOUs where user is creditor or debtor
+        if (iou.creditor_id === userId) return true;
+        if (iou.debtor_user_id === userId) return true;
+        if (phoneSuffix && iou.debtor_phone_suffix === phoneSuffix) return true;
+        return false;
+      })
+      .toArray();
+
+    return localIOUs;
+  }, []);
 }
 
 export async function createIOUOfflineFirst(
