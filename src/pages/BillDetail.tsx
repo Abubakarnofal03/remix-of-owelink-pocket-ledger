@@ -48,6 +48,7 @@ import {
   Users,
   Search,
   User,
+  Archive,
 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
@@ -388,7 +389,15 @@ export default function BillDetail() {
               <p className="text-sm text-muted-foreground mb-1">Total Amount</p>
               <MoneyDisplay amount={bill.total_amount} currency={bill.currency} size="xl" />
             </div>
-            <StatusBadge status={bill.status as any} />
+            <div className="flex items-center gap-2">
+              {bill.deleted_at && (
+                <span className="inline-flex items-center gap-1 text-xs bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-400 px-2 py-0.5 rounded-full">
+                  <Archive className="h-3 w-3" />
+                  Archived
+                </span>
+              )}
+              <StatusBadge status={bill.status as any} />
+            </div>
           </div>
 
           <div className="grid grid-cols-2 gap-4 mb-4">

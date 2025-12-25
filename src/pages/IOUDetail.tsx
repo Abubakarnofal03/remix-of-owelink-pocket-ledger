@@ -45,6 +45,7 @@ import {
   Phone,
   ArrowDownLeft,
   ArrowUpRight,
+  Archive,
 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
@@ -262,7 +263,15 @@ export default function IOUDetail() {
                 {iou.debtor_phone_number}
               </p>
             </div>
-            <StatusBadge status={iou.status as any} />
+            <div className="flex items-center gap-2">
+              {iou.deleted_at && (
+                <span className="inline-flex items-center gap-1 text-xs bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-400 px-2 py-0.5 rounded-full">
+                  <Archive className="h-3 w-3" />
+                  Archived
+                </span>
+              )}
+              <StatusBadge status={iou.status as any} />
+            </div>
           </div>
         </div>
 
