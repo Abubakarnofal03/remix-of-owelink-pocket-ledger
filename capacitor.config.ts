@@ -2,7 +2,7 @@ import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
   appId: 'app.lovable.c4b29d3de8d347a9bddd8699314dcb44',
-  appName: 'SplitBills',
+  appName: 'OweLink',
   webDir: 'dist',
   plugins: {
     StatusBar: {
