@@ -1,5 +1,5 @@
 import { supabase } from '@/integrations/supabase/client';
-import { offlineDb, LocalBill, LocalBillParticipant, LocalIOU, LocalContact, LocalPayment, LocalNotification } from './db';
+import { offlineDb, LocalBill, LocalBillParticipant, LocalIOU, LocalContact, LocalPayment, LocalNotification, LocalPaymentRequest, LocalIOUPaymentRequest } from './db';
 
 // Fetch and store bills from server
 export async function syncBillsFromServer(userId: string): Promise<void> {
@@ -231,6 +231,109 @@ export async function syncNotificationsFromServer(userId: string): Promise<void>
   }
 }
 
+// Fetch and store payment requests from server
+export async function syncPaymentRequestsFromServer(userId: string): Promise<void> {
+  try {
+    // Get bills where user is creator to get their payment requests
+    const { data: bills } = await supabase
+      .from('bills')
+      .select('id')
+      .eq('creator_id', userId);
+
+    if (!bills || bills.length === 0) return;
+
+    const billIds = bills.map(b => b.id);
+    
+    const { data, error } = await supabase
+      .from('payment_requests')
+      .select('*')
+      .in('bill_id', billIds)
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+
+    if (data) {
+      const now = Date.now();
+      
+      const requests: LocalPaymentRequest[] = data.map(req => ({
+        id: req.id,
+        bill_id: req.bill_id,
+        participant_id: req.participant_id,
+        requester_phone_suffix: req.requester_phone_suffix,
+        amount_claimed: req.amount_claimed,
+        receipt_url: req.receipt_url,
+        status: req.status,
+        message: req.message,
+        creator_response: req.creator_response,
+        created_at: req.created_at,
+        updated_at: req.updated_at,
+        synced_at: now,
+        is_local: false,
+      }));
+
+      // Preserve local requests
+      const localRequests = await offlineDb.paymentRequests.filter(r => r.is_local === true).toArray();
+      
+      await offlineDb.paymentRequests.clear();
+      await offlineDb.paymentRequests.bulkPut([...requests, ...localRequests]);
+    }
+  } catch (error) {
+    console.error('Error syncing payment requests from server:', error);
+    throw error;
+  }
+}
+
+// Fetch and store IOU payment requests from server
+export async function syncIOUPaymentRequestsFromServer(userId: string): Promise<void> {
+  try {
+    // Get IOUs where user is creditor to get their payment requests
+    const { data: ious } = await supabase
+      .from('ious')
+      .select('id')
+      .eq('creditor_id', userId);
+
+    if (!ious || ious.length === 0) return;
+
+    const iouIds = ious.map(i => i.id);
+    
+    const { data, error } = await supabase
+      .from('iou_payment_requests')
+      .select('*')
+      .in('iou_id', iouIds)
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+
+    if (data) {
+      const now = Date.now();
+      
+      const requests: LocalIOUPaymentRequest[] = data.map(req => ({
+        id: req.id,
+        iou_id: req.iou_id,
+        requester_phone_suffix: req.requester_phone_suffix,
+        amount_claimed: req.amount_claimed,
+        receipt_url: req.receipt_url,
+        status: req.status,
+        message: req.message,
+        creator_response: req.creator_response,
+        created_at: req.created_at,
+        updated_at: req.updated_at,
+        synced_at: now,
+        is_local: false,
+      }));
+
+      // Preserve local requests
+      const localRequests = await offlineDb.iouPaymentRequests.filter(r => r.is_local === true).toArray();
+      
+      await offlineDb.iouPaymentRequests.clear();
+      await offlineDb.iouPaymentRequests.bulkPut([...requests, ...localRequests]);
+    }
+  } catch (error) {
+    console.error('Error syncing IOU payment requests from server:', error);
+    throw error;
+  }
+}
+
 // Full sync - fetch all data from server
 export async function performFullSync(userId: string, phoneSuffix: string | null): Promise<void> {
   await Promise.all([
@@ -239,6 +342,8 @@ export async function performFullSync(userId: string, phoneSuffix: string | null
     syncContactsFromServer(userId),
     syncPaymentsFromServer(userId),
     syncNotificationsFromServer(userId),
+    syncPaymentRequestsFromServer(userId),
+    syncIOUPaymentRequestsFromServer(userId),
   ]);
   
   // Update sync metadata
@@ -248,5 +353,7 @@ export async function performFullSync(userId: string, phoneSuffix: string | null
     { id: 'contacts', entity_type: 'contacts', last_synced_at: Date.now(), last_server_timestamp: null },
     { id: 'payments', entity_type: 'payments', last_synced_at: Date.now(), last_server_timestamp: null },
     { id: 'notifications', entity_type: 'notifications', last_synced_at: Date.now(), last_server_timestamp: null },
+    { id: 'payment_requests', entity_type: 'payment_requests', last_synced_at: Date.now(), last_server_timestamp: null },
+    { id: 'iou_payment_requests', entity_type: 'iou_payment_requests', last_synced_at: Date.now(), last_server_timestamp: null },
   ]);
 }

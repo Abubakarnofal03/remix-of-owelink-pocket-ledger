@@ -3,6 +3,8 @@ import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { getPhoneSuffix, sendPushNotification } from '@/lib/notifications';
+import { offlineDb, generateLocalId, LocalPaymentRequest } from '@/lib/offline/db';
+import { addToSyncQueue } from '@/lib/offline/syncQueue';
 
 export interface PaymentRequest {
   id: string;
@@ -46,15 +48,47 @@ export function usePaymentRequests(billId: string | undefined): UsePaymentReques
     }
 
     try {
-      const { data, error } = await supabase
-        .from('payment_requests')
-        .select('*')
-        .eq('bill_id', billId)
-        .order('created_at', { ascending: false });
+      // Try to get from local DB first
+      const dbReady = await offlineDb.ensureReady();
+      if (dbReady) {
+        const localRequests = await offlineDb.paymentRequests
+          .where('bill_id')
+          .equals(billId)
+          .toArray();
+        
+        if (localRequests.length > 0) {
+          setRequests(localRequests.map(r => ({
+            ...r,
+            status: r.status as 'pending' | 'approved' | 'rejected',
+          })));
+        }
+      }
 
-      if (error) throw error;
-      
-      setRequests((data || []) as PaymentRequest[]);
+      // If online, fetch from server
+      if (navigator.onLine) {
+        const { data, error } = await supabase
+          .from('payment_requests')
+          .select('*')
+          .eq('bill_id', billId)
+          .order('created_at', { ascending: false });
+
+        if (error) throw error;
+        
+        const serverRequests = (data || []) as PaymentRequest[];
+        setRequests(serverRequests);
+
+        // Update local DB
+        if (dbReady && data) {
+          const now = Date.now();
+          for (const req of data) {
+            await offlineDb.paymentRequests.put({
+              ...req,
+              synced_at: now,
+              is_local: false,
+            });
+          }
+        }
+      }
     } catch (error) {
       console.error('Error fetching payment requests:', error);
     } finally {
@@ -78,56 +112,102 @@ export function usePaymentRequests(billId: string | undefined): UsePaymentReques
       return false;
     }
 
-    try {
-      const { data: newRequest, error } = await supabase
-        .from('payment_requests')
-        .insert({
-          bill_id: data.bill_id,
-          participant_id: data.participant_id,
-          requester_phone_suffix: phoneSuffix,
-          amount_claimed: data.amount_claimed,
-          receipt_url: data.receipt_url || null,
-          message: data.message || null,
-        })
-        .select()
-        .single();
+    const now = new Date().toISOString();
+    const localId = generateLocalId();
+    
+    const newRequest: LocalPaymentRequest = {
+      id: localId,
+      bill_id: data.bill_id,
+      participant_id: data.participant_id,
+      requester_phone_suffix: phoneSuffix,
+      amount_claimed: data.amount_claimed,
+      receipt_url: data.receipt_url || null,
+      message: data.message || null,
+      status: 'pending',
+      creator_response: null,
+      created_at: now,
+      updated_at: now,
+      is_local: true,
+    };
 
-      if (error) throw error;
+    try {
+      // Save to local DB first
+      const dbReady = await offlineDb.ensureReady();
+      if (dbReady) {
+        await offlineDb.paymentRequests.put(newRequest);
+      }
 
       // Add to local state
       setRequests(prev => [newRequest as PaymentRequest, ...prev]);
 
-      // Get bill info to send notification to creator
-      const { data: bill } = await supabase
-        .from('bills')
-        .select('creator_id, title')
-        .eq('id', data.bill_id)
-        .single();
-
-      if (bill) {
-        // Get creator's phone suffix for push notification
-        const { data: creatorProfile } = await supabase
-          .from('profiles')
-          .select('phone_suffix')
-          .eq('user_id', bill.creator_id)
+      if (navigator.onLine) {
+        // Try to sync immediately
+        const { data: serverRequest, error } = await supabase
+          .from('payment_requests')
+          .insert({
+            bill_id: data.bill_id,
+            participant_id: data.participant_id,
+            requester_phone_suffix: phoneSuffix,
+            amount_claimed: data.amount_claimed,
+            receipt_url: data.receipt_url || null,
+            message: data.message || null,
+          })
+          .select()
           .single();
 
-        if (creatorProfile?.phone_suffix) {
-          await sendPushNotification({
-            phoneSuffixes: [creatorProfile.phone_suffix],
-            title: 'Payment Confirmation Request',
-            body: `Someone has requested payment confirmation for "${bill.title}"`,
-            data: { type: 'bill', id: data.bill_id },
+        if (error) throw error;
+
+        // Update local DB with server data
+        if (dbReady) {
+          await offlineDb.paymentRequests.delete(localId);
+          await offlineDb.paymentRequests.put({
+            ...serverRequest,
+            synced_at: Date.now(),
+            is_local: false,
           });
         }
+
+        // Update state with server data
+        setRequests(prev => 
+          prev.map(r => r.id === localId ? serverRequest as PaymentRequest : r)
+        );
+
+        // Send notification to creator
+        const { data: bill } = await supabase
+          .from('bills')
+          .select('creator_id, title')
+          .eq('id', data.bill_id)
+          .single();
+
+        if (bill) {
+          const { data: creatorProfile } = await supabase
+            .from('profiles')
+            .select('phone_suffix')
+            .eq('user_id', bill.creator_id)
+            .single();
+
+          if (creatorProfile?.phone_suffix) {
+            await sendPushNotification({
+              phoneSuffixes: [creatorProfile.phone_suffix],
+              title: 'Payment Confirmation Request',
+              body: `Someone has requested payment confirmation for "${bill.title}"`,
+              data: { type: 'bill', id: data.bill_id },
+            });
+          }
+        }
+      } else {
+        // Queue for sync when offline
+        await addToSyncQueue('payment_request', 'create', localId, newRequest as unknown as Record<string, unknown>);
       }
 
       toast.success('Payment confirmation request sent');
       return true;
     } catch (error) {
       console.error('Error creating payment request:', error);
-      toast.error('Failed to send request');
-      return false;
+      // If online sync failed, queue for later
+      await addToSyncQueue('payment_request', 'create', localId, newRequest as unknown as Record<string, unknown>);
+      toast.success('Request saved, will sync when online');
+      return true;
     }
   };
 
@@ -139,15 +219,17 @@ export function usePaymentRequests(billId: string | undefined): UsePaymentReques
     if (!user) return false;
 
     try {
-      const { error } = await supabase
-        .from('payment_requests')
-        .update({
-          status,
-          creator_response: response || null,
-        })
-        .eq('id', requestId);
+      const updateData = {
+        status,
+        creator_response: response || null,
+        updated_at: new Date().toISOString(),
+      };
 
-      if (error) throw error;
+      // Update local DB first
+      const dbReady = await offlineDb.ensureReady();
+      if (dbReady) {
+        await offlineDb.paymentRequests.update(requestId, updateData);
+      }
 
       // Update local state
       setRequests(prev =>
@@ -158,25 +240,45 @@ export function usePaymentRequests(billId: string | undefined): UsePaymentReques
         )
       );
 
-      // Get request info for notification
-      const request = requests.find(r => r.id === requestId);
-      if (request) {
-        await sendPushNotification({
-          phoneSuffixes: [request.requester_phone_suffix],
-          title: status === 'approved' ? 'Payment Approved!' : 'Payment Request Rejected',
-          body: status === 'approved'
-            ? 'Your payment has been confirmed by the bill creator'
-            : response || 'Your payment request was not approved',
-          data: { type: 'bill', id: request.bill_id },
-        });
+      if (navigator.onLine) {
+        const { error } = await supabase
+          .from('payment_requests')
+          .update({
+            status,
+            creator_response: response || null,
+          })
+          .eq('id', requestId);
+
+        if (error) throw error;
+
+        // Send notification to requester
+        const request = requests.find(r => r.id === requestId);
+        if (request) {
+          await sendPushNotification({
+            phoneSuffixes: [request.requester_phone_suffix],
+            title: status === 'approved' ? 'Payment Approved!' : 'Payment Request Rejected',
+            body: status === 'approved'
+              ? 'Your payment has been confirmed by the bill creator'
+              : response || 'Your payment request was not approved',
+            data: { type: 'bill', id: request.bill_id },
+          });
+        }
+      } else {
+        // Queue for sync when offline
+        await addToSyncQueue('payment_request', 'update', requestId, updateData);
       }
 
       toast.success(status === 'approved' ? 'Payment approved' : 'Request rejected');
       return true;
     } catch (error) {
       console.error('Error updating payment request:', error);
-      toast.error('Failed to update request');
-      return false;
+      // Queue for later sync
+      await addToSyncQueue('payment_request', 'update', requestId, {
+        status,
+        creator_response: response || null,
+      });
+      toast.success('Changes saved, will sync when online');
+      return true;
     }
   };
 

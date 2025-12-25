@@ -105,6 +105,12 @@ export async function processSyncItem(item: SyncQueueItem): Promise<boolean> {
       case 'notification':
         success = await syncNotification(item);
         break;
+      case 'payment_request':
+        success = await syncPaymentRequest(item);
+        break;
+      case 'iou_payment_request':
+        success = await syncIOUPaymentRequest(item);
+        break;
     }
 
     if (success) {
@@ -457,6 +463,92 @@ async function syncNotification(item: SyncQueueItem): Promise<boolean> {
     
     await offlineDb.notifications.update(entity_id, { synced_at: Date.now() });
     return true;
+  }
+
+  return false;
+}
+
+// Sync payment request operations
+async function syncPaymentRequest(item: SyncQueueItem): Promise<boolean> {
+  const { operation, entity_id, payload } = item;
+
+  switch (operation) {
+    case 'create': {
+      const { id: _, is_local: __, synced_at: ___, ...data } = payload;
+      const { data: result, error } = await supabase
+        .from('payment_requests')
+        .insert(data as any)
+        .select()
+        .single();
+
+      if (error) throw error;
+      
+      if (result && entity_id.startsWith('local-')) {
+        await offlineDb.paymentRequests.delete(entity_id);
+        await offlineDb.paymentRequests.put({
+          ...result,
+          synced_at: Date.now(),
+          is_local: false,
+        });
+      }
+      return true;
+    }
+
+    case 'update': {
+      const { id: _, is_local: __, synced_at: ___, ...updateData } = payload;
+      const { error } = await supabase
+        .from('payment_requests')
+        .update(updateData)
+        .eq('id', entity_id);
+
+      if (error) throw error;
+      
+      await offlineDb.paymentRequests.update(entity_id, { synced_at: Date.now(), is_local: false });
+      return true;
+    }
+  }
+
+  return false;
+}
+
+// Sync IOU payment request operations
+async function syncIOUPaymentRequest(item: SyncQueueItem): Promise<boolean> {
+  const { operation, entity_id, payload } = item;
+
+  switch (operation) {
+    case 'create': {
+      const { id: _, is_local: __, synced_at: ___, ...data } = payload;
+      const { data: result, error } = await supabase
+        .from('iou_payment_requests')
+        .insert(data as any)
+        .select()
+        .single();
+
+      if (error) throw error;
+      
+      if (result && entity_id.startsWith('local-')) {
+        await offlineDb.iouPaymentRequests.delete(entity_id);
+        await offlineDb.iouPaymentRequests.put({
+          ...result,
+          synced_at: Date.now(),
+          is_local: false,
+        });
+      }
+      return true;
+    }
+
+    case 'update': {
+      const { id: _, is_local: __, synced_at: ___, ...updateData } = payload;
+      const { error } = await supabase
+        .from('iou_payment_requests')
+        .update(updateData)
+        .eq('id', entity_id);
+
+      if (error) throw error;
+      
+      await offlineDb.iouPaymentRequests.update(entity_id, { synced_at: Date.now(), is_local: false });
+      return true;
+    }
   }
 
   return false;
