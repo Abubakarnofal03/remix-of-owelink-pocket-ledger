@@ -273,6 +273,7 @@ export default function BillDetail() {
     }
 
     try {
+      // Insert participant
       const { data, error } = await supabase
         .from("bill_participants")
         .insert({
@@ -287,8 +288,18 @@ export default function BillDetail() {
 
       if (error) throw error;
 
+      // Update bill total_amount to include new participant's amount
+      const newTotal = bill.total_amount + amount;
+      const { error: updateError } = await supabase
+        .from("bills")
+        .update({ total_amount: newTotal })
+        .eq("id", bill.id);
+
+      if (updateError) throw updateError;
+
       updateBillLocally(prev => ({
         ...prev,
+        total_amount: newTotal,
         participants: [...(prev.participants || []), data],
       }));
 
@@ -468,8 +479,8 @@ export default function BillDetail() {
                 <div className="mt-3 flex items-center justify-between">
                   <div className="flex gap-4">
                     <div>
-                      <p className="text-xs text-muted-foreground">Owes</p>
-                      <MoneyDisplay amount={participant.amount_owed} currency={bill.currency} size="sm" />
+                      <p className="text-xs text-muted-foreground">Remaining</p>
+                      <MoneyDisplay amount={participant.amount_owed - participant.amount_paid} currency={bill.currency} size="sm" />
                     </div>
                     <div>
                       <p className="text-xs text-muted-foreground">Paid</p>
