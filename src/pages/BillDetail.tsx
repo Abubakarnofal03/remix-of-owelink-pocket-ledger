@@ -209,15 +209,19 @@ export default function BillDetail() {
       // Check if all participants are now paid
       const allPaid = updatedParticipants?.every(p => p.amount_paid >= p.amount_owed);
       
+      // Bill status: completed if all paid, pending otherwise
+      const newBillStatus = allPaid ? "completed" : "pending";
+      const statusChanged = bill.status !== newBillStatus;
+      
       updateBillLocally(prev => ({
         ...prev,
         participants: updatedParticipants,
-        status: allPaid ? "completed" : prev.status,
+        status: newBillStatus,
       }));
 
-      // Update bill status if all paid
-      if (allPaid) {
-        await updateBillOfflineFirst(bill.id, { status: 'completed' });
+      // Update bill status if changed
+      if (statusChanged) {
+        await updateBillOfflineFirst(bill.id, { status: newBillStatus });
       }
 
       // Send push notification to participant
@@ -277,16 +281,20 @@ export default function BillDetail() {
         p.status === 'paid' || p.amount_paid >= p.amount_owed
       );
 
+      // Calculate new bill status: completed if all paid, pending otherwise
+      const newBillStatus = allPaid ? "completed" : "pending";
+      const statusChanged = bill.status !== newBillStatus;
+
       // Update UI immediately
       updateBillLocally(prev => ({
         ...prev,
         participants: updatedParticipants,
-        status: allPaid ? "completed" : prev.status,
+        status: newBillStatus,
       }));
 
-      // Update bill status if all paid
-      if (allPaid) {
-        await updateBillOfflineFirst(bill.id, { status: 'completed' });
+      // Update bill status if changed
+      if (statusChanged) {
+        await updateBillOfflineFirst(bill.id, { status: newBillStatus });
       }
 
       // Send push notification to participant
@@ -357,12 +365,19 @@ export default function BillDetail() {
 
       // Update bill total offline-first
       const newTotal = bill.total_amount + amount;
-      await updateBillOfflineFirst(bill.id, { total_amount: newTotal });
+      
+      // If bill was completed, revert to pending since we added a new unpaid participant
+      const newStatus = bill.status === 'completed' ? 'pending' : bill.status;
+      await updateBillOfflineFirst(bill.id, { 
+        total_amount: newTotal,
+        status: newStatus,
+      });
 
       // Update UI immediately
       updateBillLocally(prev => ({
         ...prev,
         total_amount: newTotal,
+        status: newStatus,
         participants: [...(prev.participants || []), newParticipant as any],
       }));
 

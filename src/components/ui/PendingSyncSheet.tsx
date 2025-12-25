@@ -49,36 +49,105 @@ export function PendingSyncSheet({ trigger, isOnline, onSyncComplete }: PendingS
         .anyOf(['pending', 'failed'])
         .toArray();
 
-      // Enrich items with display names
-      const enrichedItems: PendingItemDisplay[] = await Promise.all(
-        pendingItems.map(async (item) => {
-          let displayName = 'Unknown';
-          let displayType = 'Item';
+      // Enrich items with display names and filter out invalid items
+      const enrichedItems: PendingItemDisplay[] = [];
+      const itemsToRemove: number[] = [];
 
-          try {
-            if (item.entity_type === 'bill') {
-              const bill = await offlineDb.bills.get(item.entity_id);
-              displayName = bill?.title || 'Unknown Bill';
-              displayType = 'Bill';
-            } else if (item.entity_type === 'iou') {
-              const iou = await offlineDb.ious.get(item.entity_id);
-              displayName = iou?.description || `${iou?.currency} ${iou?.amount}` || 'Unknown IOU';
-              displayType = 'IOU';
-            } else if (item.entity_type === 'bill_participant') {
-              displayName = (item.payload as any)?.phone_number || 'Participant';
-              displayType = 'Participant';
-            } else if (item.entity_type === 'payment') {
-              displayName = `${(item.payload as any)?.currency || ''} ${(item.payload as any)?.amount || ''}`;
-              displayType = 'Payment';
-            } else if (item.entity_type === 'contact') {
-              displayName = (item.payload as any)?.nickname || (item.payload as any)?.phone_number || 'Contact';
-              displayType = 'Contact';
+      for (const item of pendingItems) {
+        let displayName = 'Unknown';
+        let displayType = 'Item';
+        let shouldInclude = true;
+
+        try {
+          if (item.entity_type === 'bill') {
+            const bill = await offlineDb.bills.get(item.entity_id);
+            // Skip if bill doesn't exist locally (already synced with different ID) or is deleted
+            if (!bill) {
+              // Check if this is a local ID that was synced
+              if (item.entity_id.startsWith('local-') || !bill) {
+                // If it's a create operation and bill doesn't exist, it might have been synced
+                if (item.operation === 'create') {
+                  shouldInclude = false;
+                  itemsToRemove.push(item.id!);
+                }
+              }
+            } else if (bill.deleted_at) {
+              // Skip deleted/archived bills from display
+              shouldInclude = false;
+              // For delete operations, keep in queue; for others, remove
+              if (item.operation !== 'delete') {
+                itemsToRemove.push(item.id!);
+              }
+            } else if (!bill.is_local && bill.synced_at && item.operation === 'create') {
+              // Already synced create operation
+              shouldInclude = false;
+              itemsToRemove.push(item.id!);
+            } else {
+              displayName = bill.title || 'Unknown Bill';
             }
-          } catch (e) {
-            console.warn('Error enriching sync item:', e);
+            displayType = 'Bill';
+          } else if (item.entity_type === 'iou') {
+            const iou = await offlineDb.ious.get(item.entity_id);
+            if (!iou) {
+              if (item.operation === 'create') {
+                shouldInclude = false;
+                itemsToRemove.push(item.id!);
+              }
+            } else if (iou.deleted_at) {
+              shouldInclude = false;
+              if (item.operation !== 'delete') {
+                itemsToRemove.push(item.id!);
+              }
+            } else if (!iou.is_local && iou.synced_at && item.operation === 'create') {
+              shouldInclude = false;
+              itemsToRemove.push(item.id!);
+            } else {
+              displayName = iou.description || `${iou.currency} ${iou.amount}`;
+            }
+            displayType = 'IOU';
+          } else if (item.entity_type === 'bill_participant') {
+            const participant = await offlineDb.billParticipants.get(item.entity_id);
+            if (!participant && item.operation === 'create') {
+              shouldInclude = false;
+              itemsToRemove.push(item.id!);
+            } else if (participant && !participant.is_local && participant.synced_at && item.operation === 'create') {
+              shouldInclude = false;
+              itemsToRemove.push(item.id!);
+            } else {
+              displayName = (item.payload as any)?.phone_number || participant?.phone_number || 'Participant';
+            }
+            displayType = 'Participant';
+          } else if (item.entity_type === 'payment') {
+            const payment = await offlineDb.payments.get(item.entity_id);
+            if (!payment && item.operation === 'create') {
+              shouldInclude = false;
+              itemsToRemove.push(item.id!);
+            } else if (payment && !payment.is_local && payment.synced_at && item.operation === 'create') {
+              shouldInclude = false;
+              itemsToRemove.push(item.id!);
+            } else {
+              displayName = `${(item.payload as any)?.currency || ''} ${(item.payload as any)?.amount || ''}`;
+            }
+            displayType = 'Payment';
+          } else if (item.entity_type === 'contact') {
+            const contact = await offlineDb.contacts.get(item.entity_id);
+            if (!contact && item.operation === 'create') {
+              shouldInclude = false;
+              itemsToRemove.push(item.id!);
+            } else if (contact && !contact.is_local && contact.synced_at && item.operation === 'create') {
+              shouldInclude = false;
+              itemsToRemove.push(item.id!);
+            } else {
+              displayName = (item.payload as any)?.nickname || (item.payload as any)?.phone_number || 'Contact';
+            }
+            displayType = 'Contact';
           }
+        } catch (e) {
+          console.warn('Error enriching sync item:', e);
+        }
 
-          return {
+        if (shouldInclude) {
+          enrichedItems.push({
             id: item.id!,
             entity_type: item.entity_type,
             entity_id: item.entity_id,
@@ -90,9 +159,18 @@ export function PendingSyncSheet({ trigger, isOnline, onSyncComplete }: PendingS
             last_error: item.last_error,
             displayName,
             displayType,
-          };
-        })
-      );
+          });
+        }
+      }
+
+      // Clean up stale items in background
+      if (itemsToRemove.length > 0) {
+        console.log(`[PendingSyncSheet] Removing ${itemsToRemove.length} stale sync items`);
+        for (const id of itemsToRemove) {
+          await offlineDb.syncQueue.delete(id);
+        }
+        onSyncComplete?.(); // Update pending count
+      }
 
       setItems(enrichedItems);
     } catch (e) {
