@@ -167,13 +167,6 @@ export default function BillDetail() {
       return;
     }
 
-    // Calculate the remaining amount owed
-    const currentRemaining = selectedParticipant.amount_owed - selectedParticipant.amount_paid;
-    if (amount > currentRemaining) {
-      toast.error(`Payment cannot exceed remaining amount (${currentRemaining.toFixed(2)})`);
-      return;
-    }
-
     const newAmountPaid = selectedParticipant.amount_paid + amount;
     const newStatus = newAmountPaid >= selectedParticipant.amount_owed ? "paid" : "partial";
 
@@ -188,7 +181,7 @@ export default function BillDetail() {
         currency: bill.currency,
       });
 
-      // Update participant - amount_paid tracks total paid, amount_owed stays as original obligation
+      // Update participant
       const { error } = await supabase
         .from("bill_participants")
         .update({
@@ -280,7 +273,6 @@ export default function BillDetail() {
     }
 
     try {
-      // Insert participant
       const { data, error } = await supabase
         .from("bill_participants")
         .insert({
@@ -295,19 +287,8 @@ export default function BillDetail() {
 
       if (error) throw error;
 
-      // Update bill total amount
-      const newTotal = bill.total_amount + amount;
-      const { error: updateError } = await supabase
-        .from("bills")
-        .update({ total_amount: newTotal })
-        .eq("id", bill.id);
-
-      if (updateError) throw updateError;
-
-      // Update local state with new participant and new total
       updateBillLocally(prev => ({
         ...prev,
-        total_amount: newTotal,
         participants: [...(prev.participants || []), data],
       }));
 
@@ -487,13 +468,8 @@ export default function BillDetail() {
                 <div className="mt-3 flex items-center justify-between">
                   <div className="flex gap-4">
                     <div>
-                      <p className="text-xs text-muted-foreground">Remaining</p>
-                      <MoneyDisplay 
-                        amount={Math.max(0, participant.amount_owed - participant.amount_paid)} 
-                        currency={bill.currency} 
-                        size="sm"
-                        className={participant.amount_paid >= participant.amount_owed ? "text-emerald-600" : "text-rose-600"} 
-                      />
+                      <p className="text-xs text-muted-foreground">Owes</p>
+                      <MoneyDisplay amount={participant.amount_owed} currency={bill.currency} size="sm" />
                     </div>
                     <div>
                       <p className="text-xs text-muted-foreground">Paid</p>
@@ -501,12 +477,8 @@ export default function BillDetail() {
                         amount={participant.amount_paid}
                         currency={bill.currency}
                         size="sm"
-                        className={participant.amount_paid > 0 ? "text-emerald-600" : ""}
+                        className={participant.amount_paid >= participant.amount_owed ? "text-emerald-600" : ""}
                       />
-                    </div>
-                    <div>
-                      <p className="text-xs text-muted-foreground">Total</p>
-                      <MoneyDisplay amount={participant.amount_owed} currency={bill.currency} size="sm" className="text-muted-foreground" />
                     </div>
                   </div>
 
