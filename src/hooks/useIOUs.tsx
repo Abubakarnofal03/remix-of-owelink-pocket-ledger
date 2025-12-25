@@ -31,26 +31,36 @@ export interface IOUInsert {
 
 const IOUS_QUERY_KEY = ["ious"];
 
-async function fetchIOUs(): Promise<IOU[]> {
+async function fetchIOUs(userId: string): Promise<IOU[]> {
+  // Fetch all IOUs the user can see (RLS handles visibility)
+  // Then filter: hide archived IOUs only if user is the creditor
   const { data, error } = await supabase
     .from("ious")
     .select("*")
-    .is("deleted_at", null)
     .order("created_at", { ascending: false });
 
   if (error) throw error;
-  return data || [];
+  
+  // Filter out archived IOUs only for the creditor - debtors should still see them
+  return (data || []).filter(iou => 
+    iou.deleted_at === null || iou.creditor_id !== userId
+  );
 }
 
-async function fetchIOUById(iouId: string): Promise<IOU | null> {
+async function fetchIOUById(iouId: string, userId: string): Promise<IOU | null> {
   const { data, error } = await supabase
     .from("ious")
     .select("*")
     .eq("id", iouId)
-    .is("deleted_at", null)
     .maybeSingle();
 
   if (error) throw error;
+  
+  // Hide archived IOUs only for the creditor - debtors should still see them
+  if (data && data.deleted_at !== null && data.creditor_id === userId) {
+    return null;
+  }
+  
   return data || null;
 }
 
@@ -62,7 +72,7 @@ export function useIOUs() {
 
   const { data: ious = [], isLoading: loading } = useQuery({
     queryKey: iousQueryKey,
-    queryFn: () => fetchIOUs(),
+    queryFn: () => fetchIOUs(user!.id),
     enabled: !!user,
     staleTime: 5 * 60 * 1000,
     gcTime: 30 * 60 * 1000,
@@ -266,7 +276,7 @@ export function useIOUDetail(iouId: string | undefined) {
 
   const { data: iou, isLoading } = useQuery({
     queryKey: ["iou", user?.id, iouId],
-    queryFn: () => fetchIOUById(iouId!),
+    queryFn: () => fetchIOUById(iouId!, user!.id),
     enabled: !!user && !!iouId && !cachedIOU,
     initialData: cachedIOU,
     staleTime: 5 * 60 * 1000,

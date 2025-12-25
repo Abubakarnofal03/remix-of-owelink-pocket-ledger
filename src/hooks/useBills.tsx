@@ -52,21 +52,26 @@ export interface BillInsert {
 
 const BILLS_QUERY_KEY = ["bills"];
 
-async function fetchBills(): Promise<Bill[]> {
+async function fetchBills(userId: string): Promise<Bill[]> {
+  // Fetch all bills the user can see (RLS handles visibility)
+  // Then filter: hide archived bills only if user is the creator
   const { data, error } = await supabase
     .from("bills")
     .select(`
       *,
       participants:bill_participants(*)
     `)
-    .is("deleted_at", null)
     .order("created_at", { ascending: false });
 
   if (error) throw error;
-  return data || [];
+  
+  // Filter out archived bills only for the creator - participants should still see them
+  return (data || []).filter(bill => 
+    bill.deleted_at === null || bill.creator_id !== userId
+  );
 }
 
-async function fetchBillById(billId: string): Promise<Bill | null> {
+async function fetchBillById(billId: string, userId: string): Promise<Bill | null> {
   const { data, error } = await supabase
     .from("bills")
     .select(`
@@ -74,10 +79,15 @@ async function fetchBillById(billId: string): Promise<Bill | null> {
       participants:bill_participants(*)
     `)
     .eq("id", billId)
-    .is("deleted_at", null)
     .maybeSingle();
 
   if (error) throw error;
+  
+  // Hide archived bills only for the creator - participants should still see them
+  if (data && data.deleted_at !== null && data.creator_id === userId) {
+    return null;
+  }
+  
   return data || null;
 }
 
@@ -89,7 +99,7 @@ export function useBills() {
 
   const { data: bills = [], isLoading: loading } = useQuery({
     queryKey: billsQueryKey,
-    queryFn: () => fetchBills(),
+    queryFn: () => fetchBills(user!.id),
     enabled: !!user,
     staleTime: 5 * 60 * 1000, // 5 minutes
     gcTime: 30 * 60 * 1000, // 30 minutes
@@ -307,7 +317,7 @@ export function useBillDetail(billId: string | undefined) {
 
   const { data: bill, isLoading } = useQuery({
     queryKey: ["bill", user?.id, billId],
-    queryFn: () => fetchBillById(billId!),
+    queryFn: () => fetchBillById(billId!, user!.id),
     enabled: !!user && !!billId && !cachedBill,
     initialData: cachedBill,
     staleTime: 5 * 60 * 1000,
