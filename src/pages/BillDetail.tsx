@@ -52,6 +52,8 @@ import {
   User,
   Archive,
   Bell,
+  MessageCircle,
+  Send,
 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
@@ -443,6 +445,74 @@ export default function BillDetail() {
     return null;
   };
 
+  // Generate WhatsApp message for a participant
+  const generateWhatsAppMessage = (participant: BillParticipant) => {
+    const remainingAmount = participant.amount_owed - participant.amount_paid;
+    const contactName = getContactName(participant.phone_number);
+    const dueDateInfo = bill.due_date 
+      ? `\n📅 Due Date: ${format(new Date(bill.due_date), "MMMM d, yyyy")}`
+      : '';
+    
+    return `Hi ${contactName},
+
+This is a reminder for your pending payment.
+
+📋 *Bill:* ${bill.title}${bill.description ? `\n📝 *Description:* ${bill.description}` : ''}
+💰 *Your Share:* ${bill.currency} ${participant.amount_owed.toFixed(2)}
+✅ *Paid:* ${bill.currency} ${participant.amount_paid.toFixed(2)}
+⏳ *Remaining:* ${bill.currency} ${remainingAmount.toFixed(2)}${dueDateInfo}
+
+Please settle the amount at your earliest convenience. Thank you! 🙏`;
+  };
+
+  // Open WhatsApp for a single participant
+  const handleWhatsAppShare = (participant: BillParticipant) => {
+    const message = generateWhatsAppMessage(participant);
+    const phoneNumber = participant.phone_number.replace(/[^0-9]/g, '');
+    const whatsappUrl = `https://wa.me/${phoneNumber}?text=${encodeURIComponent(message)}`;
+    window.open(whatsappUrl, '_blank');
+  };
+
+  // Get unpaid participants
+  const unpaidParticipants = bill.participants?.filter(p => p.status !== 'paid' && p.amount_paid < p.amount_owed) || [];
+
+  // Open WhatsApp for all unpaid participants sequentially
+  const handleWhatsAppSendAll = () => {
+    if (unpaidParticipants.length === 0) {
+      toast.info("No unpaid participants to notify");
+      return;
+    }
+
+    // Open WhatsApp for the first participant immediately
+    handleWhatsAppShare(unpaidParticipants[0]);
+    
+    // Show toast with info about remaining participants
+    if (unpaidParticipants.length > 1) {
+      toast.info(`Opening WhatsApp for ${unpaidParticipants.length} participants. Send each message and return to continue.`, {
+        duration: 5000,
+        action: {
+          label: "Next",
+          onClick: () => {
+            // Open remaining participants one by one
+            let index = 1;
+            const openNext = () => {
+              if (index < unpaidParticipants.length) {
+                handleWhatsAppShare(unpaidParticipants[index]);
+                index++;
+                if (index < unpaidParticipants.length) {
+                  toast.info(`${unpaidParticipants.length - index} more to send`, {
+                    action: { label: "Next", onClick: openNext }
+                  });
+                }
+              }
+            };
+            openNext();
+          }
+        }
+      });
+    }
+  };
+
   return (
     <AppLayout hideNav>
       <div className="animate-fade-in space-y-6">
@@ -536,12 +606,20 @@ export default function BillDetail() {
               <Users className="h-4 w-4" />
               Participants ({bill.participants?.length || 0})
             </h2>
-            {isCreator && (
-              <Button size="sm" variant="outline" onClick={() => setShowAddParticipantDialog(true)}>
-                <Plus className="h-4 w-4 mr-1" />
-                Add
-              </Button>
-            )}
+            <div className="flex gap-2">
+              {isCreator && unpaidParticipants.length > 0 && (
+                <Button size="sm" variant="outline" onClick={handleWhatsAppSendAll} className="text-emerald-600 border-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950">
+                  <Send className="h-4 w-4 mr-1" />
+                  Send All
+                </Button>
+              )}
+              {isCreator && (
+                <Button size="sm" variant="outline" onClick={() => setShowAddParticipantDialog(true)}>
+                  <Plus className="h-4 w-4 mr-1" />
+                  Add
+                </Button>
+              )}
+            </div>
           </div>
 
           <div className="space-y-2">
@@ -589,14 +667,25 @@ export default function BillDetail() {
                     </div>
                   </div>
 
-                  <div className="flex gap-2">
+                  <div className="flex gap-1">
+                    {participant.status !== "paid" && participant.amount_paid < participant.amount_owed && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => handleWhatsAppShare(participant)}
+                        title="Send via WhatsApp"
+                        className="text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-950"
+                      >
+                        <MessageCircle className="h-4 w-4" />
+                      </Button>
+                    )}
                     {isCreator && participant.status !== "paid" && (
                       <>
                         <Button
                           size="sm"
                           variant="ghost"
                           onClick={() => handleSendReminder(participant)}
-                          title="Send Reminder"
+                          title="Send Push Notification"
                         >
                           <Bell className="h-4 w-4" />
                         </Button>
