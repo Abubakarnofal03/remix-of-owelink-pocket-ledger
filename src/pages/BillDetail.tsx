@@ -740,25 +740,58 @@ export default function BillDetail() {
       />
 
       {/* Archive Confirmation */}
-      <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Archive Bill</AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to archive "{bill.title}"? It will be hidden from your view but participants can still see it.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleDelete}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
-              Archive
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      {(() => {
+        const unpaidParticipants = bill.participants?.filter(p => p.status !== "paid") || [];
+        const canArchive = unpaidParticipants.length === 0;
+        
+        return (
+          <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Archive Bill</AlertDialogTitle>
+                <AlertDialogDescription asChild>
+                  <div className="space-y-3">
+                    {canArchive ? (
+                      <p>Are you sure you want to archive "{bill.title}"? It will be hidden from your view but participants can still see it.</p>
+                    ) : (
+                      <>
+                        <p className="text-destructive font-medium">
+                          Cannot archive this bill yet. The following participants haven't paid:
+                        </p>
+                        <ul className="space-y-1 text-sm">
+                          {unpaidParticipants.map(p => (
+                            <li key={p.id} className="flex items-center gap-2">
+                              <span className="h-1.5 w-1.5 rounded-full bg-destructive" />
+                              <span>{getContactName(p.phone_number)}</span>
+                              <span className="text-muted-foreground">
+                                ({bill.currency} {(p.amount_owed - p.amount_paid).toFixed(2)} remaining)
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                        <p className="text-sm text-muted-foreground mt-2 pt-2 border-t">
+                          To archive this bill, go back and mark each participant as "Paid" by recording their payments or updating their status.
+                        </p>
+                      </>
+                    )}
+                  </div>
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                {canArchive && (
+                  <AlertDialogAction
+                    onClick={handleDelete}
+                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  >
+                    Archive
+                  </AlertDialogAction>
+                )}
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        );
+      })()}
     </AppLayout>
   );
 }
