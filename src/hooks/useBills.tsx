@@ -202,29 +202,19 @@ export function useBills() {
 
   const deleteBillMutation = useMutation({
     mutationFn: async (id: string) => {
-      // Try soft delete first
-      const { error: softDeleteError } = await supabase
+      // Soft delete only - ledger entries should never be hard deleted
+      const { error } = await supabase
         .from("bills")
         .update({ deleted_at: new Date().toISOString() })
         .eq("id", id);
 
-      // If soft delete fails (e.g., RLS issue), fallback to hard delete
-      if (softDeleteError) {
-        console.warn("Soft delete failed, attempting hard delete:", softDeleteError);
-        const { error: hardDeleteError } = await supabase
-          .from("bills")
-          .delete()
-          .eq("id", id);
+      if (error) throw error;
 
-        if (hardDeleteError) throw hardDeleteError;
-      }
-
-      // Also remove from offline storage
+      // Mark as deleted in offline storage (don't remove - preserve ledger)
       try {
-        await offlineDb.bills.delete(id);
-        await offlineDb.billParticipants.where("bill_id").equals(id).delete();
+        await offlineDb.bills.update(id, { deleted_at: new Date().toISOString() });
       } catch (e) {
-        console.warn("Failed to delete bill from offline storage:", e);
+        console.warn("Failed to update bill in offline storage:", e);
       }
 
       return id;
