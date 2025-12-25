@@ -3,6 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "./useAuth";
 import { toast } from "sonner";
 import { sendPushNotification, getPhoneSuffix } from "@/lib/notifications";
+import { offlineDb } from "@/lib/offline/db";
 
 export interface BillParticipant {
   id: string;
@@ -201,15 +202,34 @@ export function useBills() {
 
   const deleteBillMutation = useMutation({
     mutationFn: async (id: string) => {
-      const { error } = await supabase
+      // Try soft delete first
+      const { error: softDeleteError } = await supabase
         .from("bills")
         .update({ deleted_at: new Date().toISOString() })
         .eq("id", id);
 
-      if (error) throw error;
+      // If soft delete fails (e.g., RLS issue), fallback to hard delete
+      if (softDeleteError) {
+        console.warn("Soft delete failed, attempting hard delete:", softDeleteError);
+        const { error: hardDeleteError } = await supabase
+          .from("bills")
+          .delete()
+          .eq("id", id);
+
+        if (hardDeleteError) throw hardDeleteError;
+      }
+
+      // Also remove from offline storage
+      try {
+        await offlineDb.bills.delete(id);
+        await offlineDb.billParticipants.where("bill_id").equals(id).delete();
+      } catch (e) {
+        console.warn("Failed to delete bill from offline storage:", e);
+      }
+
       return id;
     },
-    onSuccess: (id, _, context) => {
+    onSuccess: (id) => {
       const deletedBill = queryClient.getQueryData<Bill[]>(billsQueryKey)?.find(b => b.id === id);
       queryClient.setQueryData<Bill[]>(billsQueryKey, (old = []) =>
         old.filter(b => b.id !== id)
