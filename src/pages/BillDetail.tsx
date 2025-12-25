@@ -675,7 +675,7 @@ Please settle the amount at your earliest convenience. Thank you! 🙏`;
                   )}
                 </div>
 
-                <div className="mt-3 flex items-center justify-between">
+                <div className="mt-3 space-y-3">
                   <div className="flex gap-4">
                     <div>
                       <p className="text-xs text-muted-foreground">Remaining</p>
@@ -692,7 +692,7 @@ Please settle the amount at your earliest convenience. Thank you! 🙏`;
                     </div>
                   </div>
 
-                  <div className="flex gap-1">
+                  <div className="flex flex-wrap gap-1">
                     {participant.status !== "paid" && participant.amount_paid < participant.amount_owed && (
                       <Button
                         size="sm"

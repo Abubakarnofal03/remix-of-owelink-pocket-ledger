@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { Navigate, useParams, useNavigate } from "react-router-dom";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { useIOUDetail, useIOUs } from "@/hooks/useIOUs";
 import { useContacts } from "@/hooks/useContacts";
+import { useIOUPaymentRequests } from "@/hooks/useIOUPaymentRequests";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -11,6 +12,8 @@ import { MoneyDisplay } from "@/components/ui/MoneyDisplay";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { AvatarCustom } from "@/components/ui/avatar-custom";
 import { Skeleton } from "@/components/ui/skeleton";
+import { IOUPaymentRequestDialog } from "@/components/ious/IOUPaymentRequestDialog";
+import { IOUPaymentRequestsPanel } from "@/components/ious/IOUPaymentRequestsPanel";
 import {
   Dialog,
   DialogContent,
@@ -47,21 +50,25 @@ import {
   ArrowUpRight,
   Archive,
   MessageCircle,
+  FileCheck,
 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
+import { getPhoneSuffix } from "@/lib/notifications";
 
 export default function IOUDetail() {
-  const { user, loading: authLoading } = useAuth();
+  const { user, profile, loading: authLoading } = useAuth();
   const { id } = useParams();
   const navigate = useNavigate();
   const { iou, loading, updateIOULocally } = useIOUDetail(id);
   const { updateIOU, deleteIOU } = useIOUs();
   const { contacts } = useContacts();
+  const { requests, createRequest, updateRequestStatus } = useIOUPaymentRequests(id);
 
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showPaymentDialog, setShowPaymentDialog] = useState(false);
+  const [showPaymentRequestDialog, setShowPaymentRequestDialog] = useState(false);
   const [paymentAmount, setPaymentAmount] = useState("");
   const [editForm, setEditForm] = useState({
     description: "",
@@ -99,12 +106,86 @@ export default function IOUDetail() {
   const remaining = iou.amount - iou.amount_paid;
   const progress = iou.amount > 0 ? (iou.amount_paid / iou.amount) * 100 : 0;
 
+  // Check if current user is the debtor
+  const userPhoneSuffix = profile?.phone_suffix || (profile?.phone_number ? getPhoneSuffix(profile.phone_number) : null);
+  const isDebtor = useMemo(() => {
+    if (!userPhoneSuffix) return false;
+    if (iou.debtor_user_id === user.id) return true;
+    const iouDebtorSuffix = iou.debtor_phone_suffix || getPhoneSuffix(iou.debtor_phone_number);
+    return iouDebtorSuffix === userPhoneSuffix;
+  }, [iou, user.id, userPhoneSuffix]);
+
+  // Pending payment requests count
+  const pendingRequestsCount = requests.filter(r => r.status === 'pending').length;
+
   const getContactName = (phone: string) => {
     const contact = contacts.find(c => c.phone_number === phone);
     return contact?.nickname || phone;
   };
 
+  // Helper to get contact name by phone suffix
+  const getContactNameBySuffix = (phoneSuffix: string) => {
+    const contact = contacts.find(c => {
+      const suffix = c.phone_suffix || getPhoneSuffix(c.phone_number);
+      return suffix === phoneSuffix;
+    });
+    return contact?.nickname || phoneSuffix;
+  };
+
   const debtorName = getContactName(iou.debtor_phone_number);
+
+  // Handle payment request submission from debtor
+  const handlePaymentRequestSubmit = async (data: {
+    amount_claimed: number;
+    receipt_url?: string;
+    message?: string;
+  }) => {
+    return await createRequest({
+      iou_id: iou.id,
+      amount_claimed: data.amount_claimed,
+      receipt_url: data.receipt_url,
+      message: data.message,
+    });
+  };
+
+  // Handle approving a payment request (for creditors)
+  const handleApproveRequest = async (requestId: string) => {
+    const request = requests.find(r => r.id === requestId);
+    if (!request) return false;
+
+    const success = await updateRequestStatus(requestId, 'approved');
+    if (success) {
+      // Update IOU payment status
+      const newAmountPaid = iou.amount_paid + request.amount_claimed;
+      const newStatus = newAmountPaid >= iou.amount ? "paid" : "partial";
+
+      try {
+        const { error } = await supabase
+          .from("ious")
+          .update({
+            amount_paid: newAmountPaid,
+            status: newStatus,
+          })
+          .eq("id", iou.id);
+
+        if (!error) {
+          updateIOULocally(prev => ({
+            ...prev,
+            amount_paid: newAmountPaid,
+            status: newStatus,
+          }));
+        }
+      } catch (error) {
+        console.error("Error updating IOU:", error);
+      }
+    }
+    return success;
+  };
+
+  // Handle rejecting a payment request
+  const handleRejectRequest = async (requestId: string, reason?: string) => {
+    return await updateRequestStatus(requestId, 'rejected', reason);
+  };
 
   // Generate WhatsApp message for the debtor
   const generateWhatsAppMessage = () => {
@@ -368,6 +449,17 @@ Please settle the amount at your earliest convenience. Thank you! 🙏`;
           )}
         </div>
 
+        {/* Payment Requests Panel - for creditors to manage requests */}
+        {isCreditor && requests.length > 0 && (
+          <IOUPaymentRequestsPanel
+            requests={requests}
+            currency={iou.currency}
+            onApprove={handleApproveRequest}
+            onReject={handleRejectRequest}
+            getRequesterName={getContactNameBySuffix}
+          />
+        )}
+
         {/* Description */}
         {iou.description && (
           <div className="card-elevated p-4">
@@ -376,7 +468,7 @@ Please settle the amount at your earliest convenience. Thank you! 🙏`;
           </div>
         )}
 
-        {/* Actions */}
+        {/* Actions - for creditors to record payment */}
         {isCreditor && iou.status !== "paid" && (
           <Button
             className="w-full"
@@ -387,6 +479,18 @@ Please settle the amount at your earliest convenience. Thank you! 🙏`;
           >
             <DollarSign className="h-4 w-4 mr-2" />
             Record Payment
+          </Button>
+        )}
+
+        {/* Request confirmation button - for debtors who haven't fully paid */}
+        {isDebtor && iou.status !== "paid" && remaining > 0 && (
+          <Button
+            className="w-full"
+            variant="outline"
+            onClick={() => setShowPaymentRequestDialog(true)}
+          >
+            <FileCheck className="h-4 w-4 mr-2" />
+            Request Payment Confirmation
           </Button>
         )}
 
@@ -479,6 +583,16 @@ Please settle the amount at your earliest convenience. Thank you! 🙏`;
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
+
+        {/* Payment Request Dialog - for debtors */}
+        <IOUPaymentRequestDialog
+          open={showPaymentRequestDialog}
+          onOpenChange={setShowPaymentRequestDialog}
+          iouId={iou.id}
+          remainingAmount={remaining}
+          currency={iou.currency}
+          onSubmit={handlePaymentRequestSubmit}
+        />
       </div>
     </AppLayout>
   );
