@@ -16,15 +16,15 @@ export default function IOUs() {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<"owed" | "owe">("owed");
 
-  if (authLoading) return null;
-  if (!user) return <Navigate to="/auth" replace />;
-
   const currentList = activeTab === "owed" ? owedToMe : iOwe;
   const hasAnyIOUs = owedToMe.length > 0 || iOwe.length > 0;
 
   const handleRefresh = async () => {
     await refetch();
   };
+
+  if (authLoading) return null;
+  if (!user) return <Navigate to="/auth" replace />;
 
   return (
     <AppLayout>
