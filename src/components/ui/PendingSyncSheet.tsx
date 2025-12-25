@@ -24,6 +24,7 @@ interface PendingItemDisplay {
   retry_count: number;
   action_id: string;
   last_error: string | null;
+  created_at: number;
   displayName: string;
   displayType: string;
 }
@@ -60,45 +61,40 @@ export function PendingSyncSheet({ trigger, isOnline, onSyncComplete }: PendingS
 
         try {
           if (item.entity_type === 'bill') {
-            const bill = await offlineDb.bills.get(item.entity_id);
-            // Skip if bill doesn't exist locally (already synced with different ID) or is deleted
-            if (!bill) {
-              // Check if this is a local ID that was synced
-              if (item.entity_id.startsWith('local-') || !bill) {
-                // If it's a create operation and bill doesn't exist, it might have been synced
-                if (item.operation === 'create') {
-                  shouldInclude = false;
-                  itemsToRemove.push(item.id!);
-                }
-              }
-            } else if (bill.deleted_at) {
-              // Skip deleted/archived bills from display
+            // Never show deleted/archived bills in the pending list (even if a delete is queued)
+            if (item.operation === 'delete') {
               shouldInclude = false;
-              // For delete operations, keep in queue; for others, remove
-              if (item.operation !== 'delete') {
-                itemsToRemove.push(item.id!);
-              }
-            } else if (!bill.is_local && bill.synced_at && item.operation === 'create') {
-              // Already synced create operation
-              shouldInclude = false;
-              itemsToRemove.push(item.id!);
+              displayType = 'Bill';
             } else {
-              displayName = bill.title || 'Unknown Bill';
+              const bill = await offlineDb.bills.get(item.entity_id);
+
+              // If the bill no longer exists locally, this queue item is stale
+              if (!bill) {
+                shouldInclude = false;
+                itemsToRemove.push(item.id!);
+              } else if (bill.deleted_at) {
+                // Skip deleted/archived bills from display; non-delete ops are stale
+                shouldInclude = false;
+                itemsToRemove.push(item.id!);
+              } else if (bill.synced_at && bill.synced_at >= item.created_at) {
+                // Already synced after this queue item was created
+                shouldInclude = false;
+                itemsToRemove.push(item.id!);
+              } else {
+                displayName = bill.title || 'Unknown Bill';
+              }
+
+              displayType = 'Bill';
             }
-            displayType = 'Bill';
           } else if (item.entity_type === 'iou') {
             const iou = await offlineDb.ious.get(item.entity_id);
             if (!iou) {
-              if (item.operation === 'create') {
-                shouldInclude = false;
-                itemsToRemove.push(item.id!);
-              }
+              shouldInclude = false;
+              itemsToRemove.push(item.id!);
             } else if (iou.deleted_at) {
               shouldInclude = false;
-              if (item.operation !== 'delete') {
-                itemsToRemove.push(item.id!);
-              }
-            } else if (!iou.is_local && iou.synced_at && item.operation === 'create') {
+              itemsToRemove.push(item.id!);
+            } else if (iou.synced_at && iou.synced_at >= item.created_at) {
               shouldInclude = false;
               itemsToRemove.push(item.id!);
             } else {
@@ -107,22 +103,22 @@ export function PendingSyncSheet({ trigger, isOnline, onSyncComplete }: PendingS
             displayType = 'IOU';
           } else if (item.entity_type === 'bill_participant') {
             const participant = await offlineDb.billParticipants.get(item.entity_id);
-            if (!participant && item.operation === 'create') {
+            if (!participant) {
               shouldInclude = false;
               itemsToRemove.push(item.id!);
-            } else if (participant && !participant.is_local && participant.synced_at && item.operation === 'create') {
+            } else if (participant.synced_at && participant.synced_at >= item.created_at) {
               shouldInclude = false;
               itemsToRemove.push(item.id!);
             } else {
-              displayName = (item.payload as any)?.phone_number || participant?.phone_number || 'Participant';
+              displayName = (item.payload as any)?.phone_number || participant.phone_number || 'Participant';
             }
             displayType = 'Participant';
           } else if (item.entity_type === 'payment') {
             const payment = await offlineDb.payments.get(item.entity_id);
-            if (!payment && item.operation === 'create') {
+            if (!payment) {
               shouldInclude = false;
               itemsToRemove.push(item.id!);
-            } else if (payment && !payment.is_local && payment.synced_at && item.operation === 'create') {
+            } else if (payment.synced_at && payment.synced_at >= item.created_at) {
               shouldInclude = false;
               itemsToRemove.push(item.id!);
             } else {
@@ -131,10 +127,10 @@ export function PendingSyncSheet({ trigger, isOnline, onSyncComplete }: PendingS
             displayType = 'Payment';
           } else if (item.entity_type === 'contact') {
             const contact = await offlineDb.contacts.get(item.entity_id);
-            if (!contact && item.operation === 'create') {
+            if (!contact) {
               shouldInclude = false;
               itemsToRemove.push(item.id!);
-            } else if (contact && !contact.is_local && contact.synced_at && item.operation === 'create') {
+            } else if (contact.synced_at && contact.synced_at >= item.created_at) {
               shouldInclude = false;
               itemsToRemove.push(item.id!);
             } else {
@@ -157,6 +153,7 @@ export function PendingSyncSheet({ trigger, isOnline, onSyncComplete }: PendingS
             retry_count: item.retry_count,
             action_id: item.action_id,
             last_error: item.last_error,
+            created_at: item.created_at,
             displayName,
             displayType,
           });

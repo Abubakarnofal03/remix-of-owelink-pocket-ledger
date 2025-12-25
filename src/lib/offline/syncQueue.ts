@@ -12,6 +12,56 @@ export async function addToSyncQueue(
   payload: Record<string, unknown>
 ): Promise<void> {
   try {
+    const ready = await offlineDb.ensureReady();
+    if (!ready) return;
+
+    // De-dupe: keep a single queued action per entity (merge payloads)
+    const existingItems = await offlineDb.syncQueue
+      .where('entity_id')
+      .equals(entityId)
+      .filter(i => i.entity_type === entityType)
+      .toArray();
+
+    const existing = existingItems[0];
+
+    // Delete supersedes everything
+    if (operation === 'delete') {
+      if (existingItems.length > 0) {
+        await Promise.all(existingItems.map(i => offlineDb.syncQueue.delete(i.id!)));
+      }
+      await offlineDb.syncQueue.add({
+        action_id: generateActionId(),
+        entity_type: entityType,
+        operation,
+        entity_id: entityId,
+        payload,
+        created_at: Date.now(),
+        retry_count: 0,
+        last_error: null,
+        status: 'pending',
+      });
+      console.log(`[SyncQueue] Added: ${entityType}:${operation}:${entityId}`);
+      return;
+    }
+
+    if (existing) {
+      // If a create is queued and we later update, fold update into the create payload
+      const nextOperation = existing.operation === 'create' ? 'create' : operation;
+      const mergedPayload = { ...(existing.payload || {}), ...(payload || {}) };
+
+      await offlineDb.syncQueue.update(existing.id!, {
+        action_id: generateActionId(),
+        operation: nextOperation,
+        payload: mergedPayload,
+        created_at: Date.now(),
+        retry_count: 0,
+        last_error: null,
+        status: 'pending',
+      });
+      console.log(`[SyncQueue] Updated: ${entityType}:${nextOperation}:${entityId}`);
+      return;
+    }
+
     await offlineDb.syncQueue.add({
       action_id: generateActionId(),
       entity_type: entityType,

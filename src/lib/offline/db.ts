@@ -499,9 +499,14 @@ class OfflineDatabase extends Dexie {
 
   async getPendingSyncCount(): Promise<number> {
     if (!await this.ensureReady()) return 0;
-    
+
     try {
-      return await this.syncQueue.where('status').anyOf(['pending', 'failed']).count();
+      // User requested: don't surface deleted/archived bills in "Pending"
+      return await this.syncQueue
+        .where('status')
+        .anyOf(['pending', 'failed'])
+        .filter(i => !(i.entity_type === 'bill' && i.operation === 'delete'))
+        .count();
     } catch (e) {
       console.error('[OfflineDB] Error getting pending sync count:', e);
       return 0;
