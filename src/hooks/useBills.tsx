@@ -211,7 +211,13 @@ export function useBills() {
   });
 
   const deleteBillMutation = useMutation({
-    mutationFn: async (id: string) => {
+    mutationFn: async ({ id, bill }: { id: string; bill: Bill }) => {
+      // Check if all participants have paid before allowing archive
+      const unpaidParticipants = bill.participants?.filter(p => p.status !== "paid") || [];
+      if (unpaidParticipants.length > 0) {
+        throw new Error(`Cannot archive: ${unpaidParticipants.length} participant(s) haven't paid yet`);
+      }
+
       // Soft delete only - ledger entries should never be hard deleted
       const { error } = await supabase
         .from("bills")
@@ -272,9 +278,9 @@ export function useBills() {
     }
   };
 
-  const deleteBill = async (id: string): Promise<boolean> => {
+  const deleteBill = async (id: string, bill: Bill): Promise<boolean> => {
     try {
-      await deleteBillMutation.mutateAsync(id);
+      await deleteBillMutation.mutateAsync({ id, bill });
       return true;
     } catch {
       return false;

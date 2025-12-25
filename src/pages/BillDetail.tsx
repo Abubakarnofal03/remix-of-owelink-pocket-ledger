@@ -153,7 +153,7 @@ export default function BillDetail() {
   };
 
   const handleDelete = async () => {
-    const success = await deleteBill(bill.id);
+    const success = await deleteBill(bill.id, bill);
     if (success) {
       navigate("/bills");
     }
