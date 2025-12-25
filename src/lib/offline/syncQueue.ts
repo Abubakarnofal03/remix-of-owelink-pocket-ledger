@@ -11,17 +11,22 @@ export async function addToSyncQueue(
   entityId: string,
   payload: Record<string, unknown>
 ): Promise<void> {
-  await offlineDb.syncQueue.add({
-    action_id: generateActionId(),
-    entity_type: entityType,
-    operation,
-    entity_id: entityId,
-    payload,
-    created_at: Date.now(),
-    retry_count: 0,
-    last_error: null,
-    status: 'pending',
-  });
+  try {
+    await offlineDb.syncQueue.add({
+      action_id: generateActionId(),
+      entity_type: entityType,
+      operation,
+      entity_id: entityId,
+      payload,
+      created_at: Date.now(),
+      retry_count: 0,
+      last_error: null,
+      status: 'pending',
+    });
+    console.log(`[SyncQueue] Added: ${entityType}:${operation}:${entityId}`);
+  } catch (e) {
+    console.error('[SyncQueue] Failed to add item:', e);
+  }
 }
 
 // Process a single sync queue item
@@ -54,6 +59,7 @@ async function processSyncItem(item: SyncQueueItem): Promise<boolean> {
 
     if (success) {
       await offlineDb.syncQueue.delete(item.id!);
+      console.log(`[SyncQueue] ✓ Synced: ${item.entity_type}:${item.operation}:${item.entity_id}`);
       return true;
     }
 
@@ -76,7 +82,7 @@ async function processSyncItem(item: SyncQueueItem): Promise<boolean> {
       });
     }
 
-    console.error(`Sync failed for ${item.entity_type}:${item.entity_id}`, error);
+    console.error(`[SyncQueue] ✗ Failed: ${item.entity_type}:${item.entity_id}`, error);
     return false;
   }
 }
@@ -87,42 +93,85 @@ async function syncBill(item: SyncQueueItem): Promise<boolean> {
 
   switch (operation) {
     case 'create': {
-      // For create, we need to handle local ID replacement
       const localId = entity_id;
-      const { id: _, is_local: __, synced_at: ___, ...billData } = payload as Record<string, unknown>;
+      const participants = payload._participants as Array<{
+        phone_number: string;
+        amount_owed: number;
+        status?: string;
+        amount_paid?: number;
+      }> | undefined;
       
-      const { data, error } = await supabase
+      // Remove internal fields from payload
+      const { _participants, _local_bill_id, id: _, is_local: __, synced_at: ___, ...billData } = payload;
+      
+      // Step 1: Create bill on server
+      const { data: serverBill, error } = await supabase
         .from('bills')
         .insert(billData as any)
         .select()
         .single();
 
       if (error) throw error;
+      if (!serverBill) throw new Error('No bill returned from server');
 
-      // Update local record with server ID
-      if (data && localId.startsWith('local-')) {
-        await offlineDb.bills.delete(localId);
-        await offlineDb.bills.put({
-          ...data,
-          synced_at: Date.now(),
-          is_local: false,
-        });
-        
-        // Update any participants with the new bill ID
-        const localParticipants = await offlineDb.billParticipants
-          .where('bill_id')
-          .equals(localId)
-          .toArray();
-        
-        for (const p of localParticipants) {
-          await offlineDb.billParticipants.update(p.id, { bill_id: data.id });
+      console.log(`[SyncQueue] Bill created on server: ${serverBill.id}`);
+
+      // Step 2: Create participants on server
+      if (participants && participants.length > 0) {
+        const participantsToInsert = participants.map(p => ({
+          bill_id: serverBill.id,
+          phone_number: p.phone_number,
+          amount_owed: p.amount_owed,
+          amount_paid: p.amount_paid || 0,
+          status: p.status || 'pending',
+        }));
+
+        const { data: serverParticipants, error: pError } = await supabase
+          .from('bill_participants')
+          .insert(participantsToInsert)
+          .select();
+
+        if (pError) {
+          console.error('[SyncQueue] Failed to create participants:', pError);
+          // Don't fail the whole operation, bill is created
+        } else {
+          console.log(`[SyncQueue] Created ${serverParticipants?.length || 0} participants`);
+          
+          // Update local participants with server IDs
+          const localParticipants = await offlineDb.billParticipants
+            .where('bill_id')
+            .equals(localId)
+            .toArray();
+          
+          for (let i = 0; i < localParticipants.length; i++) {
+            const localP = localParticipants[i];
+            const serverP = serverParticipants?.find(sp => sp.phone_number === localP.phone_number);
+            
+            if (serverP) {
+              await offlineDb.billParticipants.delete(localP.id);
+              await offlineDb.billParticipants.put({
+                ...serverP,
+                synced_at: Date.now(),
+                is_local: false,
+              });
+            }
+          }
         }
       }
+
+      // Step 3: Update local bill with server ID
+      await offlineDb.bills.delete(localId);
+      await offlineDb.bills.put({
+        ...serverBill,
+        synced_at: Date.now(),
+        is_local: false,
+      });
+
       return true;
     }
 
     case 'update': {
-      const { id: _, is_local: __, synced_at: ___, ...updateData } = payload as Record<string, unknown>;
+      const { id: _, is_local: __, synced_at: ___, ...updateData } = payload;
       const { error } = await supabase
         .from('bills')
         .update(updateData)
@@ -156,7 +205,7 @@ async function syncBillParticipant(item: SyncQueueItem): Promise<boolean> {
 
   switch (operation) {
     case 'create': {
-      const { id: _, is_local: __, synced_at: ___, ...data } = payload as Record<string, unknown>;
+      const { id: _, is_local: __, synced_at: ___, ...data } = payload;
       const { data: result, error } = await supabase
         .from('bill_participants')
         .insert(data as any)
@@ -177,7 +226,7 @@ async function syncBillParticipant(item: SyncQueueItem): Promise<boolean> {
     }
 
     case 'update': {
-      const { id: _, is_local: __, synced_at: ___, ...updateData } = payload as Record<string, unknown>;
+      const { id: _, is_local: __, synced_at: ___, ...updateData } = payload;
       const { error } = await supabase
         .from('bill_participants')
         .update(updateData)
@@ -211,7 +260,7 @@ async function syncIOU(item: SyncQueueItem): Promise<boolean> {
 
   switch (operation) {
     case 'create': {
-      const { id: _, is_local: __, synced_at: ___, ...data } = payload as Record<string, unknown>;
+      const { id: _, is_local: __, synced_at: ___, ...data } = payload;
       const { data: result, error } = await supabase
         .from('ious')
         .insert(data as any)
@@ -232,7 +281,7 @@ async function syncIOU(item: SyncQueueItem): Promise<boolean> {
     }
 
     case 'update': {
-      const { id: _, is_local: __, synced_at: ___, ...updateData } = payload as Record<string, unknown>;
+      const { id: _, is_local: __, synced_at: ___, ...updateData } = payload;
       const { error } = await supabase
         .from('ious')
         .update(updateData)
@@ -265,7 +314,7 @@ async function syncPayment(item: SyncQueueItem): Promise<boolean> {
   const { operation, entity_id, payload } = item;
 
   if (operation === 'create') {
-    const { id: _, is_local: __, synced_at: ___, ...data } = payload as Record<string, unknown>;
+    const { id: _, is_local: __, synced_at: ___, ...data } = payload;
     const { data: result, error } = await supabase
       .from('payments')
       .insert(data as any)
@@ -294,7 +343,7 @@ async function syncContact(item: SyncQueueItem): Promise<boolean> {
 
   switch (operation) {
     case 'create': {
-      const { id: _, is_local: __, synced_at: ___, ...data } = payload as Record<string, unknown>;
+      const { id: _, is_local: __, synced_at: ___, ...data } = payload;
       const { data: result, error } = await supabase
         .from('contacts')
         .insert(data as any)
@@ -315,7 +364,7 @@ async function syncContact(item: SyncQueueItem): Promise<boolean> {
     }
 
     case 'update': {
-      const { id: _, is_local: __, synced_at: ___, ...updateData } = payload as Record<string, unknown>;
+      const { id: _, is_local: __, synced_at: ___, ...updateData } = payload;
       const { error } = await supabase
         .from('contacts')
         .update(updateData)
@@ -348,7 +397,7 @@ async function syncNotification(item: SyncQueueItem): Promise<boolean> {
   const { operation, entity_id, payload } = item;
 
   if (operation === 'update') {
-    const { id: _, synced_at: __, ...updateData } = payload as Record<string, unknown>;
+    const { id: _, synced_at: __, ...updateData } = payload;
     const { error } = await supabase
       .from('notifications')
       .update(updateData)
@@ -365,11 +414,28 @@ async function syncNotification(item: SyncQueueItem): Promise<boolean> {
 
 // Process all pending sync items
 export async function processAllPendingSync(): Promise<{ processed: number; failed: number }> {
+  if (!navigator.onLine) {
+    console.log('[SyncQueue] Offline, skipping sync');
+    return { processed: 0, failed: 0 };
+  }
+
+  const ready = await offlineDb.ensureReady();
+  if (!ready) {
+    console.log('[SyncQueue] DB not ready, skipping sync');
+    return { processed: 0, failed: 0 };
+  }
+
   const pendingItems = await offlineDb.syncQueue
     .where('status')
     .anyOf(['pending', 'failed'])
     .filter(item => item.retry_count < MAX_RETRY_COUNT)
     .sortBy('created_at');
+
+  if (pendingItems.length === 0) {
+    return { processed: 0, failed: 0 };
+  }
+
+  console.log(`[SyncQueue] Processing ${pendingItems.length} items...`);
 
   let processed = 0;
   let failed = 0;
@@ -377,8 +443,8 @@ export async function processAllPendingSync(): Promise<{ processed: number; fail
   for (const item of pendingItems) {
     // Apply exponential backoff for retries
     if (item.retry_count > 0) {
-      const delay = BASE_DELAY_MS * Math.pow(2, item.retry_count);
-      await new Promise(resolve => setTimeout(resolve, delay));
+      const delay = BASE_DELAY_MS * Math.pow(2, item.retry_count - 1);
+      await new Promise(resolve => setTimeout(resolve, Math.min(delay, 10000)));
     }
 
     const success = await processSyncItem(item);
@@ -389,15 +455,20 @@ export async function processAllPendingSync(): Promise<{ processed: number; fail
     }
   }
 
+  console.log(`[SyncQueue] Done: ${processed} processed, ${failed} failed`);
   return { processed, failed };
 }
 
 // Get failed sync items count
 export async function getFailedSyncCount(): Promise<number> {
-  return offlineDb.syncQueue
-    .where('status')
-    .equals('failed')
-    .count();
+  try {
+    return await offlineDb.syncQueue
+      .where('status')
+      .equals('failed')
+      .count();
+  } catch {
+    return 0;
+  }
 }
 
 // Retry all failed items
