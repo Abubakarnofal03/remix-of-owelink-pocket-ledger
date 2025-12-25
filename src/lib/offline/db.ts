@@ -100,6 +100,9 @@ export interface LocalBill {
   created_at: string;
   updated_at: string;
   deleted_at: string | null;
+  reminder_enabled?: boolean;
+  reminder_interval_days?: number | null;
+  last_reminder_sent_at?: string | null;
   synced_at?: number;
   is_local?: boolean;
 }

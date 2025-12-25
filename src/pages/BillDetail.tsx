@@ -25,6 +25,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -86,6 +88,8 @@ export default function BillDetail() {
     description: "",
     total_amount: "",
     due_date: "",
+    reminder_enabled: false,
+    reminder_interval_days: "3",
   });
   const [newParticipantPhone, setNewParticipantPhone] = useState("");
   const [newParticipantAmount, setNewParticipantAmount] = useState("");
@@ -149,6 +153,8 @@ export default function BillDetail() {
       description: editForm.description || undefined,
       total_amount: parseFloat(editForm.total_amount),
       due_date: editForm.due_date || undefined,
+      reminder_enabled: editForm.reminder_enabled,
+      reminder_interval_days: editForm.reminder_enabled ? parseInt(editForm.reminder_interval_days) : undefined,
     });
 
     if (success) {
@@ -158,6 +164,8 @@ export default function BillDetail() {
         description: editForm.description || null,
         total_amount: parseFloat(editForm.total_amount),
         due_date: editForm.due_date || null,
+        reminder_enabled: editForm.reminder_enabled,
+        reminder_interval_days: editForm.reminder_enabled ? parseInt(editForm.reminder_interval_days) : null,
       }));
       setShowEditDialog(false);
     }
@@ -419,6 +427,8 @@ export default function BillDetail() {
       description: bill.description || "",
       total_amount: bill.total_amount.toString(),
       due_date: bill.due_date ? bill.due_date.split("T")[0] : "",
+      reminder_enabled: bill.reminder_enabled || false,
+      reminder_interval_days: bill.reminder_interval_days?.toString() || "3",
     });
     setShowEditDialog(true);
   };
@@ -667,6 +677,42 @@ export default function BillDetail() {
                 value={editForm.due_date}
                 onChange={(e) => setEditForm(prev => ({ ...prev, due_date: e.target.value }))}
               />
+            </div>
+            
+            {/* Reminder Settings */}
+            <div className="space-y-3 pt-2 border-t border-border">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Bell className="h-4 w-4 text-amber-500" />
+                  <Label className="text-sm font-medium">Automatic Reminders</Label>
+                </div>
+                <Switch
+                  checked={editForm.reminder_enabled}
+                  onCheckedChange={(checked) => setEditForm(prev => ({ ...prev, reminder_enabled: checked }))}
+                />
+              </div>
+              
+              {editForm.reminder_enabled && (
+                <div className="pl-6">
+                  <Label className="text-sm text-muted-foreground">Send reminder every:</Label>
+                  <Select 
+                    value={editForm.reminder_interval_days} 
+                    onValueChange={(value) => setEditForm(prev => ({ ...prev, reminder_interval_days: value }))}
+                  >
+                    <SelectTrigger className="w-full mt-1">
+                      <SelectValue placeholder="Select interval" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="1">Every day</SelectItem>
+                      <SelectItem value="2">Every 2 days</SelectItem>
+                      <SelectItem value="3">Every 3 days</SelectItem>
+                      <SelectItem value="5">Every 5 days</SelectItem>
+                      <SelectItem value="7">Every week</SelectItem>
+                      <SelectItem value="14">Every 2 weeks</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
             </div>
           </div>
           <DialogFooter>

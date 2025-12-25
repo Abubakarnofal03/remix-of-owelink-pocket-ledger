@@ -100,6 +100,9 @@ export type Database = {
           description: string | null
           due_date: string | null
           id: string
+          last_reminder_sent_at: string | null
+          reminder_enabled: boolean | null
+          reminder_interval_days: number | null
           status: string
           title: string
           total_amount: number
@@ -113,6 +116,9 @@ export type Database = {
           description?: string | null
           due_date?: string | null
           id?: string
+          last_reminder_sent_at?: string | null
+          reminder_enabled?: boolean | null
+          reminder_interval_days?: number | null
           status?: string
           title: string
           total_amount: number
@@ -126,6 +132,9 @@ export type Database = {
           description?: string | null
           due_date?: string | null
           id?: string
+          last_reminder_sent_at?: string | null
+          reminder_enabled?: boolean | null
+          reminder_interval_days?: number | null
           status?: string
           title?: string
           total_amount?: number
