@@ -354,6 +354,63 @@ export type Database = {
         }
         Relationships: []
       }
+      payment_requests: {
+        Row: {
+          amount_claimed: number
+          bill_id: string
+          created_at: string
+          creator_response: string | null
+          id: string
+          message: string | null
+          participant_id: string
+          receipt_url: string | null
+          requester_phone_suffix: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          amount_claimed?: number
+          bill_id: string
+          created_at?: string
+          creator_response?: string | null
+          id?: string
+          message?: string | null
+          participant_id: string
+          receipt_url?: string | null
+          requester_phone_suffix: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          amount_claimed?: number
+          bill_id?: string
+          created_at?: string
+          creator_response?: string | null
+          id?: string
+          message?: string | null
+          participant_id?: string
+          receipt_url?: string | null
+          requester_phone_suffix?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "payment_requests_bill_id_fkey"
+            columns: ["bill_id"]
+            isOneToOne: false
+            referencedRelation: "bills"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payment_requests_participant_id_fkey"
+            columns: ["participant_id"]
+            isOneToOne: false
+            referencedRelation: "bill_participants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       payments: {
         Row: {
           amount: number

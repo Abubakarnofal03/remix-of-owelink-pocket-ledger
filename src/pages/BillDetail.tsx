@@ -4,6 +4,7 @@ import { Navigate, useParams, useNavigate } from "react-router-dom";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { useBillDetail, BillParticipant } from "@/hooks/useBills";
 import { useContacts, Contact } from "@/hooks/useContacts";
+import { usePaymentRequests } from "@/hooks/usePaymentRequests";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -54,11 +55,14 @@ import {
   Bell,
   MessageCircle,
   Send,
+  FileCheck,
 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useBills } from "@/hooks/useBills";
 import { AddContactDialog } from "@/components/contacts/AddContactDialog";
+import { PaymentRequestDialog } from "@/components/bills/PaymentRequestDialog";
+import { PaymentRequestsPanel } from "@/components/bills/PaymentRequestsPanel";
 import { 
   updateBillParticipantOfflineFirst, 
   createBillParticipantOfflineFirst,
@@ -70,19 +74,21 @@ import { useOffline } from "@/hooks/useOffline";
 import { sendPushNotification, getPhoneSuffix } from "@/lib/notifications";
 
 export default function BillDetail() {
-  const { user, loading: authLoading } = useAuth();
+  const { user, profile, loading: authLoading } = useAuth();
   const { id } = useParams();
   const navigate = useNavigate();
   const { bill, loading, updateBillLocally } = useBillDetail(id);
   const { updateBill, deleteBill } = useBills();
   const { contacts, addContact } = useContacts();
   const { sync } = useOffline();
+  const { requests, createRequest, updateRequestStatus, refetch: refetchRequests } = usePaymentRequests(id);
 
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showPaymentDialog, setShowPaymentDialog] = useState(false);
   const [showAddParticipantDialog, setShowAddParticipantDialog] = useState(false);
   const [showAddContactDialog, setShowAddContactDialog] = useState(false);
+  const [showPaymentRequestDialog, setShowPaymentRequestDialog] = useState(false);
   const [selectedParticipant, setSelectedParticipant] = useState<BillParticipant | null>(null);
   const [paymentAmount, setPaymentAmount] = useState("");
   const [editForm, setEditForm] = useState({
@@ -148,6 +154,34 @@ export default function BillDetail() {
     const contact = contacts.find(c => c.phone_number === phone);
     return contact?.nickname || phone;
   };
+
+  // Helper to get contact name by phone suffix
+  const getContactNameBySuffix = (phoneSuffix: string) => {
+    const contact = contacts.find(c => {
+      const suffix = c.phone_suffix || getPhoneSuffix(c.phone_number);
+      return suffix === phoneSuffix;
+    });
+    return contact?.nickname || phoneSuffix;
+  };
+
+  // Find current user's participant record (for debtors)
+  const userPhoneSuffix = profile?.phone_suffix || (profile?.phone_number ? getPhoneSuffix(profile.phone_number) : null);
+  const currentUserParticipant = useMemo(() => {
+    if (!userPhoneSuffix || !bill?.participants) return null;
+    return bill.participants.find(p => {
+      const pSuffix = p.phone_suffix || getPhoneSuffix(p.phone_number);
+      return pSuffix === userPhoneSuffix;
+    });
+  }, [bill?.participants, userPhoneSuffix]);
+
+  // Check if user is a debtor (participant but not creator)
+  const isDebtor = !isCreator && !!currentUserParticipant;
+  const debtorRemainingAmount = currentUserParticipant 
+    ? currentUserParticipant.amount_owed - currentUserParticipant.amount_paid 
+    : 0;
+
+  // Pending payment requests count for creators
+  const pendingRequestsCount = requests.filter(r => r.status === 'pending').length;
 
   const handleEditSubmit = async () => {
     const success = await updateBill(bill.id, {
@@ -476,41 +510,38 @@ Please settle the amount at your earliest convenience. Thank you! 🙏`;
   // Get unpaid participants
   const unpaidParticipants = bill.participants?.filter(p => p.status !== 'paid' && p.amount_paid < p.amount_owed) || [];
 
-  // Open WhatsApp for all unpaid participants sequentially
-  const handleWhatsAppSendAll = () => {
-    if (unpaidParticipants.length === 0) {
-      toast.info("No unpaid participants to notify");
-      return;
-    }
+  // Handle payment request submission from debtor
+  const handlePaymentRequestSubmit = async (data: { amount_claimed: number; receipt_url?: string; message?: string }) => {
+    if (!currentUserParticipant) return false;
+    return await createRequest({
+      bill_id: bill.id,
+      participant_id: currentUserParticipant.id,
+      amount_claimed: data.amount_claimed,
+      receipt_url: data.receipt_url,
+      message: data.message,
+    });
+  };
 
-    // Open WhatsApp for the first participant immediately
-    handleWhatsAppShare(unpaidParticipants[0]);
-    
-    // Show toast with info about remaining participants
-    if (unpaidParticipants.length > 1) {
-      toast.info(`Opening WhatsApp for ${unpaidParticipants.length} participants. Send each message and return to continue.`, {
-        duration: 5000,
-        action: {
-          label: "Next",
-          onClick: () => {
-            // Open remaining participants one by one
-            let index = 1;
-            const openNext = () => {
-              if (index < unpaidParticipants.length) {
-                handleWhatsAppShare(unpaidParticipants[index]);
-                index++;
-                if (index < unpaidParticipants.length) {
-                  toast.info(`${unpaidParticipants.length - index} more to send`, {
-                    action: { label: "Next", onClick: openNext }
-                  });
-                }
-              }
-            };
-            openNext();
-          }
-        }
-      });
+  // Handle payment request approval - also updates participant status
+  const handleApproveRequest = async (requestId: string) => {
+    const request = requests.find(r => r.id === requestId);
+    if (!request) return false;
+
+    const success = await updateRequestStatus(requestId, 'approved');
+    if (success) {
+      // Find participant and update their payment status
+      const participant = bill.participants?.find(p => p.id === request.participant_id);
+      if (participant) {
+        const newAmountPaid = participant.amount_paid + request.amount_claimed;
+        const newStatus = newAmountPaid >= participant.amount_owed ? 'paid' : 'partial';
+        await handleStatusChange(participant, newStatus);
+      }
     }
+    return success;
+  };
+
+  const handleRejectRequest = async (requestId: string, reason?: string) => {
+    return await updateRequestStatus(requestId, 'rejected', reason);
   };
 
   return (
@@ -607,12 +638,6 @@ Please settle the amount at your earliest convenience. Thank you! 🙏`;
               Participants ({bill.participants?.length || 0})
             </h2>
             <div className="flex gap-2">
-              {isCreator && unpaidParticipants.length > 0 && (
-                <Button size="sm" variant="outline" onClick={handleWhatsAppSendAll} className="text-emerald-600 border-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950">
-                  <Send className="h-4 w-4 mr-1" />
-                  Send All
-                </Button>
-              )}
               {isCreator && (
                 <Button size="sm" variant="outline" onClick={() => setShowAddParticipantDialog(true)}>
                   <Plus className="h-4 w-4 mr-1" />
@@ -728,6 +753,38 @@ Please settle the amount at your earliest convenience. Thank you! 🙏`;
             ))}
           </div>
         </div>
+
+        {/* Debtor: Request Status Change Button */}
+        {isDebtor && currentUserParticipant && currentUserParticipant.status !== 'paid' && debtorRemainingAmount > 0 && (
+          <div className="card-elevated p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-medium text-foreground">Already Paid?</p>
+                <p className="text-sm text-muted-foreground">
+                  Request the bill creator to confirm your payment
+                </p>
+              </div>
+              <Button
+                onClick={() => setShowPaymentRequestDialog(true)}
+                className="bg-emerald-600 hover:bg-emerald-700"
+              >
+                <FileCheck className="h-4 w-4 mr-2" />
+                Request Confirmation
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* Creator: Payment Requests Panel */}
+        {isCreator && requests.length > 0 && (
+          <PaymentRequestsPanel
+            requests={requests}
+            currency={bill.currency}
+            onApprove={handleApproveRequest}
+            onReject={handleRejectRequest}
+            getContactName={getContactNameBySuffix}
+          />
+        )}
       </div>
 
       {/* Edit Dialog */}
@@ -1014,6 +1071,19 @@ Please settle the amount at your earliest convenience. Thank you! 🙏`;
           </AlertDialog>
         );
       })()}
+
+      {/* Payment Request Dialog for Debtors */}
+      {currentUserParticipant && (
+        <PaymentRequestDialog
+          open={showPaymentRequestDialog}
+          onOpenChange={setShowPaymentRequestDialog}
+          billId={bill.id}
+          participantId={currentUserParticipant.id}
+          remainingAmount={debtorRemainingAmount}
+          currency={bill.currency}
+          onSubmit={handlePaymentRequestSubmit}
+        />
+      )}
     </AppLayout>
   );
 }
