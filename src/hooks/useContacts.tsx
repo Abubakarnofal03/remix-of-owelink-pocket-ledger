@@ -1,18 +1,26 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
+import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "./useAuth";
 import { toast } from "sonner";
 import { extractPhoneSuffix } from "@/lib/phoneUtils";
-import { useCallback } from "react";
 import { Capacitor } from "@capacitor/core";
 import { Contacts } from "@capacitor-community/contacts";
+import {
+  getLocalContacts,
+  addLocalContact,
+  updateLocalContact,
+  deleteLocalContact,
+  searchLocalContacts,
+  getAllNicknameOverrides,
+  setNicknameOverride,
+} from "@/lib/contactsDb";
+import { LocalAppContact } from "@/lib/offline/db";
 
 export interface Contact {
   id: string;
   phone_number: string;
-  phone_suffix: string | null;
+  phone_suffix: string;
   nickname: string | null;
-  linked_profile_id: string | null;
+  source: 'local' | 'device';
   created_at: string;
   updated_at: string;
 }
@@ -22,194 +30,62 @@ export interface ContactInsert {
   nickname?: string;
 }
 
-const CONTACTS_QUERY_KEY = ["contacts"];
-
-async function fetchContacts(userId: string): Promise<Contact[]> {
-  const { data, error } = await supabase
-    .from("contacts")
-    .select("*")
-    .eq("user_id", userId)
-    .order("nickname", { ascending: true, nullsFirst: false });
-
-  if (error) throw error;
-  return data || [];
+interface DeviceContact {
+  id: string;
+  name: string | null;
+  phone_number: string;
+  phone_suffix: string;
 }
 
+/**
+ * useContacts - Local-only contacts hook
+ * 
+ * Contacts are stored locally on the device:
+ * - Custom contacts: Stored in IndexedDB (Dexie)
+ * - Device contacts: Read directly from phone's contact book
+ * - Nickname overrides: Stored in IndexedDB for device contact nicknames
+ * 
+ * NO contacts are stored in Supabase database.
+ */
 export function useContacts() {
   const { user } = useAuth();
-  const queryClient = useQueryClient();
+  const [localContacts, setLocalContacts] = useState<LocalAppContact[]>([]);
+  const [deviceContacts, setDeviceContacts] = useState<DeviceContact[]>([]);
+  const [nicknameOverrides, setNicknameOverrides] = useState<Map<string, string>>(new Map());
+  const [loading, setLoading] = useState(true);
+  const [hasPermission, setHasPermission] = useState<boolean | null>(null);
 
-  const { data: contacts = [], isLoading: loading } = useQuery({
-    queryKey: ["contacts", user?.id],
-    queryFn: () => fetchContacts(user!.id),
-    enabled: !!user,
-    staleTime: 5 * 60 * 1000, // 5 minutes
-    gcTime: 30 * 60 * 1000, // 30 minutes
-  });
-
-  const addContactMutation = useMutation({
-    mutationFn: async (contact: ContactInsert) => {
-      if (!user) throw new Error("Not authenticated");
-
-      // Check for duplicate using phone_suffix matching
-      const newSuffix = extractPhoneSuffix(contact.phone_number);
-      const existing = contacts.find(c => 
-        c.phone_suffix === newSuffix || extractPhoneSuffix(c.phone_number) === newSuffix
-      );
-      if (existing) {
-        throw new Error("Contact with this phone number already exists");
-      }
-
-      const { data, error } = await supabase
-        .from("contacts")
-        .insert({
-          user_id: user.id,
-          phone_number: contact.phone_number,
-          nickname: contact.nickname || null,
-        })
-        .select()
-        .single();
-
-      if (error) throw error;
-      return data;
-    },
-    onSuccess: (newContact) => {
-      queryClient.setQueryData<Contact[]>(["contacts", user?.id], (old = []) => [...old, newContact]);
-      toast.success("Contact added");
-    },
-    onError: (error: any) => {
-      console.error("Error adding contact:", error);
-      toast.error(error.message || "Failed to add contact");
-    },
-  });
-
-  const updateContactMutation = useMutation({
-    mutationFn: async ({ id, updates }: { id: string; updates: Partial<ContactInsert> }) => {
-      const { data, error } = await supabase
-        .from("contacts")
-        .update(updates)
-        .eq("id", id)
-        .select()
-        .single();
-
-      if (error) throw error;
-      return data;
-    },
-    onSuccess: (data) => {
-      queryClient.setQueryData<Contact[]>(["contacts", user?.id], (old = []) =>
-        old.map(c => c.id === data.id ? data : c)
-      );
-      toast.success("Contact updated");
-    },
-    onError: (error: any) => {
-      console.error("Error updating contact:", error);
-      toast.error("Failed to update contact");
-    },
-  });
-
-  const deleteContactMutation = useMutation({
-    mutationFn: async (id: string) => {
-      const { error } = await supabase
-        .from("contacts")
-        .delete()
-        .eq("id", id);
-
-      if (error) throw error;
-      return id;
-    },
-    onSuccess: (id) => {
-      queryClient.setQueryData<Contact[]>(["contacts", user?.id], (old = []) =>
-        old.filter(c => c.id !== id)
-      );
-      toast.success("Contact deleted");
-    },
-    onError: (error: any) => {
-      console.error("Error deleting contact:", error);
-      toast.error("Failed to delete contact");
-    },
-  });
-
-  const addContact = async (contact: ContactInsert): Promise<Contact | null> => {
+  // Load local contacts and nickname overrides from IndexedDB
+  const loadLocalData = useCallback(async () => {
     try {
-      return await addContactMutation.mutateAsync(contact);
-    } catch {
-      return null;
+      const [contacts, overrides] = await Promise.all([
+        getLocalContacts(),
+        getAllNicknameOverrides(),
+      ]);
+      setLocalContacts(contacts);
+      setNicknameOverrides(overrides);
+    } catch (error) {
+      console.error("Error loading local contacts:", error);
     }
-  };
+  }, []);
 
-  const updateContact = async (id: string, updates: Partial<ContactInsert>): Promise<boolean> => {
-    try {
-      await updateContactMutation.mutateAsync({ id, updates });
-      return true;
-    } catch {
-      return false;
-    }
-  };
-
-  const deleteContact = async (id: string): Promise<boolean> => {
-    try {
-      await deleteContactMutation.mutateAsync(id);
-      return true;
-    } catch {
-      return false;
-    }
-  };
-
-  const importContactsFromDevice = async (): Promise<number> => {
-    // Check if running on native platform
+  // Fetch device contacts using Capacitor
+  const fetchDeviceContacts = useCallback(async (): Promise<DeviceContact[]> => {
     if (!Capacitor.isNativePlatform()) {
-      // Fallback to Web Contact Picker API for PWA
-      if ("contacts" in navigator && "ContactsManager" in window) {
-        try {
-          const props = ["tel", "name"];
-          const opts = { multiple: true };
-          // @ts-ignore - Contacts API is experimental
-          const deviceContacts = await navigator.contacts.select(props, opts);
-          
-          let imported = 0;
-          for (const contact of deviceContacts) {
-            if (contact.tel && contact.tel.length > 0) {
-              const phone = contact.tel[0];
-              const phoneSuffix = extractPhoneSuffix(phone);
-              const name = contact.name?.[0] || null;
-              
-              if (contacts.find(c => c.phone_suffix === phoneSuffix || extractPhoneSuffix(c.phone_number) === phoneSuffix)) continue;
-              
-              const result = await addContact({
-                phone_number: phone,
-                nickname: name || undefined,
-              });
-              
-              if (result) imported++;
-            }
-          }
-          
-          if (imported > 0) {
-            toast.success(`Imported ${imported} contacts`);
-          }
-          return imported;
-        } catch (error: any) {
-          if (error.name !== "AbortError") {
-            console.error("Error importing contacts:", error);
-            toast.error("Failed to import contacts");
-          }
-          return 0;
-        }
-      }
-      toast.error("Contact import not supported on this device");
-      return 0;
+      console.log("Not native platform, skipping device contacts");
+      return [];
     }
 
-    // Native Capacitor contacts
     try {
-      // Request permission first
+      // Request permission
       const permResult = await Contacts.requestPermissions();
       if (permResult.contacts !== "granted") {
-        toast.error("Contact permission denied");
-        return 0;
+        setHasPermission(false);
+        return [];
       }
+      setHasPermission(true);
 
-      // Get all contacts from device
+      // Get contacts from device
       const result = await Contacts.getContacts({
         projection: {
           name: true,
@@ -217,97 +93,199 @@ export function useContacts() {
         },
       });
 
-      let imported = 0;
-      for (const deviceContact of result.contacts) {
-        const phones = deviceContact.phones;
-        if (phones && phones.length > 0) {
-          const phone = phones[0].number;
-          if (!phone) continue;
-          
-          const phoneSuffix = extractPhoneSuffix(phone);
-          const name = deviceContact.name?.display || deviceContact.name?.given || null;
-          
-          // Skip if already exists
-          if (contacts.find(c => c.phone_suffix === phoneSuffix || extractPhoneSuffix(c.phone_number) === phoneSuffix)) continue;
-          
-          const contactResult = await addContact({
-            phone_number: phone,
-            nickname: name || undefined,
-          });
-          
-          if (contactResult) imported++;
-        }
-      }
+      const mapped: DeviceContact[] = (result.contacts || [])
+        .filter(c => c.phones && c.phones.length > 0 && c.phones[0].number)
+        .map((c, index) => ({
+          id: c.contactId || `device-${index}`,
+          name: c.name?.display || c.name?.given || null,
+          phone_number: c.phones![0].number!,
+          phone_suffix: extractPhoneSuffix(c.phones![0].number!),
+        }));
+
+      setDeviceContacts(mapped);
+      return mapped;
+    } catch (error) {
+      console.error("Error fetching device contacts:", error);
+      return [];
+    }
+  }, []);
+
+  // Initial load
+  useEffect(() => {
+    if (!user) return;
+
+    const init = async () => {
+      setLoading(true);
+      await Promise.all([
+        loadLocalData(),
+        fetchDeviceContacts(),
+      ]);
+      setLoading(false);
+    };
+
+    init();
+  }, [user, loadLocalData, fetchDeviceContacts]);
+
+  // Convert to unified Contact format
+  const contacts: Contact[] = [
+    // Local app contacts
+    ...localContacts.map(c => ({
+      id: c.id,
+      phone_number: c.phone_number,
+      phone_suffix: c.phone_suffix,
+      nickname: c.nickname,
+      source: 'local' as const,
+      created_at: new Date(c.created_at).toISOString(),
+      updated_at: new Date(c.updated_at).toISOString(),
+    })),
+    // Device contacts (filtered to exclude those already in local contacts)
+    ...deviceContacts
+      .filter(dc => !localContacts.some(lc => lc.phone_suffix === dc.phone_suffix))
+      .map(dc => ({
+        id: dc.id,
+        phone_number: dc.phone_number,
+        phone_suffix: dc.phone_suffix,
+        nickname: nicknameOverrides.get(dc.phone_suffix) || dc.name,
+        source: 'device' as const,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })),
+  ].sort((a, b) => {
+    const nameA = a.nickname?.toLowerCase() || a.phone_number;
+    const nameB = b.nickname?.toLowerCase() || b.phone_number;
+    return nameA.localeCompare(nameB);
+  });
+
+  // Add a new contact (saves to local IndexedDB)
+  const addContact = async (contact: ContactInsert): Promise<Contact | null> => {
+    try {
+      const newContact = await addLocalContact(
+        contact.phone_number,
+        contact.nickname || null
+      );
       
-      if (imported > 0) {
-        toast.success(`Imported ${imported} contacts`);
-      } else {
-        toast.info("No new contacts to import");
-      }
-      return imported;
+      setLocalContacts(prev => [...prev, newContact]);
+      toast.success("Contact added");
+      
+      return {
+        id: newContact.id,
+        phone_number: newContact.phone_number,
+        phone_suffix: newContact.phone_suffix,
+        nickname: newContact.nickname,
+        source: 'local',
+        created_at: new Date(newContact.created_at).toISOString(),
+        updated_at: new Date(newContact.updated_at).toISOString(),
+      };
     } catch (error: any) {
-      console.error("Error importing contacts:", error);
-      toast.error("Failed to import contacts");
-      return 0;
+      console.error("Error adding contact:", error);
+      toast.error(error.message || "Failed to add contact");
+      return null;
     }
   };
 
-  const searchContacts = useCallback((query: string): Contact[] => {
+  // Update a contact
+  const updateContact = async (id: string, updates: Partial<ContactInsert>): Promise<boolean> => {
+    try {
+      const contact = contacts.find(c => c.id === id);
+      if (!contact) return false;
+
+      if (contact.source === 'local') {
+        // Update local contact
+        const updated = await updateLocalContact(id, {
+          nickname: updates.nickname,
+          phone_number: updates.phone_number,
+        });
+        if (updated) {
+          setLocalContacts(prev => prev.map(c => c.id === id ? updated : c));
+          toast.success("Contact updated");
+          return true;
+        }
+      } else if (contact.source === 'device' && updates.nickname) {
+        // Set nickname override for device contact
+        await setNicknameOverride(contact.phone_suffix, updates.nickname);
+        setNicknameOverrides(prev => new Map(prev).set(contact.phone_suffix, updates.nickname!));
+        toast.success("Nickname updated");
+        return true;
+      }
+      return false;
+    } catch (error) {
+      console.error("Error updating contact:", error);
+      toast.error("Failed to update contact");
+      return false;
+    }
+  };
+
+  // Delete a contact (only local contacts can be deleted)
+  const deleteContactFn = async (id: string): Promise<boolean> => {
+    try {
+      const contact = contacts.find(c => c.id === id);
+      if (!contact) return false;
+
+      if (contact.source === 'local') {
+        const success = await deleteLocalContact(id);
+        if (success) {
+          setLocalContacts(prev => prev.filter(c => c.id !== id));
+          toast.success("Contact deleted");
+          return true;
+        }
+      } else {
+        toast.error("Cannot delete device contacts from the app");
+      }
+      return false;
+    } catch (error) {
+      console.error("Error deleting contact:", error);
+      toast.error("Failed to delete contact");
+      return false;
+    }
+  };
+
+  // Search contacts
+  const searchContactsFn = useCallback((query: string): Contact[] => {
     if (!query.trim()) return contacts;
     const q = query.toLowerCase();
     return contacts.filter(
-      c =>
-        c.nickname?.toLowerCase().includes(q) ||
-        c.phone_number.includes(q)
+      c => c.nickname?.toLowerCase().includes(q) || c.phone_number.includes(q)
     );
   }, [contacts]);
 
+  // Get contact by ID
   const getContactById = (id: string): Contact | undefined => {
     return contacts.find(c => c.id === id);
+  };
+
+  // Refresh contacts
+  const refetch = async () => {
+    setLoading(true);
+    await Promise.all([
+      loadLocalData(),
+      fetchDeviceContacts(),
+    ]);
+    setLoading(false);
   };
 
   return {
     contacts,
     loading,
+    hasPermission,
     addContact,
     updateContact,
-    deleteContact,
-    importContactsFromDevice,
-    searchContacts,
+    deleteContact: deleteContactFn,
+    searchContacts: searchContactsFn,
     getContactById,
-    refetch: () => queryClient.invalidateQueries({ queryKey: ["contacts", user?.id] }),
+    refetch,
+    // Expose for direct access if needed
+    localContacts,
+    deviceContacts,
   };
 }
 
-// Hook for single contact detail (uses cache first)
+// Hook for single contact detail
 export function useContactDetail(contactId: string | undefined) {
-  const { user } = useAuth();
-  const queryClient = useQueryClient();
-
-  // Try to get from cache first
-  const cachedContacts = queryClient.getQueryData<Contact[]>(["contacts", user?.id]);
-  const cachedContact = cachedContacts?.find(c => c.id === contactId);
-
-  const { data: contact, isLoading } = useQuery({
-    queryKey: ["contact", contactId],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("contacts")
-        .select("*, linked_profile:profiles!contacts_linked_profile_id_fkey(user_id, phone_suffix)")
-        .eq("id", contactId!)
-        .single();
-
-      if (error) throw error;
-      return data;
-    },
-    enabled: !!user && !!contactId && !cachedContact,
-    initialData: cachedContact,
-    staleTime: 5 * 60 * 1000,
-    gcTime: 30 * 60 * 1000,
-  });
+  const { contacts, loading } = useContacts();
+  const contact = contacts.find(c => c.id === contactId);
 
   return {
-    contact: contact || cachedContact,
-    loading: isLoading && !cachedContact,
+    contact,
+    loading: loading && !contact,
   };
 }

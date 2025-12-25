@@ -2,7 +2,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "./useAuth";
 import { extractPhoneSuffix } from "@/lib/phoneUtils";
-import { Contact } from "./useContacts";
+import { useContacts, Contact } from "./useContacts";
 
 export interface TimelineItem {
   id: string;
@@ -18,7 +18,6 @@ export interface TimelineItem {
 }
 
 interface ContactTimelineData {
-  contact: Contact | null;
   timeline: TimelineItem[];
   totalOwedToYou: number;
   totalYouOwe: number;
@@ -26,31 +25,28 @@ interface ContactTimelineData {
 }
 
 async function fetchContactTimeline(
-  contactId: string,
+  contact: Contact,
   userId: string,
   profilePhoneNumber: string,
   profilePhoneSuffix: string | null
 ): Promise<ContactTimelineData> {
-  // Fetch contact with linked profile info
-  const { data: contactData, error: contactError } = await supabase
-    .from("contacts")
-    .select("*, linked_profile:profiles!contacts_linked_profile_id_fkey(user_id, phone_suffix)")
-    .eq("id", contactId)
-    .single();
-
-  if (contactError) throw contactError;
-  if (!contactData) return { contact: null, timeline: [], totalOwedToYou: 0, totalYouOwe: 0, netBalance: 0 };
-
   // Use phone_suffix for matching
-  const contactSuffix = contactData.phone_suffix || extractPhoneSuffix(contactData.phone_number);
+  const contactSuffix = contact.phone_suffix || extractPhoneSuffix(contact.phone_number);
   const mySuffix = profilePhoneSuffix || extractPhoneSuffix(profilePhoneNumber);
-  
-  // Get the contact's user_id from linked profile (if they have an account)
-  const contactUserId = (contactData as any).linked_profile?.user_id;
   
   const timelineItems: TimelineItem[] = [];
   let owedToYou = 0;
   let youOwe = 0;
+
+  // Find contact's user_id if they have a linked profile
+  const { data: linkedProfile } = await supabase
+    .from("profiles")
+    .select("user_id")
+    .eq("phone_suffix", contactSuffix)
+    .maybeSingle();
+  
+  const contactUserId = linkedProfile?.user_id;
+  const contactName = contact.nickname || "They";
 
   // 1. Bills I created where contact is a participant (they owe me)
   const { data: myBills } = await supabase
@@ -71,7 +67,7 @@ async function fetchContactTimeline(
         id: `bill-${bill.id}`,
         type: "bill_created",
         title: bill.title,
-        description: `${contactData.nickname || "They"} owe${remaining > 0 ? "s" : "d"} you`,
+        description: `${contactName} owe${remaining > 0 ? "s" : "d"} you`,
         amount: participant.amount_owed,
         amountPaid: participant.amount_paid,
         currency: bill.currency,
@@ -92,7 +88,7 @@ async function fetchContactTimeline(
     if (!participation.bill || participation.bill.deleted_at) return;
     if (participation.bill.creator_id === userId) return; // Skip my own bills
 
-    // Check if the bill creator matches contact's user_id (from linked_profile)
+    // Check if the bill creator matches contact's user_id
     const isContactCreator = contactUserId && participation.bill.creator_id === contactUserId;
     
     if (isContactCreator) {
@@ -103,7 +99,7 @@ async function fetchContactTimeline(
         id: `bill-owe-${participation.bill.id}`,
         type: "bill_owed",
         title: participation.bill.title,
-        description: `You owe ${contactData.nickname || "them"}`,
+        description: `You owe ${contactName}`,
         amount: participation.amount_owed,
         amountPaid: participation.amount_paid,
         currency: participation.bill.currency,
@@ -133,7 +129,7 @@ async function fetchContactTimeline(
       id: `iou-${iou.id}`,
       type: "iou_created",
       title: iou.description || "IOU",
-      description: `${contactData.nickname || "They"} owe${remaining > 0 ? "s" : "d"} you`,
+      description: `${contactName} owe${remaining > 0 ? "s" : "d"} you`,
       amount: iou.amount,
       amountPaid: iou.amount_paid,
       currency: iou.currency,
@@ -163,7 +159,7 @@ async function fetchContactTimeline(
       id: `iou-owe-${iou.id}`,
       type: "iou_owed",
       title: iou.description || "IOU",
-      description: `You owe ${contactData.nickname || "them"}`,
+      description: `You owe ${contactName}`,
       amount: iou.amount,
       amountPaid: iou.amount_paid,
       currency: iou.currency,
@@ -177,7 +173,6 @@ async function fetchContactTimeline(
   timelineItems.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
   return {
-    contact: contactData,
     timeline: timelineItems,
     totalOwedToYou: owedToYou,
     totalYouOwe: youOwe,
@@ -187,23 +182,27 @@ async function fetchContactTimeline(
 
 export function useContactTimeline(contactId: string | undefined) {
   const { user, profile } = useAuth();
+  const { contacts } = useContacts();
   const queryClient = useQueryClient();
+  
+  // Find contact from local contacts
+  const contact = contacts.find(c => c.id === contactId);
 
   const { data, isLoading: loading } = useQuery({
-    queryKey: ["contact-timeline", contactId],
+    queryKey: ["contact-timeline", contactId, contact?.phone_suffix],
     queryFn: () => fetchContactTimeline(
-      contactId!,
+      contact!,
       user!.id,
       profile!.phone_number,
       profile!.phone_suffix
     ),
-    enabled: !!user && !!profile && !!contactId,
+    enabled: !!user && !!profile && !!contact,
     staleTime: 5 * 60 * 1000, // 5 minutes
     gcTime: 30 * 60 * 1000, // 30 minutes
   });
 
   return {
-    contact: data?.contact ?? null,
+    contact,
     timeline: data?.timeline ?? [],
     totalOwedToYou: data?.totalOwedToYou ?? 0,
     totalYouOwe: data?.totalYouOwe ?? 0,

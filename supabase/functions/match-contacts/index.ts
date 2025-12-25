@@ -93,30 +93,16 @@ serve(async (req) => {
 
     console.log(`Found ${matchedProfiles?.length || 0} matched contacts`);
 
-    // Get user's contacts to include nicknames
-    const { data: userContacts } = await supabase
-      .from('contacts')
-      .select('phone_suffix, nickname')
-      .eq('user_id', user.id);
-
-    // Create a map of phone_suffix to nickname
-    const nicknameMap = new Map<string, string>();
-    userContacts?.forEach(contact => {
-      if (contact.phone_suffix && contact.nickname) {
-        nicknameMap.set(contact.phone_suffix, contact.nickname);
-      }
-    });
-
-    // Enrich matched profiles with local nicknames
-    const enrichedMatches: MatchedContact[] = (matchedProfiles || []).map(profile => ({
+    // Return matched profiles directly - nicknames will be applied client-side from local storage
+    const matchedContacts: MatchedContact[] = (matchedProfiles || []).map(profile => ({
       user_id: profile.user_id,
       phone_number: profile.phone_number,
       phone_suffix: profile.phone_suffix,
-      username: nicknameMap.get(profile.phone_suffix) || profile.username,
+      username: profile.username,
     }));
 
     return new Response(
-      JSON.stringify({ matched: enrichedMatches }),
+      JSON.stringify({ matched: matchedContacts }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
 
