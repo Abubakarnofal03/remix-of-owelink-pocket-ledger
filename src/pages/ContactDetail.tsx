@@ -16,9 +16,11 @@ import {
   DollarSign,
 } from "lucide-react";
 import { useContactTimeline, TimelineItem } from "@/hooks/useContactTimeline";
+import { useCurrency } from "@/hooks/useCurrency";
 
 export default function ContactDetail() {
   const { user, loading: authLoading } = useAuth();
+  const { currency } = useCurrency();
   const { id } = useParams();
   const navigate = useNavigate();
   
@@ -99,7 +101,7 @@ export default function ContactDetail() {
               </div>
               <span className="text-xs text-muted-foreground font-medium">Owes you</span>
             </div>
-            <MoneyDisplay amount={totalOwedToYou} size="lg" className="text-foreground" />
+            <MoneyDisplay amount={totalOwedToYou} currency={currency} size="lg" className="text-foreground" />
           </div>
 
           <div className="card-elevated p-4">
@@ -109,14 +111,15 @@ export default function ContactDetail() {
               </div>
               <span className="text-xs text-muted-foreground font-medium">You owe</span>
             </div>
-            <MoneyDisplay amount={totalYouOwe} size="lg" className="text-foreground" />
+            <MoneyDisplay amount={totalYouOwe} currency={currency} size="lg" className="text-foreground" />
           </div>
         </div>
 
         {/* Net Balance */}
         <div className="card-elevated p-4">
           <p className="text-sm text-muted-foreground mb-1">Net Balance</p>
-          <MoneyDisplay amount={netBalance} size="xl" showSign />
+          <MoneyDisplay amount={netBalance} currency={currency} size="xl" showSign />
+          
           <p className="text-xs text-muted-foreground mt-1">
             {netBalance > 0
               ? `${contact.nickname || "They"} owes you`
