@@ -1,3 +1,4 @@
+import { forwardRef } from "react";
 import { cn } from "@/lib/utils";
 
 interface AvatarCustomProps {
@@ -31,38 +32,41 @@ function getAvatarColor(name: string): string {
   return colors[index];
 }
 
-export function AvatarCustom({ name, imageUrl, size = "md", className }: AvatarCustomProps) {
-  const sizeClasses = {
-    xs: "h-6 w-6 text-[10px]",
-    sm: "h-8 w-8 text-xs",
-    md: "h-10 w-10 text-sm",
-    lg: "h-14 w-14 text-lg",
-  };
+export const AvatarCustom = forwardRef<HTMLDivElement, AvatarCustomProps>(
+  function AvatarCustom({ name, imageUrl, size = "md", className }, ref) {
+    const sizeClasses = {
+      xs: "h-6 w-6 text-[10px]",
+      sm: "h-8 w-8 text-xs",
+      md: "h-10 w-10 text-sm",
+      lg: "h-14 w-14 text-lg",
+    };
 
-  if (imageUrl) {
+    if (imageUrl) {
+      return (
+        <img
+          src={imageUrl}
+          alt={name}
+          className={cn(
+            "rounded-full object-cover",
+            sizeClasses[size],
+            className
+          )}
+        />
+      );
+    }
+
     return (
-      <img
-        src={imageUrl}
-        alt={name}
+      <div
+        ref={ref}
         className={cn(
-          "rounded-full object-cover",
+          "rounded-full flex items-center justify-center font-medium text-white",
+          getAvatarColor(name),
           sizeClasses[size],
           className
         )}
-      />
+      >
+        {getInitials(name)}
+      </div>
     );
   }
-
-  return (
-    <div
-      className={cn(
-        "rounded-full flex items-center justify-center font-medium text-white",
-        getAvatarColor(name),
-        sizeClasses[size],
-        className
-      )}
-    >
-      {getInitials(name)}
-    </div>
-  );
-}
+);
