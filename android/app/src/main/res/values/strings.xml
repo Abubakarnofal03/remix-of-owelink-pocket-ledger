@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">SplitBills</string>
-    <string name="title_activity_main">SplitBills</string>
+    <string name="app_name">OweLink</string>
+    <string name="title_activity_main">OweLink</string>
     <string name="package_name">app.lovable.c4b29d3de8d347a9bddd8699314dcb44</string>
     <string name="custom_url_scheme">app.lovable.c4b29d3de8d347a9bddd8699314dcb44</string>
 </resources>
