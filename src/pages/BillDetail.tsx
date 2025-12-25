@@ -496,7 +496,13 @@ This is a reminder for your pending payment.
 ✅ *Paid:* ${bill.currency} ${participant.amount_paid.toFixed(2)}
 ⏳ *Remaining:* ${bill.currency} ${remainingAmount.toFixed(2)}${dueDateInfo}
 
-Please settle the amount at your earliest convenience. Thank you! 🙏`;
+Please settle the amount at your earliest convenience. Thank you! 🙏
+
+---
+📱 *Tired of tracking who owes you?*
+Download OweLink - your smart money tracker!
+Never lose track of debts again. Split bills, send reminders & get paid faster.
+🔗 Get OweLink now!`;
   };
 
   // Open WhatsApp for a single participant

@@ -3,6 +3,8 @@ import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { getPhoneSuffix, sendPushNotification } from '@/lib/notifications';
+import { offlineDb, generateLocalId, LocalIOUPaymentRequest } from '@/lib/offline/db';
+import { addToSyncQueue } from '@/lib/offline/syncQueue';
 
 export interface IOUPaymentRequest {
   id: string;
@@ -44,15 +46,47 @@ export function useIOUPaymentRequests(iouId: string | undefined): UseIOUPaymentR
     }
 
     try {
-      const { data, error } = await supabase
-        .from('iou_payment_requests')
-        .select('*')
-        .eq('iou_id', iouId)
-        .order('created_at', { ascending: false });
+      // Try to get from local DB first
+      const dbReady = await offlineDb.ensureReady();
+      if (dbReady) {
+        const localRequests = await offlineDb.iouPaymentRequests
+          .where('iou_id')
+          .equals(iouId)
+          .toArray();
+        
+        if (localRequests.length > 0) {
+          setRequests(localRequests.map(r => ({
+            ...r,
+            status: r.status as 'pending' | 'approved' | 'rejected',
+          })));
+        }
+      }
 
-      if (error) throw error;
-      
-      setRequests((data || []) as IOUPaymentRequest[]);
+      // If online, fetch from server
+      if (navigator.onLine) {
+        const { data, error } = await supabase
+          .from('iou_payment_requests')
+          .select('*')
+          .eq('iou_id', iouId)
+          .order('created_at', { ascending: false });
+
+        if (error) throw error;
+        
+        const serverRequests = (data || []) as IOUPaymentRequest[];
+        setRequests(serverRequests);
+
+        // Update local DB
+        if (dbReady && data) {
+          const now = Date.now();
+          for (const req of data) {
+            await offlineDb.iouPaymentRequests.put({
+              ...req,
+              synced_at: now,
+              is_local: false,
+            });
+          }
+        }
+      }
     } catch (error) {
       console.error('Error fetching IOU payment requests:', error);
     } finally {
@@ -76,55 +110,100 @@ export function useIOUPaymentRequests(iouId: string | undefined): UseIOUPaymentR
       return false;
     }
 
-    try {
-      const { data: newRequest, error } = await supabase
-        .from('iou_payment_requests')
-        .insert({
-          iou_id: data.iou_id,
-          requester_phone_suffix: phoneSuffix,
-          amount_claimed: data.amount_claimed,
-          receipt_url: data.receipt_url || null,
-          message: data.message || null,
-        })
-        .select()
-        .single();
+    const now = new Date().toISOString();
+    const localId = generateLocalId();
+    
+    const newRequest: LocalIOUPaymentRequest = {
+      id: localId,
+      iou_id: data.iou_id,
+      requester_phone_suffix: phoneSuffix,
+      amount_claimed: data.amount_claimed,
+      receipt_url: data.receipt_url || null,
+      message: data.message || null,
+      status: 'pending',
+      creator_response: null,
+      created_at: now,
+      updated_at: now,
+      is_local: true,
+    };
 
-      if (error) throw error;
+    try {
+      // Save to local DB first
+      const dbReady = await offlineDb.ensureReady();
+      if (dbReady) {
+        await offlineDb.iouPaymentRequests.put(newRequest);
+      }
 
       // Add to local state
       setRequests(prev => [newRequest as IOUPaymentRequest, ...prev]);
 
-      // Get IOU info to send notification to creditor
-      const { data: iou } = await supabase
-        .from('ious')
-        .select('creditor_id, description, currency, amount')
-        .eq('id', data.iou_id)
-        .single();
-
-      if (iou) {
-        // Get creditor's phone suffix for push notification
-        const { data: creditorProfile } = await supabase
-          .from('profiles')
-          .select('phone_suffix')
-          .eq('user_id', iou.creditor_id)
+      if (navigator.onLine) {
+        // Try to sync immediately
+        const { data: serverRequest, error } = await supabase
+          .from('iou_payment_requests')
+          .insert({
+            iou_id: data.iou_id,
+            requester_phone_suffix: phoneSuffix,
+            amount_claimed: data.amount_claimed,
+            receipt_url: data.receipt_url || null,
+            message: data.message || null,
+          })
+          .select()
           .single();
 
-        if (creditorProfile?.phone_suffix) {
-          await sendPushNotification({
-            phoneSuffixes: [creditorProfile.phone_suffix],
-            title: 'Payment Confirmation Request',
-            body: `Someone has requested payment confirmation for IOU: ${iou.currency} ${iou.amount}`,
-            data: { type: 'iou', id: data.iou_id },
+        if (error) throw error;
+
+        // Update local DB with server data
+        if (dbReady) {
+          await offlineDb.iouPaymentRequests.delete(localId);
+          await offlineDb.iouPaymentRequests.put({
+            ...serverRequest,
+            synced_at: Date.now(),
+            is_local: false,
           });
         }
+
+        // Update state with server data
+        setRequests(prev => 
+          prev.map(r => r.id === localId ? serverRequest as IOUPaymentRequest : r)
+        );
+
+        // Send notification to creditor
+        const { data: iou } = await supabase
+          .from('ious')
+          .select('creditor_id, description, currency, amount')
+          .eq('id', data.iou_id)
+          .single();
+
+        if (iou) {
+          const { data: creditorProfile } = await supabase
+            .from('profiles')
+            .select('phone_suffix')
+            .eq('user_id', iou.creditor_id)
+            .single();
+
+          if (creditorProfile?.phone_suffix) {
+            await sendPushNotification({
+              phoneSuffixes: [creditorProfile.phone_suffix],
+              title: 'Payment Confirmation Request',
+              body: `Someone has requested payment confirmation for IOU: ${iou.currency} ${iou.amount}`,
+              data: { type: 'iou', id: data.iou_id },
+            });
+          }
+        }
+      } else {
+        // Queue for sync when offline
+        await addToSyncQueue('iou_payment_request', 'create', localId, newRequest as unknown as Record<string, unknown>);
       }
 
       toast.success('Payment confirmation request sent');
       return true;
     } catch (error) {
       console.error('Error creating IOU payment request:', error);
-      toast.error('Failed to send request');
-      return false;
+      // If online sync failed, queue for later
+      await addToSyncQueue('iou_payment_request', 'create', localId, newRequest as unknown as Record<string, unknown>);
+      toast.success('Request saved, will sync when online');
+      return true;
     }
   };
 
@@ -136,15 +215,17 @@ export function useIOUPaymentRequests(iouId: string | undefined): UseIOUPaymentR
     if (!user) return false;
 
     try {
-      const { error } = await supabase
-        .from('iou_payment_requests')
-        .update({
-          status,
-          creator_response: response || null,
-        })
-        .eq('id', requestId);
+      const updateData = {
+        status,
+        creator_response: response || null,
+        updated_at: new Date().toISOString(),
+      };
 
-      if (error) throw error;
+      // Update local DB first
+      const dbReady = await offlineDb.ensureReady();
+      if (dbReady) {
+        await offlineDb.iouPaymentRequests.update(requestId, updateData);
+      }
 
       // Update local state
       setRequests(prev =>
@@ -155,25 +236,45 @@ export function useIOUPaymentRequests(iouId: string | undefined): UseIOUPaymentR
         )
       );
 
-      // Get request info for notification
-      const request = requests.find(r => r.id === requestId);
-      if (request) {
-        await sendPushNotification({
-          phoneSuffixes: [request.requester_phone_suffix],
-          title: status === 'approved' ? 'Payment Approved!' : 'Payment Request Rejected',
-          body: status === 'approved'
-            ? 'Your payment has been confirmed by the creditor'
-            : response || 'Your payment request was not approved',
-          data: { type: 'iou', id: request.iou_id },
-        });
+      if (navigator.onLine) {
+        const { error } = await supabase
+          .from('iou_payment_requests')
+          .update({
+            status,
+            creator_response: response || null,
+          })
+          .eq('id', requestId);
+
+        if (error) throw error;
+
+        // Send notification to requester
+        const request = requests.find(r => r.id === requestId);
+        if (request) {
+          await sendPushNotification({
+            phoneSuffixes: [request.requester_phone_suffix],
+            title: status === 'approved' ? 'Payment Approved!' : 'Payment Request Rejected',
+            body: status === 'approved'
+              ? 'Your payment has been confirmed by the creditor'
+              : response || 'Your payment request was not approved',
+            data: { type: 'iou', id: request.iou_id },
+          });
+        }
+      } else {
+        // Queue for sync when offline
+        await addToSyncQueue('iou_payment_request', 'update', requestId, updateData);
       }
 
       toast.success(status === 'approved' ? 'Payment approved' : 'Request rejected');
       return true;
     } catch (error) {
       console.error('Error updating IOU payment request:', error);
-      toast.error('Failed to update request');
-      return false;
+      // Queue for later sync
+      await addToSyncQueue('iou_payment_request', 'update', requestId, {
+        status,
+        creator_response: response || null,
+      });
+      toast.success('Changes saved, will sync when online');
+      return true;
     }
   };
 
