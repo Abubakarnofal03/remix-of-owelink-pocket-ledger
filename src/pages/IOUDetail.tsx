@@ -46,6 +46,7 @@ import {
   ArrowDownLeft,
   ArrowUpRight,
   Archive,
+  MessageCircle,
 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
@@ -104,6 +105,32 @@ export default function IOUDetail() {
   };
 
   const debtorName = getContactName(iou.debtor_phone_number);
+
+  // Generate WhatsApp message for the debtor
+  const generateWhatsAppMessage = () => {
+    const remaining = iou.amount - iou.amount_paid;
+    const dueDateInfo = iou.due_date 
+      ? `\n📅 Due Date: ${format(new Date(iou.due_date), "MMMM d, yyyy")}`
+      : '';
+    
+    return `Hi ${debtorName},
+
+This is a reminder for your pending payment.
+
+💰 *Amount Owed:* ${iou.currency} ${iou.amount.toFixed(2)}${iou.description ? `\n📝 *For:* ${iou.description}` : ''}
+✅ *Paid:* ${iou.currency} ${iou.amount_paid.toFixed(2)}
+⏳ *Remaining:* ${iou.currency} ${remaining.toFixed(2)}${dueDateInfo}
+
+Please settle the amount at your earliest convenience. Thank you! 🙏`;
+  };
+
+  // Open WhatsApp for the debtor
+  const handleWhatsAppShare = () => {
+    const message = generateWhatsAppMessage();
+    const phoneNumber = iou.debtor_phone_number.replace(/[^0-9]/g, '');
+    const whatsappUrl = `https://wa.me/${phoneNumber}?text=${encodeURIComponent(message)}`;
+    window.open(whatsappUrl, '_blank');
+  };
 
   const handleEditSubmit = async () => {
     const success = await updateIOU(iou.id, {
@@ -273,6 +300,19 @@ export default function IOUDetail() {
               <StatusBadge status={iou.status as any} />
             </div>
           </div>
+
+          {/* WhatsApp button for creditors */}
+          {isCreditor && iou.status !== 'paid' && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleWhatsAppShare}
+              className="mt-3 w-full text-emerald-600 border-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950"
+            >
+              <MessageCircle className="h-4 w-4 mr-2" />
+              Send Reminder via WhatsApp
+            </Button>
+          )}
         </div>
 
         {/* Amount Summary */}
