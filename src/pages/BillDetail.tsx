@@ -49,6 +49,7 @@ import {
   Search,
   User,
   Archive,
+  Bell,
 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
@@ -62,6 +63,7 @@ import {
   updateBillOfflineFirst,
 } from "@/lib/offline/offlineDataLayer";
 import { useOffline } from "@/hooks/useOffline";
+import { sendPushNotification, getPhoneSuffix } from "@/lib/notifications";
 
 export default function BillDetail() {
   const { user, loading: authLoading } = useAuth();
@@ -198,29 +200,48 @@ export default function BillDetail() {
       });
 
       // Update local state immediately
-      updateBillLocally(prev => {
-        const updatedParticipants = prev.participants?.map(p =>
-          p.id === selectedParticipant.id
-            ? { ...p, amount_paid: newAmountPaid, status: newStatus }
-            : p
-        );
-
-        const allPaid = updatedParticipants?.every(p => p.amount_paid >= p.amount_owed);
-        
-        return {
-          ...prev,
-          participants: updatedParticipants,
-          status: allPaid ? "completed" : prev.status,
-        };
-      });
+      const updatedParticipants = bill.participants?.map(p =>
+        p.id === selectedParticipant.id
+          ? { ...p, amount_paid: newAmountPaid, status: newStatus }
+          : p
+      );
+      
+      // Check if all participants are now paid
+      const allPaid = updatedParticipants?.every(p => p.amount_paid >= p.amount_owed);
+      
+      updateBillLocally(prev => ({
+        ...prev,
+        participants: updatedParticipants,
+        status: allPaid ? "completed" : prev.status,
+      }));
 
       // Update bill status if all paid
-      if (bill.participants?.every(p =>
-        p.id === selectedParticipant.id
-          ? newAmountPaid >= p.amount_owed
-          : p.amount_paid >= p.amount_owed
-      )) {
-        await updateBillOfflineFirst(bill.id, {});
+      if (allPaid) {
+        await updateBillOfflineFirst(bill.id, { status: 'completed' });
+      }
+
+      // Send push notification to participant
+      const phoneSuffix = getPhoneSuffix(selectedParticipant.phone_number);
+      if (phoneSuffix && navigator.onLine) {
+        sendPushNotification({
+          phoneSuffixes: [phoneSuffix],
+          title: "Payment Recorded",
+          body: `Your payment of ${bill.currency} ${amount.toFixed(2)} for "${bill.title}" has been recorded.`,
+          data: { type: "bill", id: bill.id },
+        });
+      }
+
+      // Notify bill creator if payer is not the creator
+      if (selectedParticipant.user_id !== bill.creator_id && bill.creator?.phone_number && navigator.onLine) {
+        const creatorSuffix = getPhoneSuffix(bill.creator.phone_number);
+        if (creatorSuffix) {
+          sendPushNotification({
+            phoneSuffixes: [creatorSuffix],
+            title: "Payment Received",
+            body: `${getContactName(selectedParticipant.phone_number)} paid ${bill.currency} ${amount.toFixed(2)} for "${bill.title}"`,
+            data: { type: "bill", id: bill.id },
+          });
+        }
       }
 
       toast.success("Payment recorded");
@@ -246,21 +267,70 @@ export default function BillDetail() {
         amount_paid: amountPaid,
       });
 
+      // Check if all participants will be paid after this update
+      const updatedParticipants = bill.participants?.map(p =>
+        p.id === participant.id
+          ? { ...p, status: newStatus, amount_paid: amountPaid }
+          : p
+      );
+      const allPaid = updatedParticipants?.every(p => 
+        p.status === 'paid' || p.amount_paid >= p.amount_owed
+      );
+
       // Update UI immediately
       updateBillLocally(prev => ({
         ...prev,
-        participants: prev.participants?.map(p =>
-          p.id === participant.id
-            ? { ...p, status: newStatus, amount_paid: amountPaid }
-            : p
-        ),
+        participants: updatedParticipants,
+        status: allPaid ? "completed" : prev.status,
       }));
+
+      // Update bill status if all paid
+      if (allPaid) {
+        await updateBillOfflineFirst(bill.id, { status: 'completed' });
+      }
+
+      // Send push notification to participant
+      const phoneSuffix = getPhoneSuffix(participant.phone_number);
+      if (phoneSuffix && navigator.onLine) {
+        sendPushNotification({
+          phoneSuffixes: [phoneSuffix],
+          title: "Status Updated",
+          body: `Your status for "${bill.title}" has been updated to ${newStatus}.`,
+          data: { type: "bill", id: bill.id },
+        });
+      }
 
       toast.success("Status updated");
       sync(); // Trigger sync in background
     } catch (error) {
       console.error("Error updating status:", error);
       toast.error("Failed to update status");
+    }
+  };
+
+  const handleSendReminder = async (participant: BillParticipant) => {
+    const phoneSuffix = getPhoneSuffix(participant.phone_number);
+    if (!phoneSuffix) {
+      toast.error("Invalid phone number");
+      return;
+    }
+
+    const remaining = participant.amount_owed - participant.amount_paid;
+    const dueInfo = bill.due_date 
+      ? ` Due: ${format(new Date(bill.due_date), "MMM d, yyyy")}`
+      : '';
+
+    try {
+      await sendPushNotification({
+        phoneSuffixes: [phoneSuffix],
+        title: `Payment Reminder: ${bill.title}`,
+        body: `You owe ${bill.currency} ${remaining.toFixed(2)}.${dueInfo}`,
+        data: { type: "bill", id: bill.id },
+      });
+      toast.success(`Reminder sent to ${getContactName(participant.phone_number)}`);
+    } catch (error) {
+      console.error("Error sending reminder:", error);
+      toast.error("Failed to send reminder");
     }
   };
 
@@ -496,18 +566,28 @@ export default function BillDetail() {
 
                   <div className="flex gap-2">
                     {isCreator && participant.status !== "paid" && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => {
-                          setSelectedParticipant(participant);
-                          setPaymentAmount((participant.amount_owed - participant.amount_paid).toString());
-                          setShowPaymentDialog(true);
-                        }}
-                      >
-                        <DollarSign className="h-4 w-4 mr-1" />
-                        Pay
-                      </Button>
+                      <>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => handleSendReminder(participant)}
+                          title="Send Reminder"
+                        >
+                          <Bell className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            setSelectedParticipant(participant);
+                            setPaymentAmount((participant.amount_owed - participant.amount_paid).toString());
+                            setShowPaymentDialog(true);
+                          }}
+                        >
+                          <DollarSign className="h-4 w-4 mr-1" />
+                          Pay
+                        </Button>
+                      </>
                     )}
                     {isCreator && (
                       <Button
