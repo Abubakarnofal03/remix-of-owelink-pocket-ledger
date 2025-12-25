@@ -29,7 +29,15 @@ import {
   Check,
   User,
   Smartphone,
+  Bell,
 } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 interface Participant {
   id: string;
@@ -62,6 +70,8 @@ export function BillForm() {
   const [submitting, setSubmitting] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [showDeviceContacts, setShowDeviceContacts] = useState(false);
+  const [reminderEnabled, setReminderEnabled] = useState(false);
+  const [reminderInterval, setReminderInterval] = useState<string>("3");
 
   // Calculate split amounts
   const total = parseFloat(totalAmount) || 0;
@@ -244,6 +254,8 @@ export function BillForm() {
       total_amount: total,
       currency,
       due_date: dueDate?.toISOString(),
+      reminder_enabled: reminderEnabled,
+      reminder_interval_days: reminderEnabled ? parseInt(reminderInterval) : undefined,
       participants: allParticipants,
     };
 
@@ -338,6 +350,46 @@ export function BillForm() {
             />
           </PopoverContent>
         </Popover>
+      </div>
+
+      {/* Automatic Reminders */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between p-4 bg-muted/50 rounded-lg border border-border">
+          <div className="flex items-center gap-3">
+            <div className="h-9 w-9 rounded-full bg-amber-500/10 flex items-center justify-center">
+              <Bell className="h-4 w-4 text-amber-500" />
+            </div>
+            <div>
+              <p className="font-medium text-sm">Automatic reminders</p>
+              <p className="text-xs text-muted-foreground">
+                Send push notifications to unpaid participants
+              </p>
+            </div>
+          </div>
+          <Switch
+            checked={reminderEnabled}
+            onCheckedChange={setReminderEnabled}
+          />
+        </div>
+
+        {reminderEnabled && (
+          <div className="pl-4 border-l-2 border-amber-500/30 ml-4 space-y-2">
+            <Label className="text-sm text-muted-foreground">Send reminder every:</Label>
+            <Select value={reminderInterval} onValueChange={setReminderInterval}>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Select interval" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="1">Every day</SelectItem>
+                <SelectItem value="2">Every 2 days</SelectItem>
+                <SelectItem value="3">Every 3 days</SelectItem>
+                <SelectItem value="5">Every 5 days</SelectItem>
+                <SelectItem value="7">Every week</SelectItem>
+                <SelectItem value="14">Every 2 weeks</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        )}
       </div>
 
       {/* Include Me Toggle */}

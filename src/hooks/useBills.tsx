@@ -38,6 +38,9 @@ export interface Bill {
   created_at: string;
   updated_at: string;
   deleted_at: string | null;
+  reminder_enabled?: boolean;
+  reminder_interval_days?: number | null;
+  last_reminder_sent_at?: string | null;
   participants?: BillParticipant[];
   is_local?: boolean;
   creator?: {
@@ -52,6 +55,8 @@ export interface BillInsert {
   total_amount: number;
   currency?: string;
   due_date?: string;
+  reminder_enabled?: boolean;
+  reminder_interval_days?: number;
   participants: {
     phone_number: string;
     amount_owed: number;
@@ -74,6 +79,9 @@ function localBillToBill(local: LocalBill & { participants?: LocalBillParticipan
     created_at: local.created_at,
     updated_at: local.updated_at,
     deleted_at: local.deleted_at,
+    reminder_enabled: local.reminder_enabled,
+    reminder_interval_days: local.reminder_interval_days,
+    last_reminder_sent_at: local.last_reminder_sent_at,
     is_local: local.is_local,
     participants: local.participants?.map((p) => ({
       id: p.id,
@@ -175,6 +183,8 @@ export function useBills() {
               total_amount: bill.total_amount,
               currency: bill.currency || "USD",
               due_date: bill.due_date || null,
+              reminder_enabled: bill.reminder_enabled || false,
+              reminder_interval_days: bill.reminder_interval_days || null,
             })
             .select()
             .single();

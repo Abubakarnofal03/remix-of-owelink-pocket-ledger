@@ -5,3 +5,6 @@ verify_jwt = false
 
 [functions.match-contacts]
 verify_jwt = true
+
+[functions.send-bill-reminders]
+verify_jwt = false
