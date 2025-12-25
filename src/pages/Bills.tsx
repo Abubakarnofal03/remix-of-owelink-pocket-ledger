@@ -19,24 +19,32 @@ export default function Bills() {
   const { bills, loading: billsLoading, refetch } = useBills();
   const [filter, setFilter] = useState<BillFilter>("all");
 
-  if (authLoading) return null;
-  if (!user) return <Navigate to="/auth" replace />;
-
   const loading = billsLoading;
 
   const filteredBills = useMemo(() => {
+    if (!user) return [];
     if (filter === "all") return bills;
     if (filter === "created") return bills.filter(b => b.creator_id === user.id);
     if (filter === "shared") return bills.filter(b => b.creator_id !== user.id);
     return bills;
-  }, [bills, filter, user.id]);
+  }, [bills, filter, user]);
 
-  const createdCount = bills.filter(b => b.creator_id === user.id).length;
-  const sharedCount = bills.filter(b => b.creator_id !== user.id).length;
+  const createdCount = useMemo(() => {
+    if (!user) return 0;
+    return bills.filter(b => b.creator_id === user.id).length;
+  }, [bills, user]);
+  
+  const sharedCount = useMemo(() => {
+    if (!user) return 0;
+    return bills.filter(b => b.creator_id !== user.id).length;
+  }, [bills, user]);
 
   const handleRefresh = async () => {
     await refetch();
   };
+
+  if (authLoading) return null;
+  if (!user) return <Navigate to="/auth" replace />;
 
   return (
     <AppLayout>

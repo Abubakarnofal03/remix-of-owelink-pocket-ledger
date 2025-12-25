@@ -32,8 +32,8 @@ function getAvatarColor(name: string): string {
   return colors[index];
 }
 
-export const AvatarCustom = forwardRef<HTMLDivElement, AvatarCustomProps>(
-  function AvatarCustom({ name, imageUrl, size = "md", className }, ref) {
+const AvatarCustom = forwardRef<HTMLDivElement, AvatarCustomProps>(
+  ({ name, imageUrl, size = "md", className }, ref) => {
     const sizeClasses = {
       xs: "h-6 w-6 text-[10px]",
       sm: "h-8 w-8 text-xs",
@@ -70,3 +70,7 @@ export const AvatarCustom = forwardRef<HTMLDivElement, AvatarCustomProps>(
     );
   }
 );
+
+AvatarCustom.displayName = "AvatarCustom";
+
+export { AvatarCustom };

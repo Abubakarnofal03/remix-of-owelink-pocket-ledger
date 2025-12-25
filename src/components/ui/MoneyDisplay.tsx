@@ -10,11 +10,8 @@ interface MoneyDisplayProps {
   className?: string;
 }
 
-export const MoneyDisplay = forwardRef<HTMLSpanElement, MoneyDisplayProps>(
-  function MoneyDisplay(
-    { amount, currency = "USD", showSign = false, size = "md", className },
-    ref
-  ) {
+const MoneyDisplay = forwardRef<HTMLSpanElement, MoneyDisplayProps>(
+  ({ amount, currency = "USD", showSign = false, size = "md", className }, ref) => {
     const symbol = CURRENCY_SYMBOLS[currency] || currency;
     const isPositive = amount >= 0;
     const displayAmount = Math.abs(amount);
@@ -46,3 +43,7 @@ export const MoneyDisplay = forwardRef<HTMLSpanElement, MoneyDisplayProps>(
     );
   }
 );
+
+MoneyDisplay.displayName = "MoneyDisplay";
+
+export { MoneyDisplay };
