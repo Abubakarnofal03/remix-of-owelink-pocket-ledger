@@ -16,6 +16,16 @@ const config: CapacitorConfig = {
       androidSplashResourceName: 'splash',
       showSpinner: false
     }
+  },
+  // Android-specific settings for WebView
+  android: {
+    // Enable DOM storage (localStorage, sessionStorage, IndexedDB)
+    webContentsDebuggingEnabled: true,
+    allowMixedContent: true,
+  },
+  // iOS-specific settings
+  ios: {
+    contentInset: 'automatic',
   }
 };
 

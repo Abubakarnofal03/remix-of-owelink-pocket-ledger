@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { Capacitor } from '@capacitor/core';
 import { processAllPendingSync, getFailedSyncCount } from './syncQueue';
 import { offlineDb } from './db';
 
@@ -11,20 +12,62 @@ interface NetworkState {
   lastSyncAt: number | null;
 }
 
-// Check actual network connectivity
-async function checkConnectivity(): Promise<boolean> {
-  if (!navigator.onLine) return false;
-  
+// Get connection info if available
+function getConnectionInfo(): { type: string; effectiveType: string } | null {
   try {
-    // Try to reach a known endpoint
-    const response = await fetch('https://www.google.com/favicon.ico', {
+    const connection = (navigator as any).connection || 
+                      (navigator as any).mozConnection || 
+                      (navigator as any).webkitConnection;
+    if (connection) {
+      return {
+        type: connection.type || 'unknown',
+        effectiveType: connection.effectiveType || 'unknown'
+      };
+    }
+  } catch (e) {
+    console.warn('Failed to get connection info:', e);
+  }
+  return null;
+}
+
+// Check actual network connectivity - with Android-specific handling
+async function checkConnectivity(): Promise<boolean> {
+  // First check navigator.onLine
+  if (!navigator.onLine) {
+    console.log('Network: navigator.onLine is false');
+    return false;
+  }
+  
+  // On native platforms, trust navigator.onLine more (WebView keeps it accurate)
+  if (Capacitor.isNativePlatform()) {
+    const connInfo = getConnectionInfo();
+    console.log('Network: Native platform, connection info:', connInfo);
+    
+    // If we have connection info and type is 'none', we're offline
+    if (connInfo?.type === 'none') {
+      return false;
+    }
+    
+    return true;
+  }
+  
+  // On web, do a connectivity check
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+    
+    await fetch('https://www.google.com/favicon.ico', {
       method: 'HEAD',
       mode: 'no-cors',
       cache: 'no-store',
+      signal: controller.signal,
     });
+    
+    clearTimeout(timeoutId);
     return true;
-  } catch {
-    return false;
+  } catch (e) {
+    console.warn('Connectivity check failed:', e);
+    return navigator.onLine; // Fallback to navigator.onLine
   }
 }
 
@@ -97,16 +140,42 @@ export function useNetworkStatus() {
   // Listen for online/offline events
   useEffect(() => {
     const handleOnline = () => {
+      console.log('Network event: online');
       setState(prev => ({ ...prev, status: 'online' }));
       triggerSync();
     };
 
     const handleOffline = () => {
+      console.log('Network event: offline');
       setState(prev => ({ ...prev, status: 'offline' }));
     };
 
+    // Add standard event listeners
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
+
+    // Add connection change listener for Android
+    const connection = (navigator as any).connection || 
+                      (navigator as any).mozConnection || 
+                      (navigator as any).webkitConnection;
+    
+    const handleConnectionChange = () => {
+      console.log('Connection change detected:', {
+        type: connection?.type,
+        effectiveType: connection?.effectiveType,
+        onLine: navigator.onLine
+      });
+      
+      if (navigator.onLine) {
+        handleOnline();
+      } else {
+        handleOffline();
+      }
+    };
+
+    if (connection) {
+      connection.addEventListener('change', handleConnectionChange);
+    }
 
     // Initial sync and count update
     updateCounts();
@@ -124,6 +193,9 @@ export function useNetworkStatus() {
     return () => {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
+      if (connection) {
+        connection.removeEventListener('change', handleConnectionChange);
+      }
       clearInterval(intervalId);
       if (syncTimeoutRef.current) {
         clearTimeout(syncTimeoutRef.current);

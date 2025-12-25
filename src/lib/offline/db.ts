@@ -1,26 +1,77 @@
 import Dexie, { Table } from 'dexie';
 import { Capacitor } from '@capacitor/core';
 
+// Platform detection
+export const isNativePlatform = (): boolean => {
+  try {
+    return Capacitor.isNativePlatform();
+  } catch {
+    return false;
+  }
+};
+
+export const getPlatform = (): string => {
+  try {
+    return Capacitor.getPlatform();
+  } catch {
+    return 'web';
+  }
+};
+
 // Check if IndexedDB is available
 export function isIndexedDBAvailable(): boolean {
   try {
     // Check if indexedDB exists
-    if (!window.indexedDB) {
-      console.warn('IndexedDB not available');
+    if (typeof window === 'undefined' || !window.indexedDB) {
+      console.warn('IndexedDB not available - window.indexedDB is undefined');
       return false;
     }
-    
-    // Try a test operation
-    const testDb = window.indexedDB.open('__test_db__');
-    testDb.onerror = () => {
-      console.warn('IndexedDB test failed');
-    };
-    
     return true;
   } catch (e) {
     console.warn('IndexedDB check failed:', e);
     return false;
   }
+}
+
+// Test IndexedDB by opening a test database
+export async function testIndexedDB(): Promise<boolean> {
+  return new Promise((resolve) => {
+    try {
+      const testDbName = '__idb_test__' + Date.now();
+      const request = window.indexedDB.open(testDbName, 1);
+      
+      request.onerror = () => {
+        console.warn('IndexedDB test failed - cannot open database');
+        resolve(false);
+      };
+      
+      request.onsuccess = () => {
+        try {
+          request.result.close();
+          window.indexedDB.deleteDatabase(testDbName);
+          console.log('IndexedDB test passed');
+          resolve(true);
+        } catch (e) {
+          console.warn('IndexedDB test cleanup failed:', e);
+          resolve(true); // Still consider it passed if we could open
+        }
+      };
+      
+      request.onblocked = () => {
+        console.warn('IndexedDB test blocked');
+        resolve(false);
+      };
+      
+      // Timeout after 3 seconds
+      setTimeout(() => {
+        console.warn('IndexedDB test timed out');
+        resolve(false);
+      }, 3000);
+    } catch (e) {
+      console.warn('IndexedDB test exception:', e);
+      resolve(false);
+    }
+  });
 }
 
 // Define interfaces for local storage
@@ -242,12 +293,40 @@ class OfflineDatabase extends Dexie {
 
   private async _initialize(): Promise<void> {
     try {
-      // Check if we're on a native platform
-      const isNative = Capacitor.isNativePlatform();
-      console.log(`Initializing IndexedDB (Native: ${isNative}, Platform: ${Capacitor.getPlatform()})`);
+      const platform = getPlatform();
+      const isNative = isNativePlatform();
+      console.log(`Initializing IndexedDB (Native: ${isNative}, Platform: ${platform})`);
+
+      // First check if IndexedDB is available
+      if (!isIndexedDBAvailable()) {
+        console.error('IndexedDB is not available on this platform');
+        this._isReady = false;
+        return;
+      }
+
+      // On Android, test IndexedDB first
+      if (platform === 'android') {
+        console.log('Testing IndexedDB on Android...');
+        const testPassed = await testIndexedDB();
+        if (!testPassed) {
+          console.error('IndexedDB test failed on Android');
+          this._isReady = false;
+          return;
+        }
+      }
 
       // Open the database
       await this.open();
+      
+      // Verify we can actually read/write
+      try {
+        const count = await this.syncMetadata.count();
+        console.log(`IndexedDB opened, syncMetadata count: ${count}`);
+      } catch (verifyError) {
+        console.warn('IndexedDB verification failed:', verifyError);
+        throw verifyError;
+      }
+
       this._isReady = true;
       console.log('IndexedDB initialized successfully');
     } catch (error) {
@@ -255,15 +334,37 @@ class OfflineDatabase extends Dexie {
       this._isReady = false;
       
       // On Android, try to delete and recreate if there's an issue
-      if (Capacitor.getPlatform() === 'android') {
+      const platform = getPlatform();
+      if (platform === 'android') {
         console.log('Attempting to recover IndexedDB on Android...');
         try {
-          await this.delete();
+          // Close current connection
+          this.close();
+          
+          // Delete the database
+          await new Promise<void>((resolve, reject) => {
+            const deleteReq = window.indexedDB.deleteDatabase('owelink_offline_db');
+            deleteReq.onsuccess = () => {
+              console.log('Old database deleted');
+              resolve();
+            };
+            deleteReq.onerror = () => {
+              console.warn('Failed to delete old database');
+              reject(deleteReq.error);
+            };
+            deleteReq.onblocked = () => {
+              console.warn('Delete blocked - database in use');
+              resolve(); // Continue anyway
+            };
+          });
+          
+          // Try to open again
           await this.open();
           this._isReady = true;
-          console.log('IndexedDB recovered successfully');
+          console.log('IndexedDB recovered successfully on Android');
         } catch (retryError) {
-          console.error('Failed to recover IndexedDB:', retryError);
+          console.error('Failed to recover IndexedDB on Android:', retryError);
+          this._isReady = false;
         }
       }
     }
