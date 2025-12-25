@@ -15,11 +15,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ArrowLeft, User, Phone, Bell, Moon, Shield, LogOut, Coins } from "lucide-react";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
+import { ArrowLeft, User, Phone, Bell, Moon, Shield, LogOut, Coins, Database, ChevronDown } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { CURRENCIES, getCurrencySymbol } from "@/lib/currencies";
 import { hapticSuccess } from "@/lib/haptics";
+import { OfflineDiagnostics } from "@/components/settings/OfflineDiagnostics";
 
 export default function Settings() {
   const { user, profile, loading: authLoading, signOut, currency, updateSettings } = useAuth();
@@ -202,6 +208,22 @@ export default function Settings() {
             Change Password
           </Button>
         </div>
+
+        {/* Offline Storage Diagnostics */}
+        <Collapsible>
+          <div className="card-elevated p-4">
+            <CollapsibleTrigger className="flex items-center justify-between w-full">
+              <h3 className="font-semibold text-foreground flex items-center gap-2">
+                <Database className="h-4 w-4" />
+                Offline Storage
+              </h3>
+              <ChevronDown className="h-4 w-4 text-muted-foreground transition-transform duration-200 group-data-[state=open]:rotate-180" />
+            </CollapsibleTrigger>
+            <CollapsibleContent className="pt-4">
+              <OfflineDiagnostics />
+            </CollapsibleContent>
+          </div>
+        </Collapsible>
 
         {/* Sign Out */}
         <Button

@@ -21,14 +21,13 @@ export const getPlatform = (): string => {
 // Check if IndexedDB is available
 export function isIndexedDBAvailable(): boolean {
   try {
-    // Check if indexedDB exists
     if (typeof window === 'undefined' || !window.indexedDB) {
-      console.warn('IndexedDB not available - window.indexedDB is undefined');
+      console.warn('[OfflineDB] IndexedDB not available - window.indexedDB is undefined');
       return false;
     }
     return true;
   } catch (e) {
-    console.warn('IndexedDB check failed:', e);
+    console.warn('[OfflineDB] IndexedDB check failed:', e);
     return false;
   }
 }
@@ -41,7 +40,7 @@ export async function testIndexedDB(): Promise<boolean> {
       const request = window.indexedDB.open(testDbName, 1);
       
       request.onerror = () => {
-        console.warn('IndexedDB test failed - cannot open database');
+        console.warn('[OfflineDB] IndexedDB test failed - cannot open database');
         resolve(false);
       };
       
@@ -49,26 +48,25 @@ export async function testIndexedDB(): Promise<boolean> {
         try {
           request.result.close();
           window.indexedDB.deleteDatabase(testDbName);
-          console.log('IndexedDB test passed');
+          console.log('[OfflineDB] IndexedDB test passed');
           resolve(true);
         } catch (e) {
-          console.warn('IndexedDB test cleanup failed:', e);
-          resolve(true); // Still consider it passed if we could open
+          console.warn('[OfflineDB] IndexedDB test cleanup failed:', e);
+          resolve(true);
         }
       };
       
       request.onblocked = () => {
-        console.warn('IndexedDB test blocked');
+        console.warn('[OfflineDB] IndexedDB test blocked');
         resolve(false);
       };
       
-      // Timeout after 3 seconds
       setTimeout(() => {
-        console.warn('IndexedDB test timed out');
+        console.warn('[OfflineDB] IndexedDB test timed out');
         resolve(false);
-      }, 3000);
+      }, 5000);
     } catch (e) {
-      console.warn('IndexedDB test exception:', e);
+      console.warn('[OfflineDB] IndexedDB test exception:', e);
       resolve(false);
     }
   });
@@ -154,7 +152,6 @@ export interface LocalPayment {
   is_local?: boolean;
 }
 
-// Legacy LocalContact for sync (deprecated - kept for migration)
 export interface LocalContact {
   id: string;
   user_id: string;
@@ -168,7 +165,6 @@ export interface LocalContact {
   is_local?: boolean;
 }
 
-// NEW: Local-only app contacts (never synced to server)
 export interface LocalAppContact {
   id: string;
   phone_number: string;
@@ -178,9 +174,8 @@ export interface LocalAppContact {
   updated_at: number;
 }
 
-// NEW: Nickname overrides for device contacts
 export interface NicknameOverride {
-  phone_suffix: string; // Primary key
+  phone_suffix: string;
   nickname: string;
   updated_at: number;
 }
@@ -218,6 +213,27 @@ export interface SyncMetadata {
   last_server_timestamp: string | null;
 }
 
+// Store DB state for diagnostics
+export interface DbDiagnostics {
+  isReady: boolean;
+  lastError: string | null;
+  initAttempts: number;
+  platform: string;
+  lastInitTime: number | null;
+}
+
+let dbDiagnostics: DbDiagnostics = {
+  isReady: false,
+  lastError: null,
+  initAttempts: 0,
+  platform: 'unknown',
+  lastInitTime: null,
+};
+
+export function getDbDiagnostics(): DbDiagnostics {
+  return { ...dbDiagnostics };
+}
+
 class OfflineDatabase extends Dexie {
   profiles!: Table<LocalProfile, string>;
   bills!: Table<LocalBill, string>;
@@ -228,12 +244,14 @@ class OfflineDatabase extends Dexie {
   notifications!: Table<LocalNotification, string>;
   syncQueue!: Table<SyncQueueItem, number>;
   syncMetadata!: Table<SyncMetadata, string>;
-  // NEW: Local-only tables (not synced to server)
   localAppContacts!: Table<LocalAppContact, string>;
   nicknameOverrides!: Table<NicknameOverride, string>;
 
   private _isReady = false;
-  private _initPromise: Promise<void> | null = null;
+  private _initPromise: Promise<boolean> | null = null;
+  private _lastError: string | null = null;
+  private _initAttempts = 0;
+  private readonly MAX_INIT_ATTEMPTS = 3;
 
   constructor() {
     super('owelink_offline_db');
@@ -250,7 +268,6 @@ class OfflineDatabase extends Dexie {
       syncMetadata: 'id, entity_type, last_synced_at',
     });
 
-    // Version 2: Add local-only contacts tables
     this.version(2).stores({
       profiles: 'id, user_id, phone_suffix, synced_at',
       bills: 'id, creator_id, status, created_at, updated_at, synced_at',
@@ -261,112 +278,167 @@ class OfflineDatabase extends Dexie {
       notifications: 'id, user_id, read, created_at, synced_at',
       syncQueue: '++id, action_id, entity_type, operation, entity_id, status, created_at',
       syncMetadata: 'id, entity_type, last_synced_at',
-      // NEW local-only tables
       localAppContacts: 'id, phone_suffix, nickname, created_at',
       nicknameOverrides: 'phone_suffix, updated_at',
     });
 
-    // Add error handlers
     this.on('blocked', () => {
-      console.warn('Database blocked - another tab may have the database open');
+      console.warn('[OfflineDB] Database blocked - another tab may have the database open');
     });
 
     this.on('versionchange', () => {
-      console.log('Database version change detected');
+      console.log('[OfflineDB] Database version change detected');
       this.close();
     });
   }
 
-  // Ensure DB is ready before operations
   async ensureReady(): Promise<boolean> {
+    // Already ready
     if (this._isReady) return true;
     
+    // Init in progress, wait for it
     if (this._initPromise) {
-      await this._initPromise;
-      return this._isReady;
+      return this._initPromise;
     }
 
-    this._initPromise = this._initialize();
-    await this._initPromise;
-    return this._isReady;
+    // Start init
+    this._initPromise = this._initializeWithRetry();
+    const result = await this._initPromise;
+    this._initPromise = null; // Allow retry on next call if failed
+    return result;
   }
 
-  private async _initialize(): Promise<void> {
-    try {
-      const platform = getPlatform();
-      const isNative = isNativePlatform();
-      console.log(`Initializing IndexedDB (Native: ${isNative}, Platform: ${platform})`);
+  private async _initializeWithRetry(): Promise<boolean> {
+    const platform = getPlatform();
+    dbDiagnostics.platform = platform;
+    
+    while (this._initAttempts < this.MAX_INIT_ATTEMPTS) {
+      this._initAttempts++;
+      dbDiagnostics.initAttempts = this._initAttempts;
+      
+      console.log(`[OfflineDB] Init attempt ${this._initAttempts}/${this.MAX_INIT_ATTEMPTS} (Platform: ${platform})`);
+      
+      const success = await this._initialize();
+      if (success) {
+        return true;
+      }
+      
+      // Wait before retry with exponential backoff
+      if (this._initAttempts < this.MAX_INIT_ATTEMPTS) {
+        const delay = Math.pow(2, this._initAttempts) * 500;
+        console.log(`[OfflineDB] Retrying in ${delay}ms...`);
+        await new Promise(r => setTimeout(r, delay));
+      }
+    }
+    
+    console.error('[OfflineDB] All init attempts failed');
+    return false;
+  }
 
-      // First check if IndexedDB is available
+  private async _initialize(): Promise<boolean> {
+    try {
+      dbDiagnostics.lastInitTime = Date.now();
+      
+      // Check if IndexedDB is available
       if (!isIndexedDBAvailable()) {
-        console.error('IndexedDB is not available on this platform');
-        this._isReady = false;
-        return;
+        this._lastError = 'IndexedDB not available';
+        dbDiagnostics.lastError = this._lastError;
+        console.error('[OfflineDB] ' + this._lastError);
+        return false;
       }
 
-      // On Android, test IndexedDB first
+      // On Android, do a quick test first
+      const platform = getPlatform();
       if (platform === 'android') {
-        console.log('Testing IndexedDB on Android...');
+        console.log('[OfflineDB] Testing IndexedDB on Android...');
         const testPassed = await testIndexedDB();
         if (!testPassed) {
-          console.error('IndexedDB test failed on Android');
-          this._isReady = false;
-          return;
+          this._lastError = 'IndexedDB test failed on Android';
+          dbDiagnostics.lastError = this._lastError;
+          console.error('[OfflineDB] ' + this._lastError);
+          
+          // Try recovery
+          return await this._recoverDatabase();
         }
       }
 
       // Open the database
       await this.open();
       
-      // Verify we can actually read/write
+      // Verify read/write works
       try {
         const count = await this.syncMetadata.count();
-        console.log(`IndexedDB opened, syncMetadata count: ${count}`);
+        console.log(`[OfflineDB] Verified - syncMetadata count: ${count}`);
       } catch (verifyError) {
-        console.warn('IndexedDB verification failed:', verifyError);
+        console.warn('[OfflineDB] Verification failed:', verifyError);
         throw verifyError;
       }
 
       this._isReady = true;
-      console.log('IndexedDB initialized successfully');
+      this._lastError = null;
+      dbDiagnostics.isReady = true;
+      dbDiagnostics.lastError = null;
+      console.log('[OfflineDB] ✓ Initialized successfully');
+      return true;
     } catch (error) {
-      console.error('Failed to initialize IndexedDB:', error);
-      this._isReady = false;
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      this._lastError = errorMsg;
+      dbDiagnostics.lastError = errorMsg;
+      console.error('[OfflineDB] Init failed:', errorMsg);
       
-      // On Android, try to delete and recreate if there's an issue
+      // On Android, try recovery
       const platform = getPlatform();
       if (platform === 'android') {
-        console.log('Attempting to recover IndexedDB on Android...');
-        try {
-          // Close current connection
-          this.close();
-          
-          // Delete the database
-          await new Promise<void>((resolve, reject) => {
-            const deleteReq = window.indexedDB.deleteDatabase('owelink_offline_db');
-            deleteReq.onsuccess = () => {
-              console.log('Old database deleted');
-              resolve();
-            };
-            deleteReq.onerror = () => {
-              console.warn('Failed to delete old database');
-              reject(deleteReq.error);
-            };
-            deleteReq.onblocked = () => {
-              console.warn('Delete blocked - database in use');
-              resolve(); // Continue anyway
-            };
-          });
-          
-          // Try to open again
-          await this.open();
-          this._isReady = true;
-          console.log('IndexedDB recovered successfully on Android');
-        } catch (retryError) {
-          console.error('Failed to recover IndexedDB on Android:', retryError);
-          this._isReady = false;
-        }
+        return await this._recoverDatabase();
       }
+      
+      return false;
+    }
+  }
+
+  private async _recoverDatabase(): Promise<boolean> {
+    console.log('[OfflineDB] Attempting database recovery...');
+    
+    try {
+      // Close current connection
+      this.close();
+      
+      // Delete the database
+      await new Promise<void>((resolve, reject) => {
+        const deleteReq = window.indexedDB.deleteDatabase('owelink_offline_db');
+        deleteReq.onsuccess = () => {
+          console.log('[OfflineDB] Old database deleted');
+          resolve();
+        };
+        deleteReq.onerror = () => {
+          console.warn('[OfflineDB] Failed to delete old database');
+          reject(deleteReq.error);
+        };
+        deleteReq.onblocked = () => {
+          console.warn('[OfflineDB] Delete blocked - database in use');
+          resolve();
+        };
+        setTimeout(() => resolve(), 3000);
+      });
+      
+      // Try to open again
+      await this.open();
+      
+      // Verify
+      await this.syncMetadata.count();
+      
+      this._isReady = true;
+      this._lastError = null;
+      dbDiagnostics.isReady = true;
+      dbDiagnostics.lastError = null;
+      console.log('[OfflineDB] ✓ Recovery successful');
+      return true;
+    } catch (retryError) {
+      const errorMsg = retryError instanceof Error ? retryError.message : String(retryError);
+      this._lastError = 'Recovery failed: ' + errorMsg;
+      dbDiagnostics.lastError = this._lastError;
+      console.error('[OfflineDB] Recovery failed:', errorMsg);
+      return false;
     }
   }
 
@@ -374,10 +446,40 @@ class OfflineDatabase extends Dexie {
     return this._isReady;
   }
 
-  // Clear all user data (for logout)
+  get lastError(): string | null {
+    return this._lastError;
+  }
+
+  // Test write and read
+  async testReadWrite(): Promise<{ success: boolean; error?: string }> {
+    if (!this._isReady) {
+      return { success: false, error: 'Database not ready' };
+    }
+    
+    try {
+      const testId = '__test__' + Date.now();
+      await this.syncMetadata.put({
+        id: testId,
+        entity_type: 'test',
+        last_synced_at: Date.now(),
+        last_server_timestamp: null,
+      });
+      
+      const read = await this.syncMetadata.get(testId);
+      await this.syncMetadata.delete(testId);
+      
+      if (read && read.id === testId) {
+        return { success: true };
+      }
+      return { success: false, error: 'Read verification failed' };
+    } catch (e) {
+      return { success: false, error: e instanceof Error ? e.message : String(e) };
+    }
+  }
+
   async clearAllData() {
     if (!await this.ensureReady()) {
-      console.warn('Cannot clear data - IndexedDB not ready');
+      console.warn('[OfflineDB] Cannot clear data - not ready');
       return;
     }
     
@@ -392,16 +494,16 @@ class OfflineDatabase extends Dexie {
       this.syncQueue.clear(),
       this.syncMetadata.clear(),
     ]);
+    console.log('[OfflineDB] All data cleared');
   }
 
-  // Get pending sync count
   async getPendingSyncCount(): Promise<number> {
     if (!await this.ensureReady()) return 0;
     
     try {
       return await this.syncQueue.where('status').anyOf(['pending', 'failed']).count();
     } catch (e) {
-      console.error('Error getting pending sync count:', e);
+      console.error('[OfflineDB] Error getting pending sync count:', e);
       return 0;
     }
   }
@@ -412,9 +514,9 @@ export const offlineDb = new OfflineDatabase();
 
 // Initialize on load
 offlineDb.ensureReady().then(ready => {
-  console.log(`Offline DB ready: ${ready}`);
+  console.log(`[OfflineDB] Ready: ${ready}`);
 }).catch(e => {
-  console.error('Failed to initialize offline DB:', e);
+  console.error('[OfflineDB] Failed to initialize:', e);
 });
 
 // Generate a unique action ID for sync queue
@@ -434,12 +536,12 @@ export async function safeDbOperation<T>(
 ): Promise<T> {
   try {
     if (!await offlineDb.ensureReady()) {
-      console.warn('Database not ready, using fallback');
+      console.warn('[OfflineDB] Not ready, using fallback');
       return fallback;
     }
     return await operation();
   } catch (error) {
-    console.error('Database operation failed:', error);
+    console.error('[OfflineDB] Operation failed:', error);
     return fallback;
   }
 }

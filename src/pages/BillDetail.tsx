@@ -54,6 +54,14 @@ import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useBills } from "@/hooks/useBills";
 import { AddContactDialog } from "@/components/contacts/AddContactDialog";
+import { 
+  updateBillParticipantOfflineFirst, 
+  createBillParticipantOfflineFirst,
+  deleteBillParticipantOfflineFirst,
+  createPaymentOfflineFirst,
+  updateBillOfflineFirst,
+} from "@/lib/offline/offlineDataLayer";
+import { useOffline } from "@/hooks/useOffline";
 
 export default function BillDetail() {
   const { user, loading: authLoading } = useAuth();
@@ -62,6 +70,7 @@ export default function BillDetail() {
   const { bill, loading, updateBillLocally } = useBillDetail(id);
   const { updateBill, deleteBill } = useBills();
   const { contacts, addContact } = useContacts();
+  const { sync } = useOffline();
 
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
@@ -172,8 +181,8 @@ export default function BillDetail() {
     const newStatus = newAmountPaid >= selectedParticipant.amount_owed ? "paid" : "partial";
 
     try {
-      // Record payment
-      await supabase.from("payments").insert({
+      // Record payment offline-first
+      await createPaymentOfflineFirst({
         reference_type: "bill",
         reference_id: bill.id,
         payer_phone_number: selectedParticipant.phone_number,
@@ -182,18 +191,13 @@ export default function BillDetail() {
         currency: bill.currency,
       });
 
-      // Update participant
-      const { error } = await supabase
-        .from("bill_participants")
-        .update({
-          amount_paid: newAmountPaid,
-          status: newStatus,
-        })
-        .eq("id", selectedParticipant.id);
+      // Update participant offline-first
+      await updateBillParticipantOfflineFirst(selectedParticipant.id, {
+        amount_paid: newAmountPaid,
+        status: newStatus,
+      });
 
-      if (error) throw error;
-
-      // Update local state
+      // Update local state immediately
       updateBillLocally(prev => {
         const updatedParticipants = prev.participants?.map(p =>
           p.id === selectedParticipant.id
@@ -201,7 +205,6 @@ export default function BillDetail() {
             : p
         );
 
-        // Check if all participants paid
         const allPaid = updatedParticipants?.every(p => p.amount_paid >= p.amount_owed);
         
         return {
@@ -211,18 +214,22 @@ export default function BillDetail() {
         };
       });
 
+      // Update bill status if all paid
       if (bill.participants?.every(p =>
         p.id === selectedParticipant.id
           ? newAmountPaid >= p.amount_owed
           : p.amount_paid >= p.amount_owed
       )) {
-        await supabase.from("bills").update({ status: "completed" }).eq("id", bill.id);
+        await updateBillOfflineFirst(bill.id, {});
       }
 
       toast.success("Payment recorded");
       setShowPaymentDialog(false);
       setPaymentAmount("");
       setSelectedParticipant(null);
+      
+      // Trigger sync in background
+      sync();
     } catch (error) {
       console.error("Error recording payment:", error);
       toast.error("Failed to record payment");
@@ -233,16 +240,13 @@ export default function BillDetail() {
     try {
       const amountPaid = newStatus === "paid" ? participant.amount_owed : participant.amount_paid;
 
-      const { error } = await supabase
-        .from("bill_participants")
-        .update({
-          status: newStatus,
-          amount_paid: amountPaid,
-        })
-        .eq("id", participant.id);
+      // Update offline-first
+      await updateBillParticipantOfflineFirst(participant.id, {
+        status: newStatus,
+        amount_paid: amountPaid,
+      });
 
-      if (error) throw error;
-
+      // Update UI immediately
       updateBillLocally(prev => ({
         ...prev,
         participants: prev.participants?.map(p =>
@@ -253,6 +257,7 @@ export default function BillDetail() {
       }));
 
       toast.success("Status updated");
+      sync(); // Trigger sync in background
     } catch (error) {
       console.error("Error updating status:", error);
       toast.error("Failed to update status");
@@ -274,34 +279,21 @@ export default function BillDetail() {
     }
 
     try {
-      // Insert participant
-      const { data, error } = await supabase
-        .from("bill_participants")
-        .insert({
-          bill_id: bill.id,
-          phone_number: newParticipantPhone,
-          amount_owed: amount,
-          amount_paid: 0,
-          status: "pending",
-        })
-        .select()
-        .single();
+      // Create participant offline-first
+      const newParticipant = await createBillParticipantOfflineFirst(bill.id, {
+        phone_number: newParticipantPhone,
+        amount_owed: amount,
+      });
 
-      if (error) throw error;
-
-      // Update bill total_amount to include new participant's amount
+      // Update bill total offline-first
       const newTotal = bill.total_amount + amount;
-      const { error: updateError } = await supabase
-        .from("bills")
-        .update({ total_amount: newTotal })
-        .eq("id", bill.id);
+      await updateBillOfflineFirst(bill.id, { total_amount: newTotal });
 
-      if (updateError) throw updateError;
-
+      // Update UI immediately
       updateBillLocally(prev => ({
         ...prev,
         total_amount: newTotal,
-        participants: [...(prev.participants || []), data],
+        participants: [...(prev.participants || []), newParticipant as any],
       }));
 
       toast.success("Participant added");
@@ -309,6 +301,8 @@ export default function BillDetail() {
       setNewParticipantPhone("");
       setNewParticipantAmount("");
       setSearchQuery("");
+      
+      sync(); // Trigger sync in background
     } catch (error) {
       console.error("Error adding participant:", error);
       toast.error("Failed to add participant");
@@ -317,19 +311,17 @@ export default function BillDetail() {
 
   const handleRemoveParticipant = async (participant: BillParticipant) => {
     try {
-      const { error } = await supabase
-        .from("bill_participants")
-        .delete()
-        .eq("id", participant.id);
+      // Delete offline-first
+      await deleteBillParticipantOfflineFirst(participant.id);
 
-      if (error) throw error;
-
+      // Update UI immediately
       updateBillLocally(prev => ({
         ...prev,
         participants: prev.participants?.filter(p => p.id !== participant.id),
       }));
 
       toast.success("Participant removed");
+      sync(); // Trigger sync in background
     } catch (error) {
       console.error("Error removing participant:", error);
       toast.error("Failed to remove participant");

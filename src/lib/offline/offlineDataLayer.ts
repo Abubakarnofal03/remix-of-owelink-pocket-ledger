@@ -1,5 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
-import { offlineDb, generateLocalId, LocalBill, LocalBillParticipant, LocalIOU, safeDbOperation } from "./db";
+import { offlineDb, generateLocalId, LocalBill, LocalBillParticipant, LocalIOU, LocalPayment, safeDbOperation } from "./db";
 import { addToSyncQueue } from "./syncQueue";
 import { getPhoneSuffix } from "@/lib/notifications";
 
@@ -32,21 +32,18 @@ export interface BillInsertOffline {
 }
 
 export async function fetchBillsOfflineFirst(userId: string): Promise<LocalBill[]> {
-  // Check if local DB is available
   const dbReady = await isLocalDbAvailable();
   
   if (!dbReady) {
-    console.log('Local DB not available, returning empty array');
+    console.log('[Offline] Local DB not available, returning empty array');
     return [];
   }
 
   return safeDbOperation(async () => {
-    // Always return local data first (instant)
     const localBills = await offlineDb.bills
       .filter(b => !b.deleted_at)
       .toArray();
 
-    // Include participants
     const billsWithParticipants = await Promise.all(
       localBills.map(async (bill) => {
         const participants = await offlineDb.billParticipants
@@ -64,13 +61,13 @@ export async function fetchBillsOfflineFirst(userId: string): Promise<LocalBill[
 export async function createBillOfflineFirst(
   userId: string,
   bill: BillInsertOffline
-): Promise<LocalBill> {
+): Promise<LocalBill & { participants: LocalBillParticipant[] }> {
   const now = new Date().toISOString();
-  const localId = generateLocalId();
+  const localBillId = generateLocalId();
   const currency = bill.currency || "USD";
 
   const localBill: LocalBill = {
-    id: localId,
+    id: localBillId,
     creator_id: userId,
     title: bill.title,
     description: bill.description || null,
@@ -86,11 +83,12 @@ export async function createBillOfflineFirst(
 
   // Save bill to local DB
   await offlineDb.bills.put(localBill);
+  console.log('[Offline] Bill saved locally:', localBillId);
 
-  // Save participants
+  // Save participants locally
   const participants: LocalBillParticipant[] = bill.participants.map((p) => ({
     id: generateLocalId(),
-    bill_id: localId,
+    bill_id: localBillId,
     phone_number: p.phone_number,
     phone_suffix: getPhoneSuffix(p.phone_number) || null,
     user_id: null,
@@ -103,14 +101,23 @@ export async function createBillOfflineFirst(
   }));
 
   await offlineDb.billParticipants.bulkPut(participants);
+  console.log('[Offline] Participants saved locally:', participants.length);
 
-  // Add to sync queue
-  await addToSyncQueue("bill", "create", localId, {
-    ...localBill,
-    participants: bill.participants,
-  } as unknown as Record<string, unknown>);
+  // Queue bill creation (WITHOUT participants in payload - they'll be synced separately)
+  await addToSyncQueue("bill", "create", localBillId, {
+    creator_id: localBill.creator_id,
+    title: localBill.title,
+    description: localBill.description,
+    total_amount: localBill.total_amount,
+    currency: localBill.currency,
+    due_date: localBill.due_date,
+    status: localBill.status,
+    // Store participant data for the sync handler to use
+    _participants: bill.participants,
+    _local_bill_id: localBillId,
+  });
 
-  return { ...localBill, participants } as LocalBill & { participants: LocalBillParticipant[] };
+  return { ...localBill, participants };
 }
 
 export async function updateBillOfflineFirst(
@@ -133,7 +140,6 @@ export async function updateBillOfflineFirst(
 
   await offlineDb.bills.put(updatedBill);
 
-  // Add to sync queue
   await addToSyncQueue("bill", "update", billId, {
     title: updatedBill.title,
     description: updatedBill.description,
@@ -156,10 +162,140 @@ export async function deleteBillOfflineFirst(billId: string): Promise<boolean> {
   const now = new Date().toISOString();
   await offlineDb.bills.update(billId, { deleted_at: now, is_local: true });
 
-  // Add to sync queue
   await addToSyncQueue("bill", "delete", billId, { deleted_at: now });
 
   return true;
+}
+
+// ==================== BILL PARTICIPANTS ====================
+
+export async function updateBillParticipantOfflineFirst(
+  participantId: string,
+  updates: { status?: string; amount_paid?: number }
+): Promise<LocalBillParticipant | null> {
+  const existing = await offlineDb.billParticipants.get(participantId);
+  if (!existing) return null;
+
+  const now = new Date().toISOString();
+  const updatedParticipant: LocalBillParticipant = {
+    ...existing,
+    status: updates.status ?? existing.status,
+    amount_paid: updates.amount_paid ?? existing.amount_paid,
+    updated_at: now,
+    is_local: true,
+  };
+
+  await offlineDb.billParticipants.put(updatedParticipant);
+  console.log('[Offline] Participant updated locally:', participantId);
+
+  // Only queue if not a local-only ID (server doesn't know about it yet)
+  if (!participantId.startsWith('local-')) {
+    await addToSyncQueue("bill_participant", "update", participantId, {
+      status: updatedParticipant.status,
+      amount_paid: updatedParticipant.amount_paid,
+    });
+  }
+
+  return updatedParticipant;
+}
+
+export async function createBillParticipantOfflineFirst(
+  billId: string,
+  participant: { phone_number: string; amount_owed: number }
+): Promise<LocalBillParticipant> {
+  const now = new Date().toISOString();
+  const localId = generateLocalId();
+
+  const localParticipant: LocalBillParticipant = {
+    id: localId,
+    bill_id: billId,
+    phone_number: participant.phone_number,
+    phone_suffix: getPhoneSuffix(participant.phone_number) || null,
+    user_id: null,
+    amount_owed: participant.amount_owed,
+    amount_paid: 0,
+    status: "pending",
+    created_at: now,
+    updated_at: now,
+    is_local: true,
+  };
+
+  await offlineDb.billParticipants.put(localParticipant);
+  console.log('[Offline] Participant created locally:', localId);
+
+  // Only queue if bill is synced (not local)
+  if (!billId.startsWith('local-')) {
+    await addToSyncQueue("bill_participant", "create", localId, {
+      bill_id: billId,
+      phone_number: localParticipant.phone_number,
+      amount_owed: localParticipant.amount_owed,
+      amount_paid: 0,
+      status: "pending",
+    });
+  }
+
+  return localParticipant;
+}
+
+export async function deleteBillParticipantOfflineFirst(participantId: string): Promise<boolean> {
+  const existing = await offlineDb.billParticipants.get(participantId);
+  if (!existing) return false;
+
+  await offlineDb.billParticipants.delete(participantId);
+  console.log('[Offline] Participant deleted locally:', participantId);
+
+  // Only queue if not a local-only ID
+  if (!participantId.startsWith('local-')) {
+    await addToSyncQueue("bill_participant", "delete", participantId, {});
+  }
+
+  return true;
+}
+
+// ==================== PAYMENTS ====================
+
+export async function createPaymentOfflineFirst(payment: {
+  reference_type: string;
+  reference_id: string;
+  payer_phone_number: string;
+  payer_id?: string | null;
+  amount: number;
+  currency: string;
+  notes?: string;
+}): Promise<LocalPayment> {
+  const now = new Date().toISOString();
+  const localId = generateLocalId();
+
+  const localPayment: LocalPayment = {
+    id: localId,
+    reference_type: payment.reference_type,
+    reference_id: payment.reference_id,
+    payer_phone_number: payment.payer_phone_number,
+    payer_id: payment.payer_id || null,
+    amount: payment.amount,
+    currency: payment.currency,
+    notes: payment.notes || null,
+    created_at: now,
+    is_local: true,
+  };
+
+  await offlineDb.payments.put(localPayment);
+  console.log('[Offline] Payment saved locally:', localId);
+
+  // Only queue if reference is synced (not local)
+  if (!payment.reference_id.startsWith('local-')) {
+    await addToSyncQueue("payment", "create", localId, {
+      reference_type: localPayment.reference_type,
+      reference_id: localPayment.reference_id,
+      payer_phone_number: localPayment.payer_phone_number,
+      payer_id: localPayment.payer_id,
+      amount: localPayment.amount,
+      currency: localPayment.currency,
+      notes: localPayment.notes,
+    });
+  }
+
+  return localPayment;
 }
 
 // ==================== IOUs ====================
@@ -176,20 +312,17 @@ export async function fetchIOUsOfflineFirst(
   userId: string,
   phoneSuffix: string | null
 ): Promise<LocalIOU[]> {
-  // Check if local DB is available
   const dbReady = await isLocalDbAvailable();
   
   if (!dbReady) {
-    console.log('Local DB not available for IOUs, returning empty array');
+    console.log('[Offline] Local DB not available for IOUs, returning empty array');
     return [];
   }
 
   return safeDbOperation(async () => {
-    // Get all local IOUs
     const localIOUs = await offlineDb.ious
       .filter((iou) => {
         if (iou.deleted_at) return false;
-        // Show IOUs where user is creditor or debtor
         if (iou.creditor_id === userId) return true;
         if (iou.debtor_user_id === userId) return true;
         if (phoneSuffix && iou.debtor_phone_suffix === phoneSuffix) return true;
@@ -227,18 +360,26 @@ export async function createIOUOfflineFirst(
     is_local: true,
   };
 
-  // Save to local DB
   await offlineDb.ious.put(localIOU);
+  console.log('[Offline] IOU saved locally:', localId);
 
-  // Add to sync queue
-  await addToSyncQueue("iou", "create", localId, localIOU as unknown as Record<string, unknown>);
+  await addToSyncQueue("iou", "create", localId, {
+    creditor_id: localIOU.creditor_id,
+    debtor_phone_number: localIOU.debtor_phone_number,
+    amount: localIOU.amount,
+    amount_paid: 0,
+    currency: localIOU.currency,
+    description: localIOU.description,
+    due_date: localIOU.due_date,
+    status: "pending",
+  });
 
   return localIOU;
 }
 
 export async function updateIOUOfflineFirst(
   iouId: string,
-  updates: Partial<IOUInsertOffline>
+  updates: Partial<IOUInsertOffline> & { status?: string; amount_paid?: number }
 ): Promise<LocalIOU | null> {
   const existing = await offlineDb.ious.get(iouId);
   if (!existing) return null;
@@ -253,21 +394,28 @@ export async function updateIOUOfflineFirst(
     debtor_phone_number: updates.debtor_phone_number ?? existing.debtor_phone_number,
     debtor_phone_suffix: phoneSuffix || null,
     amount: updates.amount ?? existing.amount,
+    amount_paid: updates.amount_paid ?? existing.amount_paid,
     description: updates.description ?? existing.description,
     due_date: updates.due_date ?? existing.due_date,
+    status: updates.status ?? existing.status,
     updated_at: now,
     is_local: true,
   };
 
   await offlineDb.ious.put(updatedIOU);
+  console.log('[Offline] IOU updated locally:', iouId);
 
-  // Add to sync queue
-  await addToSyncQueue("iou", "update", iouId, {
-    debtor_phone_number: updatedIOU.debtor_phone_number,
-    amount: updatedIOU.amount,
-    description: updatedIOU.description,
-    due_date: updatedIOU.due_date,
-  });
+  // Only queue if not a local-only ID
+  if (!iouId.startsWith('local-')) {
+    await addToSyncQueue("iou", "update", iouId, {
+      debtor_phone_number: updatedIOU.debtor_phone_number,
+      amount: updatedIOU.amount,
+      amount_paid: updatedIOU.amount_paid,
+      description: updatedIOU.description,
+      due_date: updatedIOU.due_date,
+      status: updatedIOU.status,
+    });
+  }
 
   return updatedIOU;
 }
@@ -279,7 +427,6 @@ export async function deleteIOUOfflineFirst(iouId: string): Promise<boolean> {
   const now = new Date().toISOString();
   await offlineDb.ious.update(iouId, { deleted_at: now, is_local: true });
 
-  // Add to sync queue
   await addToSyncQueue("iou", "delete", iouId, { deleted_at: now });
 
   return true;
@@ -307,7 +454,7 @@ export async function syncBillToServer(bill: LocalBill): Promise<string | null> 
     if (error) throw error;
     return data.id;
   } catch (e) {
-    console.error("Failed to sync bill to server:", e);
+    console.error("[Offline] Failed to sync bill to server:", e);
     return null;
   }
 }
@@ -334,7 +481,7 @@ export async function syncIOUToServer(iou: LocalIOU): Promise<string | null> {
     if (error) throw error;
     return data.id;
   } catch (e) {
-    console.error("Failed to sync IOU to server:", e);
+    console.error("[Offline] Failed to sync IOU to server:", e);
     return null;
   }
 }
