@@ -3,7 +3,7 @@ import { StatusBadge } from "@/components/ui/StatusBadge";
 import { MoneyDisplay } from "@/components/ui/MoneyDisplay";
 import { AvatarCustom } from "@/components/ui/avatar-custom";
 import { format } from "date-fns";
-import { Calendar, Users, ChevronRight, Crown, UserCheck } from "lucide-react";
+import { Calendar, Users, ChevronRight, Crown, UserCheck, Archive } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { cn } from "@/lib/utils";
@@ -20,6 +20,7 @@ export function BillCard({ bill }: BillCardProps) {
   const progress = bill.total_amount > 0 ? (totalPaid / bill.total_amount) * 100 : 0;
   
   const isCreator = user?.id === bill.creator_id;
+  const isArchived = bill.deleted_at !== null;
 
   return (
     <Link to={`/bills/${bill.id}`} className="block">
@@ -29,8 +30,14 @@ export function BillCard({ bill }: BillCardProps) {
       )}>
         <div className="flex items-start justify-between mb-3">
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <h3 className="font-semibold text-foreground truncate">{bill.title}</h3>
+              {isArchived && (
+                <span className="inline-flex items-center gap-1 text-xs bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-400 px-2 py-0.5 rounded-full shrink-0">
+                  <Archive className="h-3 w-3" />
+                  Archived
+                </span>
+              )}
               {isCreator ? (
                 <span className="inline-flex items-center gap-1 text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full shrink-0">
                   <Crown className="h-3 w-3" />

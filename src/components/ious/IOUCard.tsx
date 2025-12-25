@@ -3,7 +3,7 @@ import { StatusBadge } from "@/components/ui/StatusBadge";
 import { MoneyDisplay } from "@/components/ui/MoneyDisplay";
 import { AvatarCustom } from "@/components/ui/avatar-custom";
 import { format } from "date-fns";
-import { Calendar, ChevronRight, ArrowDownLeft, ArrowUpRight } from "lucide-react";
+import { Calendar, ChevronRight, ArrowDownLeft, ArrowUpRight, Archive } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useContacts } from "@/hooks/useContacts";
 import { useAuth } from "@/hooks/useAuth";
@@ -17,6 +17,7 @@ export function IOUCard({ iou }: IOUCardProps) {
   const { user } = useAuth();
   
   const isCreditor = iou.creditor_id === user?.id;
+  const isArchived = iou.deleted_at !== null;
   const progress = iou.amount > 0 ? (iou.amount_paid / iou.amount) * 100 : 0;
   const remaining = iou.amount - iou.amount_paid;
 
@@ -34,8 +35,14 @@ export function IOUCard({ iou }: IOUCardProps) {
           <div className="flex items-center gap-3">
             <AvatarCustom name={debtorName} size="md" />
             <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <h3 className="font-semibold text-foreground truncate">{debtorName}</h3>
+                {isArchived && (
+                  <span className="inline-flex items-center gap-1 text-xs bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-400 px-2 py-0.5 rounded-full shrink-0">
+                    <Archive className="h-3 w-3" />
+                    Archived
+                  </span>
+                )}
                 {isCreditor ? (
                   <span className="flex items-center gap-1 text-xs text-emerald-600 bg-emerald-50 dark:bg-emerald-950/50 px-2 py-0.5 rounded-full">
                     <ArrowDownLeft className="h-3 w-3" />
