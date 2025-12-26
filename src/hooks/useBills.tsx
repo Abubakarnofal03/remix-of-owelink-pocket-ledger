@@ -1,6 +1,8 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "./useAuth";
+import { useOffline } from "./useOffline";
 import { toast } from "sonner";
 import { sendPushNotification, getPhoneSuffix } from "@/lib/notifications";
 import { offlineDb, LocalBill, LocalBillParticipant } from "@/lib/offline/db";
@@ -12,7 +14,6 @@ import {
   BillInsertOffline,
 } from "@/lib/offline/offlineDataLayer";
 import { syncBillsFromServer } from "@/lib/offline/dataSync";
-import { quickConnectivityCheck, isLikelyOffline } from "@/lib/offline/requestWithTimeout";
 
 export interface BillParticipant {
   id: string;
@@ -102,59 +103,59 @@ function localBillToBill(local: LocalBill & { participants?: LocalBillParticipan
 export function useBills() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
+  const offline = useOffline();
+  const hasSyncedRef = useRef(false);
 
   const billsQueryKey = ["bills", user?.id];
 
+  // Query returns local data immediately, never blocks on server
   const { data: bills = [], isLoading: loading } = useQuery({
     queryKey: billsQueryKey,
     queryFn: async () => {
       if (!user) return [];
 
-      // 1. Try to get local data first (instant)
+      // Always return local data immediately - never block on server
       try {
         const localBills = await fetchBillsOfflineFirst(user.id);
-        const mappedBills = localBills.map(localBillToBill);
-
-        // 2. If online, sync from server in background
-        if (navigator.onLine) {
-          try {
-            await syncBillsFromServer(user.id);
-            // Get updated local data after sync
-            const updatedLocal = await fetchBillsOfflineFirst(user.id);
-            if (updatedLocal.length > 0) {
-              return updatedLocal.map(localBillToBill);
-            }
-          } catch (e) {
-            console.warn("Failed to sync bills from server:", e);
-          }
-        }
-
-        // Return local data if we have it
-        if (mappedBills.length > 0) {
-          return mappedBills;
-        }
+        return localBills.map(localBillToBill);
       } catch (localError) {
-        console.warn("Local DB not available, falling back to server:", localError);
+        console.warn("Local DB not available:", localError);
+        return [];
       }
-
-      // 3. Fallback: fetch directly from server (for when IndexedDB fails)
-      if (navigator.onLine) {
-        const { data, error } = await supabase
-          .from("bills")
-          .select(`*, participants:bill_participants(*)`)
-          .is("deleted_at", null)
-          .order("created_at", { ascending: false });
-
-        if (error) throw error;
-        return (data || []) as Bill[];
-      }
-
-      return [];
     },
     enabled: !!user,
-    staleTime: 30 * 1000, // 30 seconds - shorter since we use local first
+    staleTime: 30 * 1000,
     gcTime: 30 * 60 * 1000,
   });
+
+  // Background sync effect - runs when online, doesn't block UI
+  useEffect(() => {
+    if (!user || !offline.isOnline || hasSyncedRef.current) return;
+    
+    const syncInBackground = async () => {
+      try {
+        console.log('[Bills] Background sync starting...');
+        await syncBillsFromServer(user.id);
+        hasSyncedRef.current = true;
+        // Invalidate to refresh UI with synced data
+        queryClient.invalidateQueries({ queryKey: billsQueryKey });
+        console.log('[Bills] Background sync complete');
+      } catch (e) {
+        console.warn('[Bills] Background sync failed:', e);
+      }
+    };
+
+    // Small delay to let UI render first
+    const timer = setTimeout(syncInBackground, 500);
+    return () => clearTimeout(timer);
+  }, [user?.id, offline.isOnline, queryClient]);
+
+  // Reset sync flag when going offline then online
+  useEffect(() => {
+    if (!offline.isOnline) {
+      hasSyncedRef.current = false;
+    }
+  }, [offline.isOnline]);
 
   const createBillMutation = useMutation({
     mutationFn: async (bill: BillInsert) => {
@@ -171,11 +172,9 @@ export function useBills() {
         console.warn("Local DB not available for create:", localError);
       }
 
-      // Quick connectivity check (2 seconds max) - don't trust navigator.onLine alone
-      const isConnected = await quickConnectivityCheck();
-      
-      if (!isConnected || isLikelyOffline()) {
-        // Definitely offline - return local data immediately with toast
+      // Check offline status from OfflineProvider (trusts the badge)
+      if (!offline.isOnline) {
+        // Definitely offline - return local data immediately
         if (localBill) {
           toast.info("Saved offline, will sync when back online");
           return localBillToBill(localBill as LocalBill & { participants?: LocalBillParticipant[] });
@@ -224,9 +223,9 @@ export function useBills() {
           return { ...billData, participants: participantsData };
         })();
 
-        // Race against a 5 second timeout
+        // Race against a 3 second timeout (faster for better UX)
         const timeoutPromise = new Promise<never>((_, reject) => {
-          setTimeout(() => reject(new Error('Request timed out')), 5000);
+          setTimeout(() => reject(new Error('Request timed out')), 3000);
         });
 
         const serverResult = await Promise.race([createBillPromise, timeoutPromise]);
@@ -262,11 +261,7 @@ export function useBills() {
         
         // Network failed or timed out - return local data
         if (localBill) {
-          if (e.message === 'Request timed out') {
-            toast.info("Connection slow - saved offline, will sync later");
-          } else {
-            toast.info("Connection issue - saved offline");
-          }
+          toast.info("Saved offline, will sync later");
           return localBillToBill(localBill as LocalBill & { participants?: LocalBillParticipant[] });
         }
         throw e; // No local fallback, rethrow
@@ -307,7 +302,7 @@ export function useBills() {
       if (!localBill) throw new Error("Bill not found");
 
       // If online, sync to server
-      if (navigator.onLine && !id.startsWith("local-")) {
+      if (offline.isOnline && !id.startsWith("local-")) {
         try {
           const { data, error } = await supabase
             .from("bills")
@@ -366,7 +361,7 @@ export function useBills() {
       await deleteBillOfflineFirst(id);
 
       // If online and not a local-only item, sync to server
-      if (navigator.onLine && !id.startsWith("local-")) {
+      if (offline.isOnline && !id.startsWith("local-")) {
         try {
           const { error } = await supabase
             .from("bills")
@@ -456,26 +451,19 @@ export function useBillDetail(billId: string | undefined) {
     queryFn: async () => {
       if (!billId || !user) return null;
 
-      // Try local first
-      const localBill = await offlineDb.bills.get(billId);
-      if (localBill) {
-        const participants = await offlineDb.billParticipants.where("bill_id").equals(billId).toArray();
-        return localBillToBill({ ...localBill, participants });
+      // Always try local first - never block on server
+      try {
+        const localBill = await offlineDb.bills.get(billId);
+        if (localBill) {
+          const participants = await offlineDb.billParticipants.where("bill_id").equals(billId).toArray();
+          return localBillToBill({ ...localBill, participants });
+        }
+      } catch (e) {
+        console.warn("Local DB error:", e);
       }
 
-      // If online, fetch from server
-      if (navigator.onLine) {
-        const { data, error } = await supabase
-          .from("bills")
-          .select(`*, participants:bill_participants(*)`)
-          .eq("id", billId)
-          .maybeSingle();
-
-        if (error) throw error;
-        return data;
-      }
-
-      return null;
+      // Return cached data if available
+      return cachedBill || null;
     },
     enabled: !!user && !!billId && !cachedBill,
     initialData: cachedBill,
