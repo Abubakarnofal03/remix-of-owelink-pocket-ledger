@@ -1,6 +1,8 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "./useAuth";
+import { useOffline } from "./useOffline";
 import { toast } from "sonner";
 import { sendPushNotification, getPhoneSuffix } from "@/lib/notifications";
 import { offlineDb, LocalIOU } from "@/lib/offline/db";
@@ -12,7 +14,6 @@ import {
   IOUInsertOffline,
 } from "@/lib/offline/offlineDataLayer";
 import { syncIOUsFromServer } from "@/lib/offline/dataSync";
-import { quickConnectivityCheck, isLikelyOffline } from "@/lib/offline/requestWithTimeout";
 
 export interface IOU {
   id: string;
@@ -64,59 +65,59 @@ function localIOUToIOU(local: LocalIOU): IOU {
 export function useIOUs() {
   const { user, profile } = useAuth();
   const queryClient = useQueryClient();
+  const offline = useOffline();
+  const hasSyncedRef = useRef(false);
 
   const iousQueryKey = ["ious", user?.id];
 
+  // Query returns local data immediately, never blocks on server
   const { data: ious = [], isLoading: loading } = useQuery({
     queryKey: iousQueryKey,
     queryFn: async () => {
       if (!user) return [];
 
-      // 1. Try to get local data first (instant)
+      // Always return local data immediately - never block on server
       try {
         const localIOUs = await fetchIOUsOfflineFirst(user.id, profile?.phone_suffix || null);
-        const mappedIOUs = localIOUs.map(localIOUToIOU);
-
-        // 2. If online, sync from server in background
-        if (navigator.onLine) {
-          try {
-            await syncIOUsFromServer(user.id, profile?.phone_suffix || null);
-            // Get updated local data after sync
-            const updatedLocal = await fetchIOUsOfflineFirst(user.id, profile?.phone_suffix || null);
-            if (updatedLocal.length > 0) {
-              return updatedLocal.map(localIOUToIOU);
-            }
-          } catch (e) {
-            console.warn("Failed to sync IOUs from server:", e);
-          }
-        }
-
-        // Return local data if we have it
-        if (mappedIOUs.length > 0) {
-          return mappedIOUs;
-        }
+        return localIOUs.map(localIOUToIOU);
       } catch (localError) {
-        console.warn("Local DB not available, falling back to server:", localError);
+        console.warn("Local DB not available:", localError);
+        return [];
       }
-
-      // 3. Fallback: fetch directly from server (for when IndexedDB fails)
-      if (navigator.onLine) {
-        const { data, error } = await supabase
-          .from("ious")
-          .select("*")
-          .is("deleted_at", null)
-          .order("created_at", { ascending: false });
-
-        if (error) throw error;
-        return (data || []).map((iou: LocalIOU) => localIOUToIOU(iou));
-      }
-
-      return [];
     },
     enabled: !!user,
-    staleTime: 30 * 1000, // 30 seconds
+    staleTime: 30 * 1000,
     gcTime: 30 * 60 * 1000,
   });
+
+  // Background sync effect - runs when online, doesn't block UI
+  useEffect(() => {
+    if (!user || !offline.isOnline || hasSyncedRef.current) return;
+    
+    const syncInBackground = async () => {
+      try {
+        console.log('[IOUs] Background sync starting...');
+        await syncIOUsFromServer(user.id, profile?.phone_suffix || null);
+        hasSyncedRef.current = true;
+        // Invalidate to refresh UI with synced data
+        queryClient.invalidateQueries({ queryKey: iousQueryKey });
+        console.log('[IOUs] Background sync complete');
+      } catch (e) {
+        console.warn('[IOUs] Background sync failed:', e);
+      }
+    };
+
+    // Small delay to let UI render first
+    const timer = setTimeout(syncInBackground, 500);
+    return () => clearTimeout(timer);
+  }, [user?.id, offline.isOnline, profile?.phone_suffix, queryClient]);
+
+  // Reset sync flag when going offline then online
+  useEffect(() => {
+    if (!offline.isOnline) {
+      hasSyncedRef.current = false;
+    }
+  }, [offline.isOnline]);
 
   // Filter IOUs by perspective
   const owedToMe = ious.filter((iou) => iou.creditor_id === user?.id);
@@ -141,10 +142,8 @@ export function useIOUs() {
         console.warn("Local DB not available for IOU create:", localError);
       }
 
-      // Quick connectivity check (2 seconds max) - don't trust navigator.onLine alone
-      const isConnected = await quickConnectivityCheck();
-      
-      if (!isConnected || isLikelyOffline()) {
+      // Check offline status from OfflineProvider (trusts the badge)
+      if (!offline.isOnline) {
         // Definitely offline - return local data immediately
         if (localIOU) {
           toast.info("Saved offline, will sync when back online");
@@ -176,9 +175,9 @@ export function useIOUs() {
           return data;
         })();
 
-        // Race against a 5 second timeout
+        // Race against a 3 second timeout (faster for better UX)
         const timeoutPromise = new Promise<never>((_, reject) => {
-          setTimeout(() => reject(new Error('Request timed out')), 5000);
+          setTimeout(() => reject(new Error('Request timed out')), 3000);
         });
 
         const data = await Promise.race([createIOUPromise, timeoutPromise]);
@@ -205,11 +204,7 @@ export function useIOUs() {
         
         // Network failed or timed out - return local data
         if (localIOU) {
-          if (e.message === 'Request timed out') {
-            toast.info("Connection slow - saved offline, will sync later");
-          } else {
-            toast.info("Connection issue - saved offline");
-          }
+          toast.info("Saved offline, will sync later");
           return localIOUToIOU(localIOU);
         }
         throw e; // No local fallback, rethrow
@@ -248,7 +243,7 @@ export function useIOUs() {
       if (!localIOU) throw new Error("IOU not found");
 
       // If online and not local-only, sync to server
-      if (navigator.onLine && !id.startsWith("local-")) {
+      if (offline.isOnline && !id.startsWith("local-")) {
         try {
           const { data, error } = await supabase
             .from("ious")
@@ -300,7 +295,7 @@ export function useIOUs() {
       await deleteIOUOfflineFirst(id);
 
       // If online and not local-only, sync to server
-      if (navigator.onLine && !id.startsWith("local-")) {
+      if (offline.isOnline && !id.startsWith("local-")) {
         try {
           const { error } = await supabase
             .from("ious")
@@ -392,21 +387,18 @@ export function useIOUDetail(iouId: string | undefined) {
     queryFn: async () => {
       if (!iouId || !user) return null;
 
-      // Try local first
-      const localIOU = await offlineDb.ious.get(iouId);
-      if (localIOU) {
-        return localIOUToIOU(localIOU);
+      // Always try local first - never block on server
+      try {
+        const localIOU = await offlineDb.ious.get(iouId);
+        if (localIOU) {
+          return localIOUToIOU(localIOU);
+        }
+      } catch (e) {
+        console.warn("Local DB error:", e);
       }
 
-      // If online, fetch from server
-      if (navigator.onLine) {
-        const { data, error } = await supabase.from("ious").select("*").eq("id", iouId).maybeSingle();
-
-        if (error) throw error;
-        return data ? localIOUToIOU(data as LocalIOU) : null;
-      }
-
-      return null;
+      // Return cached data if available
+      return cachedIOU || null;
     },
     enabled: !!user && !!iouId && !cachedIOU,
     initialData: cachedIOU,
