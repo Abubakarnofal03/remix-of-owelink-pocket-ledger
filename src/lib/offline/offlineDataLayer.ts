@@ -62,6 +62,9 @@ export async function createBillOfflineFirst(
   userId: string,
   bill: BillInsertOffline
 ): Promise<LocalBill & { participants: LocalBillParticipant[] }> {
+  const dbReady = await isLocalDbAvailable();
+  if (!dbReady) throw new Error('Local DB not available');
+
   const now = new Date().toISOString();
   const localBillId = generateLocalId();
   const currency = bill.currency || "USD";
@@ -104,7 +107,8 @@ export async function createBillOfflineFirst(
   console.log('[Offline] Participants saved locally:', participants.length);
 
   // Queue bill creation (WITHOUT participants in payload - they'll be synced separately)
-  await addToSyncQueue("bill", "create", localBillId, {
+  // Do NOT await queueing: UI must resolve instantly even if network/DB is flaky.
+  void addToSyncQueue("bill", "create", localBillId, {
     creator_id: localBill.creator_id,
     title: localBill.title,
     description: localBill.description,
@@ -115,7 +119,7 @@ export async function createBillOfflineFirst(
     // Store participant data for the sync handler to use
     _participants: bill.participants,
     _local_bill_id: localBillId,
-  });
+  }).catch((e) => console.warn('[Offline] Failed to queue bill create:', e));
 
   return { ...localBill, participants };
 }
@@ -340,6 +344,9 @@ export async function createIOUOfflineFirst(
   userId: string,
   iou: IOUInsertOffline
 ): Promise<LocalIOU> {
+  const dbReady = await isLocalDbAvailable();
+  if (!dbReady) throw new Error('Local DB not available');
+
   const now = new Date().toISOString();
   const localId = generateLocalId();
   const phoneSuffix = getPhoneSuffix(iou.debtor_phone_number);
@@ -365,7 +372,8 @@ export async function createIOUOfflineFirst(
   await offlineDb.ious.put(localIOU);
   console.log('[Offline] IOU saved locally:', localId);
 
-  await addToSyncQueue("iou", "create", localId, {
+  // Do NOT await queueing: UI must resolve instantly even if network/DB is flaky.
+  void addToSyncQueue("iou", "create", localId, {
     creditor_id: localIOU.creditor_id,
     debtor_phone_number: localIOU.debtor_phone_number,
     amount: localIOU.amount,
@@ -374,7 +382,7 @@ export async function createIOUOfflineFirst(
     description: localIOU.description,
     due_date: localIOU.due_date,
     status: "pending",
-  });
+  }).catch((e) => console.warn('[Offline] Failed to queue IOU create:', e));
 
   return localIOU;
 }

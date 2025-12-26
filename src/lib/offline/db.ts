@@ -414,10 +414,14 @@ class OfflineDatabase extends Dexie {
         }
       }
 
-      // Open the database
-      await this.open();
-      
-      // Verify read/write works
+      // Open the database (guard against rare WebView hangs)
+      await Promise.race([
+        this.open(),
+        new Promise<void>((_, reject) =>
+          setTimeout(() => reject(new Error('IndexedDB open timed out')), 3000)
+        ),
+      ]);
+
       try {
         const count = await this.syncMetadata.count();
         console.log(`[OfflineDB] Verified - syncMetadata count: ${count}`);
@@ -473,8 +477,13 @@ class OfflineDatabase extends Dexie {
         setTimeout(() => resolve(), 3000);
       });
       
-      // Try to open again
-      await this.open();
+      // Try to open again (guard against rare WebView hangs)
+      await Promise.race([
+        this.open(),
+        new Promise<void>((_, reject) =>
+          setTimeout(() => reject(new Error('IndexedDB open timed out')), 3000)
+        ),
+      ]);
       
       // Verify
       await this.syncMetadata.count();
