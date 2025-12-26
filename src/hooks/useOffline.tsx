@@ -61,8 +61,9 @@ export function OfflineProvider({ children }: { children: React.ReactNode }) {
 
   // Sync pending items
   const syncPending = useCallback(async () => {
-    if (isSyncingRef.current || !navigator.onLine) return;
-    
+    // IMPORTANT: trust OfflineProvider status (badge), not navigator.onLine
+    if (isSyncingRef.current || status === 'offline') return;
+
     const pending = await offlineDb.getPendingSyncCount();
     if (pending === 0) {
       await updateCounts();
@@ -78,7 +79,7 @@ export function OfflineProvider({ children }: { children: React.ReactNode }) {
       console.log(`[Offline] Synced: ${result.processed} processed, ${result.failed} failed`);
       await updateCounts();
       setLastSyncAt(Date.now());
-      
+
       // Refresh caches after syncing
       if (result.processed > 0) {
         invalidateCaches();
@@ -87,14 +88,16 @@ export function OfflineProvider({ children }: { children: React.ReactNode }) {
       console.error('[Offline] Sync error:', error);
     } finally {
       isSyncingRef.current = false;
-      setStatus(navigator.onLine ? 'online' : 'offline');
+      // If we went offline during sync, don't overwrite it back to online
+      setStatus((prev) => (prev === 'offline' ? 'offline' : 'online'));
     }
-  }, [updateCounts, invalidateCaches]);
+  }, [status, updateCounts, invalidateCaches]);
 
   // Full sync from server
   const fullSync = useCallback(async () => {
-    if (!user || !navigator.onLine) return;
-    
+    // IMPORTANT: trust OfflineProvider status (badge), not navigator.onLine
+    if (!user || status === 'offline') return;
+
     isSyncingRef.current = true;
     setStatus('syncing');
     console.log('[Offline] Starting full sync...');
@@ -102,13 +105,13 @@ export function OfflineProvider({ children }: { children: React.ReactNode }) {
     try {
       // First process pending sync queue
       await processAllPendingSync();
-      
+
       // Then fetch latest from server
       await performFullSync(user.id, profile?.phone_suffix || null);
-      
+
       setLastSyncAt(Date.now());
       await updateCounts();
-      
+
       // Refresh React Query caches
       invalidateCaches();
       console.log('[Offline] Full sync complete');
@@ -116,9 +119,9 @@ export function OfflineProvider({ children }: { children: React.ReactNode }) {
       console.error('[Offline] Full sync error:', error);
     } finally {
       isSyncingRef.current = false;
-      setStatus(navigator.onLine ? 'online' : 'offline');
+      setStatus((prev) => (prev === 'offline' ? 'offline' : 'online'));
     }
-  }, [user, profile, updateCounts, invalidateCaches]);
+  }, [user, profile, status, updateCounts, invalidateCaches]);
 
   // Clear all local data
   const clearData = useCallback(async () => {
@@ -187,7 +190,7 @@ export function OfflineProvider({ children }: { children: React.ReactNode }) {
 
     // Periodic sync every 30 seconds when online
     const intervalId = setInterval(() => {
-      if (navigator.onLine && !isSyncingRef.current) {
+      if (status !== 'offline' && !isSyncingRef.current) {
         syncPending();
       }
     }, 30000);
@@ -199,7 +202,7 @@ export function OfflineProvider({ children }: { children: React.ReactNode }) {
       clearInterval(intervalId);
       if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
     };
-  }, [syncPending, updateCounts, scheduleSync]);
+  }, [status, syncPending, updateCounts, scheduleSync]);
 
   // Sync on app resume (native)
   useEffect(() => {
@@ -208,7 +211,7 @@ export function OfflineProvider({ children }: { children: React.ReactNode }) {
     let appListener: (() => void) | undefined;
 
     App.addListener('appStateChange', ({ isActive }) => {
-      if (isActive && navigator.onLine && user) {
+      if (isActive && status !== 'offline' && user) {
         console.log('[Offline] App resumed, syncing...');
         scheduleSync();
       }
@@ -219,18 +222,18 @@ export function OfflineProvider({ children }: { children: React.ReactNode }) {
     return () => {
       if (appListener) appListener();
     };
-  }, [user, scheduleSync]);
+  }, [user, status, scheduleSync]);
 
   // Initial full sync when user logs in
   useEffect(() => {
-    if (user && navigator.onLine) {
+    if (user && status !== 'offline') {
       // Delay slightly to let the app render first
       const timer = setTimeout(() => {
         fullSync();
       }, 1000);
       return () => clearTimeout(timer);
     }
-  }, [user?.id]); // Only trigger on user ID change
+  }, [user?.id, status]); // Only trigger on user ID change / network status
 
   const value: OfflineContextType = {
     status,
