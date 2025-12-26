@@ -5,6 +5,7 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import { useIOUDetail, useIOUs } from "@/hooks/useIOUs";
 import { useContacts } from "@/hooks/useContacts";
 import { useIOUPaymentRequests } from "@/hooks/useIOUPaymentRequests";
+import { useOffline } from "@/hooks/useOffline";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -53,9 +54,9 @@ import {
   FileCheck,
 } from "lucide-react";
 import { toast } from "sonner";
-import { supabase } from "@/integrations/supabase/client";
 import { getPhoneSuffix } from "@/lib/notifications";
 import { formatPhoneForWhatsApp } from "@/lib/phoneUtils";
+import { updateIOUOfflineFirst, createPaymentOfflineFirst } from "@/lib/offline/offlineDataLayer";
 
 export default function IOUDetail() {
   const { user, profile, loading: authLoading } = useAuth();
@@ -65,6 +66,7 @@ export default function IOUDetail() {
   const { updateIOU, deleteIOU } = useIOUs();
   const { contacts } = useContacts();
   const { requests, createRequest, updateRequestStatus } = useIOUPaymentRequests(id);
+  const { sync } = useOffline();
 
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
@@ -156,26 +158,25 @@ export default function IOUDetail() {
 
     const success = await updateRequestStatus(requestId, 'approved');
     if (success) {
-      // Update IOU payment status
+      // Update IOU payment status using offline-first approach
       const newAmountPaid = iou.amount_paid + request.amount_claimed;
       const newStatus = newAmountPaid >= iou.amount ? "paid" : "partial";
 
       try {
-        const { error } = await supabase
-          .from("ious")
-          .update({
-            amount_paid: newAmountPaid,
-            status: newStatus,
-          })
-          .eq("id", iou.id);
+        await updateIOUOfflineFirst(iou.id, {
+          amount_paid: newAmountPaid,
+          status: newStatus,
+        });
 
-        if (!error) {
-          updateIOULocally(prev => ({
-            ...prev,
-            amount_paid: newAmountPaid,
-            status: newStatus,
-          }));
-        }
+        // Update local UI immediately
+        updateIOULocally(prev => ({
+          ...prev,
+          amount_paid: newAmountPaid,
+          status: newStatus,
+        }));
+
+        // Trigger background sync
+        sync();
       } catch (error) {
         console.error("Error updating IOU:", error);
       }
@@ -260,8 +261,8 @@ Never lose track of debts again. Split bills, send reminders & get paid faster.
     const newStatus = newAmountPaid >= iou.amount ? "paid" : "partial";
 
     try {
-      // Record payment
-      await supabase.from("payments").insert({
+      // Record payment using offline-first approach
+      await createPaymentOfflineFirst({
         reference_type: "iou",
         reference_id: iou.id,
         payer_phone_number: iou.debtor_phone_number,
@@ -270,23 +271,21 @@ Never lose track of debts again. Split bills, send reminders & get paid faster.
         currency: iou.currency,
       });
 
-      // Update IOU
-      const { error } = await supabase
-        .from("ious")
-        .update({
-          amount_paid: newAmountPaid,
-          status: newStatus,
-        })
-        .eq("id", iou.id);
+      // Update IOU using offline-first approach
+      await updateIOUOfflineFirst(iou.id, {
+        amount_paid: newAmountPaid,
+        status: newStatus,
+      });
 
-      if (error) throw error;
-
-      // Update local state
+      // Update local state immediately
       updateIOULocally(prev => ({
         ...prev,
         amount_paid: newAmountPaid,
         status: newStatus,
       }));
+
+      // Trigger background sync
+      sync();
 
       toast.success("Payment recorded");
       setShowPaymentDialog(false);
@@ -301,21 +300,21 @@ Never lose track of debts again. Split bills, send reminders & get paid faster.
     try {
       const amountPaid = newStatus === "paid" ? iou.amount : iou.amount_paid;
 
-      const { error } = await supabase
-        .from("ious")
-        .update({
-          status: newStatus,
-          amount_paid: amountPaid,
-        })
-        .eq("id", iou.id);
+      // Use offline-first approach
+      await updateIOUOfflineFirst(iou.id, {
+        status: newStatus,
+        amount_paid: amountPaid,
+      });
 
-      if (error) throw error;
-
+      // Update local UI immediately
       updateIOULocally(prev => ({
         ...prev,
         status: newStatus,
         amount_paid: amountPaid,
       }));
+
+      // Trigger background sync
+      sync();
 
       toast.success("Status updated");
     } catch (error) {
