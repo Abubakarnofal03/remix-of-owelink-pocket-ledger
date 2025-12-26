@@ -29,7 +29,22 @@ export function useMatchedContacts() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hasPermission, setHasPermission] = useState<boolean | null>(null);
+  const [isOffline, setIsOffline] = useState(!navigator.onLine);
   const fetchedRef = useRef(false);
+
+  // Listen for online/offline changes
+  useEffect(() => {
+    const handleOnline = () => setIsOffline(false);
+    const handleOffline = () => setIsOffline(true);
+    
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
 
   const getCacheKey = useCallback(() => {
     return user?.id ? `matched_contacts_${user.id}` : null;
@@ -76,6 +91,19 @@ export function useMatchedContacts() {
   const fetchMatchedContacts = useCallback(async (forceRefresh = false): Promise<MatchedContact[]> => {
     if (!user) {
       setError('User not authenticated');
+      return [];
+    }
+
+    // Check if offline - return cached data or show friendly message
+    if (!navigator.onLine) {
+      console.log('Offline - returning cached contacts if available');
+      const cached = checkCache();
+      if (cached) {
+        setMatchedContacts(cached);
+        setError(null);
+        return cached;
+      }
+      setError('Available when online');
       return [];
     }
 
@@ -159,19 +187,50 @@ export function useMatchedContacts() {
         
         console.log(`Sending batch ${i / PAGE_SIZE + 1} with ${batch.length} phone suffixes`);
 
-        const response = await supabase.functions.invoke('match-contacts', {
-          body: { phone_suffixes: batch },
-        });
+        try {
+          const response = await supabase.functions.invoke('match-contacts', {
+            body: { phone_suffixes: batch },
+          });
 
-        console.log('Match contacts response:', response);
+          console.log('Match contacts response:', response);
 
-        if (response.error) {
-          console.error('Match contacts error:', response.error);
-          throw new Error(response.error.message || 'Failed to match contacts');
-        }
+          if (response.error) {
+            // Check if it's an auth/network error
+            if (response.error.message?.includes('Failed to fetch') || 
+                response.error.message?.includes('network') ||
+                response.error.message?.includes('non-2xx')) {
+              console.warn('Network error during contact matching, using cache');
+              const cached = checkCache();
+              if (cached) {
+                setMatchedContacts(cached);
+                return cached;
+              }
+              setError('Connection issue. Try again when online.');
+              return [];
+            }
+            throw new Error(response.error.message || 'Failed to match contacts');
+          }
 
-        if (response.data?.matched) {
-          allMatched.push(...response.data.matched);
+          if (response.data?.matched) {
+            allMatched.push(...response.data.matched);
+          }
+        } catch (batchError: any) {
+          console.error('Batch error:', batchError);
+          // If network fails mid-batch, return what we have or cache
+          if (allMatched.length > 0) {
+            const uniqueMatched = Array.from(
+              new Map(allMatched.map(c => [c.user_id, c])).values()
+            );
+            setMatchedContacts(uniqueMatched);
+            setCache(uniqueMatched);
+            return uniqueMatched;
+          }
+          const cached = checkCache();
+          if (cached) {
+            setMatchedContacts(cached);
+            return cached;
+          }
+          throw batchError;
         }
       }
 
@@ -188,7 +247,20 @@ export function useMatchedContacts() {
 
     } catch (err: any) {
       console.error('Error fetching matched contacts:', err);
-      setError(err.message || 'Failed to fetch matched contacts');
+      // Check for network errors and return cached data
+      if (err.message?.includes('Failed to fetch') || 
+          err.message?.includes('network') ||
+          err.message?.includes('non-2xx')) {
+        const cached = checkCache();
+        if (cached) {
+          setMatchedContacts(cached);
+          setError(null);
+          return cached;
+        }
+        setError('Connection issue. Try again when online.');
+      } else {
+        setError(err.message || 'Failed to fetch matched contacts');
+      }
       return [];
     } finally {
       setLoading(false);
@@ -226,6 +298,7 @@ export function useMatchedContacts() {
     loading,
     error,
     hasPermission,
+    isOffline,
     requestPermission,
     fetchMatchedContacts,
     refresh,
