@@ -12,7 +12,7 @@ import {
   IOUInsertOffline,
 } from "@/lib/offline/offlineDataLayer";
 import { syncIOUsFromServer } from "@/lib/offline/dataSync";
-import { withTimeout, isLikelyOffline } from "@/lib/offline/requestWithTimeout";
+import { quickConnectivityCheck, isLikelyOffline } from "@/lib/offline/requestWithTimeout";
 
 export interface IOU {
   id: string;
@@ -141,41 +141,47 @@ export function useIOUs() {
         console.warn("Local DB not available for IOU create:", localError);
       }
 
-      // Check if we should attempt network request
-      const shouldTryNetwork = navigator.onLine && !isLikelyOffline();
+      // Quick connectivity check (2 seconds max) - don't trust navigator.onLine alone
+      const isConnected = await quickConnectivityCheck();
       
-      if (!shouldTryNetwork) {
-        // Definitely offline - return local data
+      if (!isConnected || isLikelyOffline()) {
+        // Definitely offline - return local data immediately
         if (localIOU) {
+          toast.info("Saved offline, will sync when back online");
           return localIOUToIOU(localIOU);
         }
         throw new Error("Cannot create IOU: offline and local storage unavailable");
       }
 
-      // Try to sync to server with timeout
+      // We're online - try to sync to server with timeout
       try {
-        const data = await withTimeout(
-          (async () => {
-            const { data, error } = await supabase
-              .from("ious")
-              .insert({
-                creditor_id: user.id,
-                debtor_phone_number: iou.debtor_phone_number,
-                amount: iou.amount,
-                amount_paid: 0,
-                currency: iou.currency || "USD",
-                description: iou.description || null,
-                due_date: iou.due_date || null,
-                status: "pending",
-              })
-              .select()
-              .single();
+        // Create IOU on server with timeout
+        const createIOUPromise = (async () => {
+          const { data, error } = await supabase
+            .from("ious")
+            .insert({
+              creditor_id: user.id,
+              debtor_phone_number: iou.debtor_phone_number,
+              amount: iou.amount,
+              amount_paid: 0,
+              currency: iou.currency || "USD",
+              description: iou.description || null,
+              due_date: iou.due_date || null,
+              status: "pending",
+            })
+            .select()
+            .single();
 
-            if (error) throw error;
-            return data;
-          })(),
-          5000 // 5 second timeout
-        );
+          if (error) throw error;
+          return data;
+        })();
+
+        // Race against a 5 second timeout
+        const timeoutPromise = new Promise<never>((_, reject) => {
+          setTimeout(() => reject(new Error('Request timed out')), 5000);
+        });
+
+        const data = await Promise.race([createIOUPromise, timeoutPromise]);
 
         // Success! Update local DB with server data
         if (localDbAvailable && localIOU) {
@@ -200,7 +206,9 @@ export function useIOUs() {
         // Network failed or timed out - return local data
         if (localIOU) {
           if (e.message === 'Request timed out') {
-            toast.info("Connection slow - IOU saved offline, will sync when connection improves");
+            toast.info("Connection slow - saved offline, will sync later");
+          } else {
+            toast.info("Connection issue - saved offline");
           }
           return localIOUToIOU(localIOU);
         }

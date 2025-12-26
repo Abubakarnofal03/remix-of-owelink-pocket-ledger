@@ -12,7 +12,7 @@ import {
   BillInsertOffline,
 } from "@/lib/offline/offlineDataLayer";
 import { syncBillsFromServer } from "@/lib/offline/dataSync";
-import { withTimeout, isLikelyOffline } from "@/lib/offline/requestWithTimeout";
+import { quickConnectivityCheck, isLikelyOffline } from "@/lib/offline/requestWithTimeout";
 
 export interface BillParticipant {
   id: string;
@@ -171,60 +171,65 @@ export function useBills() {
         console.warn("Local DB not available for create:", localError);
       }
 
-      // Check if we should attempt network request
-      const shouldTryNetwork = navigator.onLine && !isLikelyOffline();
+      // Quick connectivity check (2 seconds max) - don't trust navigator.onLine alone
+      const isConnected = await quickConnectivityCheck();
       
-      if (!shouldTryNetwork) {
-        // Definitely offline - return local data with toast
+      if (!isConnected || isLikelyOffline()) {
+        // Definitely offline - return local data immediately with toast
         if (localBill) {
+          toast.info("Saved offline, will sync when back online");
           return localBillToBill(localBill as LocalBill & { participants?: LocalBillParticipant[] });
         }
         throw new Error("Cannot create bill: offline and local storage unavailable");
       }
 
-      // Try to sync to server with timeout
+      // We're online - try to sync to server with timeout
       try {
-        const serverResult = await withTimeout(
-          (async () => {
-            // Create the bill on server
-            const { data: billData, error: billError } = await supabase
-              .from("bills")
-              .insert({
-                creator_id: user.id,
-                title: bill.title,
-                description: bill.description || null,
-                total_amount: bill.total_amount,
-                currency: bill.currency || "USD",
-                due_date: bill.due_date || null,
-                reminder_enabled: bill.reminder_enabled || false,
-                reminder_interval_days: bill.reminder_interval_days || null,
-              })
-              .select()
-              .single();
+        // Create the bill on server with timeout
+        const createBillPromise = (async () => {
+          const { data: billData, error: billError } = await supabase
+            .from("bills")
+            .insert({
+              creator_id: user.id,
+              title: bill.title,
+              description: bill.description || null,
+              total_amount: bill.total_amount,
+              currency: bill.currency || "USD",
+              due_date: bill.due_date || null,
+              reminder_enabled: bill.reminder_enabled || false,
+              reminder_interval_days: bill.reminder_interval_days || null,
+            })
+            .select()
+            .single();
 
-            if (billError) throw billError;
+          if (billError) throw billError;
 
-            // Add participants
-            const participantsToInsert = bill.participants.map((p) => ({
-              bill_id: billData.id,
-              phone_number: p.phone_number,
-              phone_suffix: getPhoneSuffix(p.phone_number) || null,
-              amount_owed: p.amount_owed,
-              amount_paid: p.amount_paid || 0,
-              status: p.status || "pending",
-            }));
+          // Add participants
+          const participantsToInsert = bill.participants.map((p) => ({
+            bill_id: billData.id,
+            phone_number: p.phone_number,
+            phone_suffix: getPhoneSuffix(p.phone_number) || null,
+            amount_owed: p.amount_owed,
+            amount_paid: p.amount_paid || 0,
+            status: p.status || "pending",
+          }));
 
-            const { data: participantsData, error: participantsError } = await supabase
-              .from("bill_participants")
-              .insert(participantsToInsert)
-              .select();
+          const { data: participantsData, error: participantsError } = await supabase
+            .from("bill_participants")
+            .insert(participantsToInsert)
+            .select();
 
-            if (participantsError) throw participantsError;
+          if (participantsError) throw participantsError;
 
-            return { ...billData, participants: participantsData };
-          })(),
-          5000 // 5 second timeout
-        );
+          return { ...billData, participants: participantsData };
+        })();
+
+        // Race against a 5 second timeout
+        const timeoutPromise = new Promise<never>((_, reject) => {
+          setTimeout(() => reject(new Error('Request timed out')), 5000);
+        });
+
+        const serverResult = await Promise.race([createBillPromise, timeoutPromise]);
 
         // Success! Update local DB with server data
         if (localDbAvailable && localBill) {
@@ -257,9 +262,10 @@ export function useBills() {
         
         // Network failed or timed out - return local data
         if (localBill) {
-          // Show appropriate toast based on error type
           if (e.message === 'Request timed out') {
-            toast.info("Connection slow - bill saved offline, will sync when connection improves");
+            toast.info("Connection slow - saved offline, will sync later");
+          } else {
+            toast.info("Connection issue - saved offline");
           }
           return localBillToBill(localBill as LocalBill & { participants?: LocalBillParticipant[] });
         }
