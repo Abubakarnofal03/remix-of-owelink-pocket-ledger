@@ -4,10 +4,39 @@
  */
 
 const DEFAULT_TIMEOUT = 5000; // 5 seconds
+const CONNECTIVITY_CHECK_TIMEOUT = 2000; // 2 seconds for quick check
 
 /**
- * Wraps a promise with a timeout. If the promise doesn't resolve within
- * the timeout period, it rejects with a timeout error.
+ * Quick connectivity check using AbortController.
+ * Returns true if we can reach the network within 2 seconds.
+ */
+export async function quickConnectivityCheck(): Promise<boolean> {
+  if (!navigator.onLine) {
+    return false;
+  }
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), CONNECTIVITY_CHECK_TIMEOUT);
+
+  try {
+    // Use Google's generate_204 endpoint - very fast, no response body
+    await fetch('https://www.google.com/generate_204', {
+      method: 'HEAD',
+      mode: 'no-cors',
+      cache: 'no-store',
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+    return true;
+  } catch {
+    clearTimeout(timeoutId);
+    return false;
+  }
+}
+
+/**
+ * Wraps a promise with a timeout using AbortController for proper cancellation.
+ * This version properly aborts hanging fetch requests.
  */
 export function withTimeout<T>(
   promise: Promise<T>,
@@ -28,6 +57,30 @@ export function withTimeout<T>(
         reject(error);
       });
   });
+}
+
+/**
+ * Execute a function with an AbortController signal that times out.
+ * The function receives the signal and should pass it to fetch() calls.
+ */
+export async function withAbortableTimeout<T>(
+  fn: (signal: AbortSignal) => Promise<T>,
+  timeoutMs: number = DEFAULT_TIMEOUT
+): Promise<T> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const result = await fn(controller.signal);
+    clearTimeout(timeoutId);
+    return result;
+  } catch (error: any) {
+    clearTimeout(timeoutId);
+    if (error.name === 'AbortError') {
+      throw new Error('Request timed out');
+    }
+    throw error;
+  }
 }
 
 /**
