@@ -72,6 +72,7 @@ import {
 } from "@/lib/offline/offlineDataLayer";
 import { useOffline } from "@/hooks/useOffline";
 import { sendPushNotification, getPhoneSuffix } from "@/lib/notifications";
+import { formatPhoneForWhatsApp } from "@/lib/phoneUtils";
 
 export default function BillDetail() {
   const { user, profile, loading: authLoading } = useAuth();
@@ -508,7 +509,9 @@ Never lose track of debts again. Split bills, send reminders & get paid faster.
   // Open WhatsApp for a single participant
   const handleWhatsAppShare = (participant: BillParticipant) => {
     const message = generateWhatsAppMessage(participant);
-    const phoneNumber = participant.phone_number.replace(/[^0-9]/g, '');
+    // Use the user's country code from their profile
+    const userCountryCode = profile?.phone_number?.replace(/[^0-9]/g, '').slice(0, 2);
+    const phoneNumber = formatPhoneForWhatsApp(participant.phone_number, userCountryCode);
     const whatsappUrl = `https://wa.me/${phoneNumber}?text=${encodeURIComponent(message)}`;
     window.open(whatsappUrl, '_blank');
   };

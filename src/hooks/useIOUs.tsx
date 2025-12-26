@@ -12,6 +12,7 @@ import {
   IOUInsertOffline,
 } from "@/lib/offline/offlineDataLayer";
 import { syncIOUsFromServer } from "@/lib/offline/dataSync";
+import { withTimeout, isLikelyOffline } from "@/lib/offline/requestWithTimeout";
 
 export interface IOU {
   id: string;
@@ -132,7 +133,7 @@ export function useIOUs() {
       let localIOU: LocalIOU | null = null;
       let localDbAvailable = false;
 
-      // Try to create locally first
+      // Always create locally first for immediate feedback
       try {
         localIOU = await createIOUOfflineFirst(user.id, iou as IOUInsertOffline);
         localDbAvailable = !!localIOU;
@@ -140,59 +141,71 @@ export function useIOUs() {
         console.warn("Local DB not available for IOU create:", localError);
       }
 
-      // If online, try to sync immediately
-      if (navigator.onLine) {
-        try {
-          const { data, error } = await supabase
-            .from("ious")
-            .insert({
-              creditor_id: user.id,
-              debtor_phone_number: iou.debtor_phone_number,
-              amount: iou.amount,
-              amount_paid: 0,
-              currency: iou.currency || "USD",
-              description: iou.description || null,
-              due_date: iou.due_date || null,
-              status: "pending",
-            })
-            .select()
-            .single();
-
-          if (error) throw error;
-
-          // Update local DB with server data (if available)
-          if (localDbAvailable && localIOU) {
-            try {
-              await offlineDb.ious.delete(localIOU.id);
-              await offlineDb.ious.put({
-                ...data,
-                is_local: false,
-              });
-
-              // Clear sync queue for this item
-              await offlineDb.syncQueue.where("entity_id").equals(localIOU.id).delete();
-            } catch (dbError) {
-              console.warn("Failed to update local DB:", dbError);
-            }
-          }
-
-          return localIOUToIOU({ ...data, is_local: false });
-        } catch (e) {
-          console.warn("Failed to sync IOU to server:", e);
-          // If we have local data, return it - it's queued for sync
-          if (localIOU) {
-            return localIOUToIOU(localIOU);
-          }
-          throw e; // No local fallback, rethrow
+      // Check if we should attempt network request
+      const shouldTryNetwork = navigator.onLine && !isLikelyOffline();
+      
+      if (!shouldTryNetwork) {
+        // Definitely offline - return local data
+        if (localIOU) {
+          return localIOUToIOU(localIOU);
         }
+        throw new Error("Cannot create IOU: offline and local storage unavailable");
       }
 
-      // Offline - return local data if we have it
-      if (localIOU) {
-        return localIOUToIOU(localIOU);
-      }
+      // Try to sync to server with timeout
+      try {
+        const data = await withTimeout(
+          (async () => {
+            const { data, error } = await supabase
+              .from("ious")
+              .insert({
+                creditor_id: user.id,
+                debtor_phone_number: iou.debtor_phone_number,
+                amount: iou.amount,
+                amount_paid: 0,
+                currency: iou.currency || "USD",
+                description: iou.description || null,
+                due_date: iou.due_date || null,
+                status: "pending",
+              })
+              .select()
+              .single();
 
-      throw new Error("Cannot create IOU: offline and local storage unavailable");
+            if (error) throw error;
+            return data;
+          })(),
+          5000 // 5 second timeout
+        );
+
+        // Success! Update local DB with server data
+        if (localDbAvailable && localIOU) {
+          try {
+            await offlineDb.ious.delete(localIOU.id);
+            await offlineDb.ious.put({
+              ...data,
+              is_local: false,
+            });
+
+            // Clear sync queue for this item
+            await offlineDb.syncQueue.where("entity_id").equals(localIOU.id).delete();
+          } catch (dbError) {
+            console.warn("Failed to update local DB:", dbError);
+          }
+        }
+
+        return localIOUToIOU({ ...data, is_local: false });
+      } catch (e: any) {
+        console.warn("Failed to sync IOU to server:", e.message);
+        
+        // Network failed or timed out - return local data
+        if (localIOU) {
+          if (e.message === 'Request timed out') {
+            toast.info("Connection slow - IOU saved offline, will sync when connection improves");
+          }
+          return localIOUToIOU(localIOU);
+        }
+        throw e; // No local fallback, rethrow
+      }
     },
     onSuccess: (newIOU) => {
       queryClient.setQueryData<IOU[]>(iousQueryKey, (old = []) => [newIOU, ...old]);

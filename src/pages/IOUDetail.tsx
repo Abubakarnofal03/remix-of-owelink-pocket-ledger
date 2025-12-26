@@ -55,6 +55,7 @@ import {
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { getPhoneSuffix } from "@/lib/notifications";
+import { formatPhoneForWhatsApp } from "@/lib/phoneUtils";
 
 export default function IOUDetail() {
   const { user, profile, loading: authLoading } = useAuth();
@@ -214,7 +215,9 @@ Never lose track of debts again. Split bills, send reminders & get paid faster.
   // Open WhatsApp for the debtor
   const handleWhatsAppShare = () => {
     const message = generateWhatsAppMessage();
-    const phoneNumber = iou.debtor_phone_number.replace(/[^0-9]/g, '');
+    // Use the user's country code from their profile, or extract from their phone number
+    const userCountryCode = profile?.phone_number?.replace(/[^0-9]/g, '').slice(0, 2);
+    const phoneNumber = formatPhoneForWhatsApp(iou.debtor_phone_number, userCountryCode);
     const whatsappUrl = `https://wa.me/${phoneNumber}?text=${encodeURIComponent(message)}`;
     window.open(whatsappUrl, '_blank');
   };
