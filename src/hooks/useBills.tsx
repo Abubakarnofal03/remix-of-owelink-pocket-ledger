@@ -161,120 +161,29 @@ export function useBills() {
     mutationFn: async (bill: BillInsert) => {
       if (!user) throw new Error("Not authenticated");
 
-      let localBill: LocalBill | null = null;
-      let localDbAvailable = false;
+      // Always create locally first and return immediately.
+      // Server sync is handled by the sync queue + OfflineProvider in the background.
+      const localBill = await createBillOfflineFirst(user.id, bill as BillInsertOffline);
 
-      // Always create locally first for immediate feedback
-      try {
-        localBill = await createBillOfflineFirst(user.id, bill as BillInsertOffline);
-        localDbAvailable = !!localBill;
-      } catch (localError) {
-        console.warn("Local DB not available for create:", localError);
+      // If we think we're online, trigger a background sync (do not await).
+      if (offline.isOnline) {
+        setTimeout(() => offline.sync(), 0);
       }
 
-      // Check offline status from OfflineProvider (trusts the badge)
-      if (!offline.isOnline) {
-        // Definitely offline - return local data immediately
-        if (localBill) {
-          toast.info("Saved offline, will sync when back online");
-          return localBillToBill(localBill as LocalBill & { participants?: LocalBillParticipant[] });
-        }
-        throw new Error("Cannot create bill: offline and local storage unavailable");
-      }
-
-      // We're online - try to sync to server with timeout
-      try {
-        // Create the bill on server with timeout
-        const createBillPromise = (async () => {
-          const { data: billData, error: billError } = await supabase
-            .from("bills")
-            .insert({
-              creator_id: user.id,
-              title: bill.title,
-              description: bill.description || null,
-              total_amount: bill.total_amount,
-              currency: bill.currency || "USD",
-              due_date: bill.due_date || null,
-              reminder_enabled: bill.reminder_enabled || false,
-              reminder_interval_days: bill.reminder_interval_days || null,
-            })
-            .select()
-            .single();
-
-          if (billError) throw billError;
-
-          // Add participants
-          const participantsToInsert = bill.participants.map((p) => ({
-            bill_id: billData.id,
-            phone_number: p.phone_number,
-            phone_suffix: getPhoneSuffix(p.phone_number) || null,
-            amount_owed: p.amount_owed,
-            amount_paid: p.amount_paid || 0,
-            status: p.status || "pending",
-          }));
-
-          const { data: participantsData, error: participantsError } = await supabase
-            .from("bill_participants")
-            .insert(participantsToInsert)
-            .select();
-
-          if (participantsError) throw participantsError;
-
-          return { ...billData, participants: participantsData };
-        })();
-
-        // Race against a 3 second timeout (faster for better UX)
-        const timeoutPromise = new Promise<never>((_, reject) => {
-          setTimeout(() => reject(new Error('Request timed out')), 3000);
-        });
-
-        const serverResult = await Promise.race([createBillPromise, timeoutPromise]);
-
-        // Success! Update local DB with server data
-        if (localDbAvailable && localBill) {
-          try {
-            await offlineDb.bills.delete(localBill.id);
-            await offlineDb.billParticipants.where("bill_id").equals(localBill.id).delete();
-            
-            await offlineDb.bills.put({
-              ...serverResult,
-              is_local: false,
-            });
-            
-            for (const p of serverResult.participants) {
-              await offlineDb.billParticipants.put({
-                ...p,
-                is_local: false,
-              });
-            }
-
-            // Clear sync queue for this item
-            await offlineDb.syncQueue.where("entity_id").equals(localBill.id).delete();
-          } catch (dbError) {
-            console.warn("Failed to update local DB:", dbError);
-          }
-        }
-
-        return { ...serverResult, is_local: false };
-      } catch (e: any) {
-        console.warn("Failed to sync bill to server:", e.message);
-        
-        // Network failed or timed out - return local data
-        if (localBill) {
-          toast.info("Saved offline, will sync later");
-          return localBillToBill(localBill as LocalBill & { participants?: LocalBillParticipant[] });
-        }
-        throw e; // No local fallback, rethrow
-      }
+      return localBillToBill(localBill);
     },
     onSuccess: (newBill) => {
       queryClient.setQueryData<Bill[]>(billsQueryKey, (old = []) => [newBill, ...old]);
-      
+
       if (newBill.is_local) {
-        toast.success("Bill saved locally, will sync when online");
+        toast.success(
+          offline.isOnline
+            ? "Saved. Syncing in background…"
+            : "Saved offline, will sync when back online"
+        );
       } else {
         toast.success("Bill created successfully");
-        
+
         // Send push notifications to participants
         const phoneSuffixes = newBill.participants
           ?.map((p) => getPhoneSuffix(p.phone_number))

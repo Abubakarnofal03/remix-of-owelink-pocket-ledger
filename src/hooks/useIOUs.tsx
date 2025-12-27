@@ -131,90 +131,26 @@ export function useIOUs() {
     mutationFn: async (iou: IOUInsert) => {
       if (!user) throw new Error("Not authenticated");
 
-      let localIOU: LocalIOU | null = null;
-      let localDbAvailable = false;
+      // Always create locally first and return immediately.
+      // Server sync is handled by the sync queue + OfflineProvider in the background.
+      const localIOU = await createIOUOfflineFirst(user.id, iou as IOUInsertOffline);
 
-      // Always create locally first for immediate feedback
-      try {
-        localIOU = await createIOUOfflineFirst(user.id, iou as IOUInsertOffline);
-        localDbAvailable = !!localIOU;
-      } catch (localError) {
-        console.warn("Local DB not available for IOU create:", localError);
+      // If we think we're online, trigger a background sync (do not await).
+      if (offline.isOnline) {
+        setTimeout(() => offline.sync(), 0);
       }
 
-      // Check offline status from OfflineProvider (trusts the badge)
-      if (!offline.isOnline) {
-        // Definitely offline - return local data immediately
-        if (localIOU) {
-          toast.info("Saved offline, will sync when back online");
-          return localIOUToIOU(localIOU);
-        }
-        throw new Error("Cannot create IOU: offline and local storage unavailable");
-      }
-
-      // We're online - try to sync to server with timeout
-      try {
-        // Create IOU on server with timeout
-        const createIOUPromise = (async () => {
-          const { data, error } = await supabase
-            .from("ious")
-            .insert({
-              creditor_id: user.id,
-              debtor_phone_number: iou.debtor_phone_number,
-              amount: iou.amount,
-              amount_paid: 0,
-              currency: iou.currency || "USD",
-              description: iou.description || null,
-              due_date: iou.due_date || null,
-              status: "pending",
-            })
-            .select()
-            .single();
-
-          if (error) throw error;
-          return data;
-        })();
-
-        // Race against a 3 second timeout (faster for better UX)
-        const timeoutPromise = new Promise<never>((_, reject) => {
-          setTimeout(() => reject(new Error('Request timed out')), 3000);
-        });
-
-        const data = await Promise.race([createIOUPromise, timeoutPromise]);
-
-        // Success! Update local DB with server data
-        if (localDbAvailable && localIOU) {
-          try {
-            await offlineDb.ious.delete(localIOU.id);
-            await offlineDb.ious.put({
-              ...data,
-              is_local: false,
-            });
-
-            // Clear sync queue for this item
-            await offlineDb.syncQueue.where("entity_id").equals(localIOU.id).delete();
-          } catch (dbError) {
-            console.warn("Failed to update local DB:", dbError);
-          }
-        }
-
-        return localIOUToIOU({ ...data, is_local: false });
-      } catch (e: any) {
-        console.warn("Failed to sync IOU to server:", e.message);
-        
-        // Network failed or timed out - return local data
-        if (localIOU) {
-          toast.info("Saved offline, will sync later");
-          return localIOUToIOU(localIOU);
-        }
-        throw e; // No local fallback, rethrow
-      }
+      return localIOUToIOU(localIOU);
     },
     onSuccess: (newIOU) => {
       queryClient.setQueryData<IOU[]>(iousQueryKey, (old = []) => [newIOU, ...old]);
 
       if (newIOU.is_local) {
-        toast.success("IOU saved locally, will sync when online");
+        toast.success(
+          offline.isOnline
+            ? "Saved. Syncing in background…"
+            : "Saved offline, will sync when back online"
+        );
       } else {
         toast.success("IOU created successfully");
 
