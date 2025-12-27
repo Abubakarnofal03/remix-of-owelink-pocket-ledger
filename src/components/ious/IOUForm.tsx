@@ -139,19 +139,22 @@ export function IOUForm() {
 
     setSubmitting(true);
 
-    const iouData: IOUInsert = {
-      debtor_phone_number: selectedDebtor!.phone_number,
-      amount: total,
-      currency,
-      description: description.trim() || undefined,
-      due_date: dueDate?.toISOString(),
-    };
+    try {
+      const iouData: IOUInsert = {
+        debtor_phone_number: selectedDebtor!.phone_number,
+        amount: total,
+        currency,
+        description: description.trim() || undefined,
+        due_date: dueDate?.toISOString(),
+      };
 
-    const result = await createIOU(iouData);
-    setSubmitting(false);
+      const result = await createIOU(iouData);
 
-    if (result) {
-      navigate("/ious");
+      if (result) {
+        navigate("/ious");
+      }
+    } finally {
+      setSubmitting(false);
     }
   };
 

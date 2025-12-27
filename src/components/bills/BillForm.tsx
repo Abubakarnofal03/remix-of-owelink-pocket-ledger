@@ -230,40 +230,43 @@ export function BillForm() {
 
     setSubmitting(true);
 
-    // Build participants list
-    const allParticipants = participants.map((p) => ({
-      phone_number: p.phone_number,
-      amount_owed: equalSplit ? splitAmount : p.amount,
-      status: "pending",
-      amount_paid: 0,
-    }));
+    try {
+      // Build participants list
+      const allParticipants = participants.map((p) => ({
+        phone_number: p.phone_number,
+        amount_owed: equalSplit ? splitAmount : p.amount,
+        status: "pending",
+        amount_paid: 0,
+      }));
 
-    // Add current user if included
-    if (includeMe && profile?.phone_number) {
-      allParticipants.push({
-        phone_number: profile.phone_number,
-        amount_owed: splitAmount,
-        status: "paid", // Marked as paid by default
-        amount_paid: splitAmount,
-      });
-    }
+      // Add current user if included
+      if (includeMe && profile?.phone_number) {
+        allParticipants.push({
+          phone_number: profile.phone_number,
+          amount_owed: splitAmount,
+          status: "paid", // Marked as paid by default
+          amount_paid: splitAmount,
+        });
+      }
 
-    const billData: BillInsert = {
-      title: title.trim(),
-      description: description.trim() || undefined,
-      total_amount: total,
-      currency,
-      due_date: dueDate?.toISOString(),
-      reminder_enabled: reminderEnabled,
-      reminder_interval_days: reminderEnabled ? parseInt(reminderInterval) : undefined,
-      participants: allParticipants,
-    };
+      const billData: BillInsert = {
+        title: title.trim(),
+        description: description.trim() || undefined,
+        total_amount: total,
+        currency,
+        due_date: dueDate?.toISOString(),
+        reminder_enabled: reminderEnabled,
+        reminder_interval_days: reminderEnabled ? parseInt(reminderInterval) : undefined,
+        participants: allParticipants,
+      };
 
-    const result = await createBill(billData);
-    setSubmitting(false);
+      const result = await createBill(billData);
 
-    if (result) {
-      navigate("/bills");
+      if (result) {
+        navigate("/bills");
+      }
+    } finally {
+      setSubmitting(false);
     }
   };
 
