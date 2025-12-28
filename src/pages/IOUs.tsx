@@ -1,23 +1,76 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { Navigate, useNavigate } from "react-router-dom";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { useIOUs } from "@/hooks/useIOUs";
+import { useContacts } from "@/hooks/useContacts";
 import { IOUList } from "@/components/ious/IOUList";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PullToRefresh } from "@/components/ui/PullToRefresh";
-import { FileText, Plus, ArrowDownLeft, ArrowUpRight } from "lucide-react";
+import { FileText, Plus, ArrowDownLeft, ArrowUpRight, Search, Filter } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { getPhoneSuffix } from "@/lib/notifications";
+
+type StatusFilter = "all" | "unpaid" | "paid";
 
 export default function IOUs() {
   const { user, loading: authLoading } = useAuth();
   const { owedToMe, iOwe, loading, refetch } = useIOUs();
+  const { contacts } = useContacts();
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<"owed" | "owe">("owed");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [searchQuery, setSearchQuery] = useState("");
+
+  // Helper to get contact name by phone
+  const getContactName = (phone: string) => {
+    const contact = contacts.find(c => {
+      const phoneSuffix = getPhoneSuffix(phone);
+      const contactSuffix = c.phone_suffix || getPhoneSuffix(c.phone_number);
+      return contactSuffix === phoneSuffix || c.phone_number === phone;
+    });
+    return contact?.nickname || null;
+  };
 
   const currentList = activeTab === "owed" ? owedToMe : iOwe;
   const hasAnyIOUs = owedToMe.length > 0 || iOwe.length > 0;
+
+  const filteredList = useMemo(() => {
+    let result = currentList;
+    
+    // Filter by status
+    if (statusFilter === "unpaid") {
+      result = result.filter(iou => iou.status !== "paid" && iou.amount_paid < iou.amount);
+    } else if (statusFilter === "paid") {
+      result = result.filter(iou => iou.status === "paid" || iou.amount_paid >= iou.amount);
+    }
+    
+    // Search filter
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      result = result.filter(iou => {
+        // Search in description
+        if (iou.description?.toLowerCase().includes(q)) return true;
+        // Search in debtor phone
+        if (iou.debtor_phone_number.includes(q)) return true;
+        // Search in debtor name
+        const name = getContactName(iou.debtor_phone_number);
+        if (name?.toLowerCase().includes(q)) return true;
+        return false;
+      });
+    }
+    
+    return result;
+  }, [currentList, statusFilter, searchQuery, contacts]);
 
   const handleRefresh = async () => {
     await refetch();
@@ -39,6 +92,14 @@ export default function IOUs() {
             </Button>
           </div>
 
+          {/* Search */}
+          <Input
+            placeholder="Search by name, phone, description..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            icon={<Search className="h-4 w-4" />}
+          />
+
           {/* Tabs */}
           {hasAnyIOUs && (
             <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "owed" | "owe")}>
@@ -55,18 +116,35 @@ export default function IOUs() {
             </Tabs>
           )}
 
+          {/* Status Filter */}
+          <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as StatusFilter)}>
+            <SelectTrigger className="w-full">
+              <div className="flex items-center gap-2">
+                <Filter className="h-4 w-4" />
+                <SelectValue placeholder="Filter by status" />
+              </div>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Status</SelectItem>
+              <SelectItem value="unpaid">Unpaid</SelectItem>
+              <SelectItem value="paid">Paid</SelectItem>
+            </SelectContent>
+          </Select>
+
           {/* List */}
           {loading ? (
             <IOUList ious={[]} loading />
           ) : hasAnyIOUs ? (
-            currentList.length > 0 ? (
-              <IOUList ious={currentList} />
+            filteredList.length > 0 ? (
+              <IOUList ious={filteredList} />
             ) : (
               <EmptyState
-                icon={activeTab === "owed" ? ArrowDownLeft : ArrowUpRight}
-                title={activeTab === "owed" ? "No one owes you" : "You don't owe anyone"}
+                icon={searchQuery ? Search : activeTab === "owed" ? ArrowDownLeft : ArrowUpRight}
+                title={searchQuery ? "No IOUs found" : activeTab === "owed" ? "No one owes you" : "You don't owe anyone"}
                 description={
-                  activeTab === "owed"
+                  searchQuery
+                    ? "Try a different search term."
+                    : activeTab === "owed"
                     ? "When someone owes you money, it will show here."
                     : "When you owe someone money, it will show here."
                 }

@@ -23,6 +23,8 @@ export interface BillInsertOffline {
   total_amount: number;
   currency?: string;
   due_date?: string;
+  reminder_enabled?: boolean;
+  reminder_interval_days?: number;
   participants: {
     phone_number: string;
     amount_owed: number;
@@ -81,11 +83,13 @@ export async function createBillOfflineFirst(
     created_at: now,
     updated_at: now,
     deleted_at: null,
+    reminder_enabled: bill.reminder_enabled,
+    reminder_interval_days: bill.reminder_interval_days,
     is_local: true,
   };
 
-  // Save bill to local DB
-  await offlineDb.bills.put(localBill);
+  // Save bill to local DB (fire-and-forget with catch)
+  offlineDb.bills.put(localBill).catch(e => console.warn('[Offline] Bill put failed:', e));
   console.log('[Offline] Bill saved locally:', localBillId);
 
   // Save participants locally
@@ -103,11 +107,11 @@ export async function createBillOfflineFirst(
     is_local: true,
   }));
 
-  await offlineDb.billParticipants.bulkPut(participants);
+  // Fire-and-forget participant save
+  offlineDb.billParticipants.bulkPut(participants).catch(e => console.warn('[Offline] Participants put failed:', e));
   console.log('[Offline] Participants saved locally:', participants.length);
 
-  // Queue bill creation (WITHOUT participants in payload - they'll be synced separately)
-  // Do NOT await queueing: UI must resolve instantly even if network/DB is flaky.
+  // Queue bill creation (fire-and-forget)
   void addToSyncQueue("bill", "create", localBillId, {
     creator_id: localBill.creator_id,
     title: localBill.title,
@@ -116,7 +120,8 @@ export async function createBillOfflineFirst(
     currency: localBill.currency,
     due_date: localBill.due_date,
     status: localBill.status,
-    // Store participant data for the sync handler to use
+    reminder_enabled: localBill.reminder_enabled,
+    reminder_interval_days: localBill.reminder_interval_days,
     _participants: bill.participants,
     _local_bill_id: localBillId,
   }).catch((e) => console.warn('[Offline] Failed to queue bill create:', e));
@@ -139,6 +144,8 @@ export async function updateBillOfflineFirst(
     total_amount: updates.total_amount ?? existing.total_amount,
     due_date: updates.due_date ?? existing.due_date,
     status: updates.status ?? existing.status,
+    reminder_enabled: updates.reminder_enabled ?? existing.reminder_enabled,
+    reminder_interval_days: updates.reminder_interval_days ?? existing.reminder_interval_days,
     updated_at: now,
     is_local: true,
   };
@@ -151,6 +158,8 @@ export async function updateBillOfflineFirst(
     total_amount: updatedBill.total_amount,
     due_date: updatedBill.due_date,
     status: updatedBill.status,
+    reminder_enabled: updatedBill.reminder_enabled,
+    reminder_interval_days: updatedBill.reminder_interval_days,
   });
 
   const participants = await offlineDb.billParticipants
@@ -312,6 +321,8 @@ export interface IOUInsertOffline {
   currency?: string;
   description?: string;
   due_date?: string;
+  reminder_enabled?: boolean;
+  reminder_interval_days?: number;
 }
 
 export async function fetchIOUsOfflineFirst(
@@ -366,13 +377,16 @@ export async function createIOUOfflineFirst(
     created_at: now,
     updated_at: now,
     deleted_at: null,
+    reminder_enabled: iou.reminder_enabled,
+    reminder_interval_days: iou.reminder_interval_days,
     is_local: true,
   };
 
-  await offlineDb.ious.put(localIOU);
+  // Fire-and-forget IOU save
+  offlineDb.ious.put(localIOU).catch(e => console.warn('[Offline] IOU put failed:', e));
   console.log('[Offline] IOU saved locally:', localId);
 
-  // Do NOT await queueing: UI must resolve instantly even if network/DB is flaky.
+  // Queue IOU creation (fire-and-forget)
   void addToSyncQueue("iou", "create", localId, {
     creditor_id: localIOU.creditor_id,
     debtor_phone_number: localIOU.debtor_phone_number,
@@ -382,6 +396,8 @@ export async function createIOUOfflineFirst(
     description: localIOU.description,
     due_date: localIOU.due_date,
     status: "pending",
+    reminder_enabled: localIOU.reminder_enabled,
+    reminder_interval_days: localIOU.reminder_interval_days,
   }).catch((e) => console.warn('[Offline] Failed to queue IOU create:', e));
 
   return localIOU;
@@ -408,6 +424,8 @@ export async function updateIOUOfflineFirst(
     description: updates.description ?? existing.description,
     due_date: updates.due_date ?? existing.due_date,
     status: updates.status ?? existing.status,
+    reminder_enabled: updates.reminder_enabled ?? existing.reminder_enabled,
+    reminder_interval_days: updates.reminder_interval_days ?? existing.reminder_interval_days,
     updated_at: now,
     is_local: true,
   };
@@ -424,6 +442,8 @@ export async function updateIOUOfflineFirst(
       description: updatedIOU.description,
       due_date: updatedIOU.due_date,
       status: updatedIOU.status,
+      reminder_enabled: updatedIOU.reminder_enabled,
+      reminder_interval_days: updatedIOU.reminder_interval_days,
     });
   }
 
@@ -457,6 +477,8 @@ export async function syncBillToServer(bill: LocalBill): Promise<string | null> 
         total_amount: bill.total_amount,
         currency: bill.currency,
         due_date: bill.due_date,
+        reminder_enabled: bill.reminder_enabled,
+        reminder_interval_days: bill.reminder_interval_days,
       })
       .select()
       .single();
@@ -484,6 +506,8 @@ export async function syncIOUToServer(iou: LocalIOU): Promise<string | null> {
         description: iou.description,
         due_date: iou.due_date,
         status: "pending",
+        reminder_enabled: iou.reminder_enabled,
+        reminder_interval_days: iou.reminder_interval_days,
       })
       .select()
       .single();
