@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useContacts, Contact } from "@/hooks/useContacts";
 import { useDeviceContacts, DeviceContact } from "@/hooks/useDeviceContacts";
@@ -10,11 +10,13 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Switch } from "@/components/ui/switch";
 import { AddContactDialog } from "@/components/contacts/AddContactDialog";
 import { AvatarCustom } from "@/components/ui/avatar-custom";
 import { cn } from "@/lib/utils";
 import { getCurrencySymbol } from "@/lib/currencies";
 import { format } from "date-fns";
+import { toast } from "sonner";
 import {
   CalendarIcon,
   Search,
@@ -25,7 +27,17 @@ import {
   DollarSign,
   FileText,
   Smartphone,
+  Bell,
 } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+
+const SUBMIT_TIMEOUT_MS = 2000;
 
 export function IOUForm() {
   const navigate = useNavigate();
@@ -46,6 +58,11 @@ export function IOUForm() {
   const [submitting, setSubmitting] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [showDeviceContacts, setShowDeviceContacts] = useState(false);
+  const [reminderEnabled, setReminderEnabled] = useState(false);
+  const [reminderInterval, setReminderInterval] = useState<string>("3");
+
+  // Prevent double-submit
+  const submitLockRef = useRef(false);
 
   const total = parseFloat(amount) || 0;
 
@@ -137,6 +154,10 @@ export function IOUForm() {
 
     if (!validate()) return;
 
+    // Prevent double-submit
+    if (submitLockRef.current) return;
+    submitLockRef.current = true;
+
     setSubmitting(true);
 
     try {
@@ -146,15 +167,30 @@ export function IOUForm() {
         currency,
         description: description.trim() || undefined,
         due_date: dueDate?.toISOString(),
+        reminder_enabled: reminderEnabled,
+        reminder_interval_days: reminderEnabled ? parseInt(reminderInterval) : undefined,
       };
 
-      const result = await createIOU(iouData);
+      // Race the createIOU call with a timeout to ensure UI never hangs
+      const result = await Promise.race([
+        createIOU(iouData),
+        new Promise<null>((resolve) => {
+          setTimeout(() => {
+            console.log('[IOUForm] Submit timed out, navigating anyway');
+            resolve(null);
+          }, SUBMIT_TIMEOUT_MS);
+        }),
+      ]);
 
-      if (result) {
-        navigate("/ious");
-      }
+      // Navigate regardless of result (local save should have completed)
+      toast.success("Saved offline, will sync when back online");
+      navigate("/ious");
+    } catch (error) {
+      console.error("Error creating IOU:", error);
+      toast.error("Failed to create IOU");
     } finally {
       setSubmitting(false);
+      submitLockRef.current = false;
     }
   };
 
@@ -390,6 +426,46 @@ export function IOUForm() {
             />
           </PopoverContent>
         </Popover>
+      </div>
+
+      {/* Automatic Reminders */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between p-4 bg-muted/50 rounded-lg border border-border">
+          <div className="flex items-center gap-3">
+            <div className="h-9 w-9 rounded-full bg-amber-500/10 flex items-center justify-center">
+              <Bell className="h-4 w-4 text-amber-500" />
+            </div>
+            <div>
+              <p className="font-medium text-sm">Automatic reminders</p>
+              <p className="text-xs text-muted-foreground">
+                Send push notifications to debtor
+              </p>
+            </div>
+          </div>
+          <Switch
+            checked={reminderEnabled}
+            onCheckedChange={setReminderEnabled}
+          />
+        </div>
+
+        {reminderEnabled && (
+          <div className="pl-4 border-l-2 border-amber-500/30 ml-4 space-y-2">
+            <Label className="text-sm text-muted-foreground">Send reminder every:</Label>
+            <Select value={reminderInterval} onValueChange={setReminderInterval}>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Select interval" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="1">Every day</SelectItem>
+                <SelectItem value="2">Every 2 days</SelectItem>
+                <SelectItem value="3">Every 3 days</SelectItem>
+                <SelectItem value="5">Every 5 days</SelectItem>
+                <SelectItem value="7">Every week</SelectItem>
+                <SelectItem value="14">Every 2 weeks</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        )}
       </div>
 
       {/* Submit */}

@@ -31,6 +31,9 @@ export interface IOU {
   updated_at: string;
   deleted_at: string | null;
   is_local?: boolean;
+  reminder_enabled?: boolean;
+  reminder_interval_days?: number | null;
+  last_reminder_sent_at?: string | null;
 }
 
 export interface IOUInsert {
@@ -39,6 +42,8 @@ export interface IOUInsert {
   currency?: string;
   description?: string;
   due_date?: string;
+  reminder_enabled?: boolean;
+  reminder_interval_days?: number;
 }
 
 // Convert LocalIOU to IOU interface
@@ -59,6 +64,9 @@ function localIOUToIOU(local: LocalIOU): IOU {
     updated_at: local.updated_at,
     deleted_at: local.deleted_at,
     is_local: local.is_local,
+    reminder_enabled: local.reminder_enabled,
+    reminder_interval_days: local.reminder_interval_days,
+    last_reminder_sent_at: local.last_reminder_sent_at,
   };
 }
 
@@ -188,6 +196,8 @@ export function useIOUs() {
               amount: updates.amount,
               description: updates.description,
               due_date: updates.due_date,
+              reminder_enabled: updates.reminder_enabled,
+              reminder_interval_days: updates.reminder_interval_days,
             })
             .eq("id", id)
             .select()

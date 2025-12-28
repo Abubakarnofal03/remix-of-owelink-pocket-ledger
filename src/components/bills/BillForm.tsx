@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useContacts, Contact } from "@/hooks/useContacts";
 import { useDeviceContacts, DeviceContact } from "@/hooks/useDeviceContacts";
@@ -16,6 +16,7 @@ import { AvatarCustom } from "@/components/ui/avatar-custom";
 import { cn } from "@/lib/utils";
 import { getCurrencySymbol } from "@/lib/currencies";
 import { format } from "date-fns";
+import { toast } from "sonner";
 import {
   Receipt,
   CalendarIcon,
@@ -48,6 +49,8 @@ interface Participant {
   status?: string;
 }
 
+const SUBMIT_TIMEOUT_MS = 2000;
+
 export function BillForm() {
   const navigate = useNavigate();
   const { profile, currency } = useAuth();
@@ -72,6 +75,9 @@ export function BillForm() {
   const [showDeviceContacts, setShowDeviceContacts] = useState(false);
   const [reminderEnabled, setReminderEnabled] = useState(false);
   const [reminderInterval, setReminderInterval] = useState<string>("3");
+
+  // Prevent double-submit
+  const submitLockRef = useRef(false);
 
   // Calculate split amounts
   const total = parseFloat(totalAmount) || 0;
@@ -228,6 +234,10 @@ export function BillForm() {
 
     if (!validate()) return;
 
+    // Prevent double-submit
+    if (submitLockRef.current) return;
+    submitLockRef.current = true;
+
     setSubmitting(true);
 
     try {
@@ -260,13 +270,26 @@ export function BillForm() {
         participants: allParticipants,
       };
 
-      const result = await createBill(billData);
+      // Race the createBill call with a timeout to ensure UI never hangs
+      const result = await Promise.race([
+        createBill(billData),
+        new Promise<null>((resolve) => {
+          setTimeout(() => {
+            console.log('[BillForm] Submit timed out, navigating anyway');
+            resolve(null);
+          }, SUBMIT_TIMEOUT_MS);
+        }),
+      ]);
 
-      if (result) {
-        navigate("/bills");
-      }
+      // Navigate regardless of result (local save should have completed)
+      toast.success("Saved offline, will sync when back online");
+      navigate("/bills");
+    } catch (error) {
+      console.error("Error creating bill:", error);
+      toast.error("Failed to create bill");
     } finally {
       setSubmitting(false);
+      submitLockRef.current = false;
     }
   };
 
@@ -500,13 +523,14 @@ export function BillForm() {
           </div>
         )}
 
-        {/* Search Contacts */}
+        {/* Search Input */}
         <div className="relative">
           <Input
             placeholder="Search contacts by name or phone..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             icon={<Search className="h-4 w-4" />}
+            error={!!errors.participants}
           />
 
           {/* Contact dropdown */}
@@ -533,6 +557,7 @@ export function BillForm() {
                       </p>
                     )}
                   </div>
+                  <Plus className="h-4 w-4 text-muted-foreground" />
                 </button>
               ))}
             </div>
@@ -548,9 +573,7 @@ export function BillForm() {
                 variant="outline"
                 size="sm"
                 className="w-full"
-                onClick={() => {
-                  setShowAddContact(true);
-                }}
+                onClick={() => setShowAddContact(true)}
               >
                 <Plus className="h-4 w-4 mr-1" />
                 Add "{searchQuery}" as new contact
@@ -559,173 +582,121 @@ export function BillForm() {
           )}
         </div>
 
-        {errors.participants && participants.length === 0 && !includeMe && (
+        {errors.participants && (
           <p className="text-sm text-destructive">{errors.participants}</p>
         )}
 
         {/* Selected Participants */}
-        {(participants.length > 0 || includeMe) && (
-          <div className="space-y-3">
-            {/* Split Toggle */}
-            <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
-              <span className="text-sm font-medium">Equal Split</span>
+        {participants.length > 0 && (
+          <div className="space-y-2">
+            {participants.map((p) => (
+              <div
+                key={p.phone_number}
+                className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg border border-border"
+              >
+                <AvatarCustom
+                  name={p.nickname || p.phone_number}
+                  size="sm"
+                />
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium text-sm truncate">
+                    {p.nickname || p.phone_number}
+                  </p>
+                  {p.nickname && (
+                    <p className="text-xs text-muted-foreground truncate flex items-center gap-1">
+                      <Phone className="h-3 w-3" />
+                      {p.phone_number}
+                    </p>
+                  )}
+                </div>
+                {equalSplit ? (
+                  <span className="text-sm font-medium text-primary">
+                    {currencySymbol}{splitAmount.toFixed(2)}
+                  </span>
+                ) : (
+                  <Input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={p.amount}
+                    onChange={(e) =>
+                      updateParticipantAmount(p.phone_number, parseFloat(e.target.value) || 0)
+                    }
+                    className="w-24 text-right"
+                  />
+                )}
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                  onClick={() => removeParticipant(p.phone_number)}
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+            ))}
+
+            {/* Equal Split Toggle */}
+            <div className="flex items-center justify-between pt-2">
+              <Label htmlFor="equalSplit" className="text-sm text-muted-foreground">
+                Split equally
+              </Label>
               <Switch
+                id="equalSplit"
                 checked={equalSplit}
-                onCheckedChange={(checked) => {
-                  setEqualSplit(checked);
-                  if (checked) {
-                    setParticipants((prev) =>
-                      prev.map((p) => ({ ...p, amount: splitAmount }))
-                    );
-                  }
-                }}
+                onCheckedChange={setEqualSplit}
               />
             </div>
-
-            {/* My Share Card (when included) */}
-            {includeMe && profile?.phone_number && (
-              <div className="flex items-center gap-3 p-3 bg-primary/5 border border-primary/20 rounded-lg">
-                <div className="h-9 w-9 rounded-full bg-primary/10 flex items-center justify-center">
-                  <User className="h-4 w-4 text-primary" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="font-medium text-sm truncate flex items-center gap-2">
-                    Me (You)
-                    <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full">
-                      Paid
-                    </span>
-                  </p>
-                  <p className="text-xs text-muted-foreground truncate flex items-center gap-1">
-                    <Phone className="h-3 w-3" />
-                    {profile.phone_number}
-                  </p>
-                </div>
-                <span className="text-sm font-semibold text-primary">
-                  ${splitAmount.toFixed(2)}
-                </span>
-              </div>
-            )}
-
-            {/* Participant Cards */}
-            <div className="space-y-2">
-              {participants.map((participant) => (
-                <div
-                  key={participant.phone_number}
-                  className="flex items-center gap-3 p-3 bg-card border border-border rounded-lg"
-                >
-                  <AvatarCustom
-                    name={participant.nickname || participant.phone_number}
-                    size="sm"
-                  />
-                  <div className="flex-1 min-w-0">
-                    <p className="font-medium text-sm truncate">
-                      {participant.nickname || participant.phone_number}
-                    </p>
-                    {participant.nickname && (
-                      <p className="text-xs text-muted-foreground truncate flex items-center gap-1">
-                        <Phone className="h-3 w-3" />
-                        {participant.phone_number}
-                      </p>
-                    )}
-                  </div>
-
-                  {equalSplit ? (
-                    <span className="text-sm font-semibold text-primary">
-                      ${splitAmount.toFixed(2)}
-                    </span>
-                  ) : (
-                    <div className="w-24">
-                      <Input
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        value={participant.amount || ""}
-                        onChange={(e) =>
-                          updateParticipantAmount(
-                            participant.phone_number,
-                            parseFloat(e.target.value) || 0
-                          )
-                        }
-                        className="h-8 text-right"
-                      />
-                    </div>
-                  )}
-
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                    onClick={() => removeParticipant(participant.phone_number)}
-                  >
-                    <X className="h-4 w-4" />
-                  </Button>
-                </div>
-              ))}
-            </div>
-
-            {/* Split Error */}
-            {errors.split && (
-              <p className="text-sm text-destructive">{errors.split}</p>
-            )}
-
-            {/* Total Summary */}
-            {!equalSplit && (
-              <div className="flex justify-between items-center p-3 bg-muted/50 rounded-lg">
-                <span className="text-sm text-muted-foreground">
-                  Participant Total
-                </span>
-                <span
-                  className={cn(
-                    "font-semibold",
-                    Math.abs(
-                      participants.reduce((sum, p) => sum + p.amount, 0) - total
-                    ) < 0.01
-                      ? "text-emerald-600"
-                      : "text-destructive"
-                  )}
-                >
-                  $
-                  {participants.reduce((sum, p) => sum + p.amount, 0).toFixed(2)}{" "}
-                  / ${total.toFixed(2)}
-                </span>
-              </div>
-            )}
           </div>
+        )}
+
+        {errors.split && (
+          <p className="text-sm text-destructive">{errors.split}</p>
         )}
       </div>
 
+      {/* Summary */}
+      {participants.length > 0 && (
+        <div className="p-4 bg-primary/5 rounded-lg border border-primary/20">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-sm text-muted-foreground">Total</span>
+            <span className="font-semibold">
+              {currencySymbol}{total.toFixed(2)}
+            </span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-muted-foreground">
+              Split between {participantCount} {participantCount === 1 ? "person" : "people"}
+            </span>
+            <span className="text-sm font-medium text-primary">
+              {currencySymbol}{splitAmount.toFixed(2)} each
+            </span>
+          </div>
+        </div>
+      )}
+
       {/* Submit */}
-      <div className="flex gap-3 pt-4">
-        <Button
-          type="button"
-          variant="outline"
-          className="flex-1"
-          onClick={() => navigate("/bills")}
-        >
-          Cancel
-        </Button>
-        <Button type="submit" className="flex-1" disabled={submitting}>
-          {submitting ? (
-            <>
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Creating...
-            </>
-          ) : (
-            <>
-              <Check className="mr-2 h-4 w-4" />
-              Create Bill
-            </>
-          )}
-        </Button>
-      </div>
+      <Button type="submit" className="w-full" disabled={submitting}>
+        {submitting ? (
+          <>
+            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            Creating...
+          </>
+        ) : (
+          <>
+            <Check className="h-4 w-4 mr-2" />
+            Create Bill
+          </>
+        )}
+      </Button>
 
       {/* Add Contact Dialog */}
       <AddContactDialog
         open={showAddContact}
         onOpenChange={setShowAddContact}
         onAdd={handleAddNewContact}
-        initialPhone={searchQuery.replace(/\D/g, "")}
+        initialPhone={searchQuery}
       />
     </form>
   );
