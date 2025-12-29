@@ -595,9 +595,15 @@ export function generateActionId(): string {
   return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 }
 
+// Generate a UUID for idempotent sync (can be used as server ID)
+export function generateUUID(): string {
+  return crypto.randomUUID();
+}
+
 // Generate a temporary local ID for new entities
+// Uses UUID format so it can be used directly on server (idempotent upsert)
 export function generateLocalId(): string {
-  return `local-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  return crypto.randomUUID();
 }
 
 // Safe wrapper for database operations
