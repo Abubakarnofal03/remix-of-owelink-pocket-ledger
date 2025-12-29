@@ -9,6 +9,7 @@ import { useOffline } from "@/hooks/useOffline";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
 import { MoneyDisplay } from "@/components/ui/MoneyDisplay";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { AvatarCustom } from "@/components/ui/avatar-custom";
@@ -52,9 +53,12 @@ import {
   Archive,
   MessageCircle,
   FileCheck,
+  Bell,
+  BellOff,
+  Send,
 } from "lucide-react";
 import { toast } from "sonner";
-import { getPhoneSuffix } from "@/lib/notifications";
+import { getPhoneSuffix, sendPushNotification } from "@/lib/notifications";
 import { formatPhoneForWhatsApp } from "@/lib/phoneUtils";
 import { updateIOUOfflineFirst, createPaymentOfflineFirst } from "@/lib/offline/offlineDataLayer";
 
@@ -456,6 +460,107 @@ Never lose track of debts again. Split bills, send reminders & get paid faster.
             </div>
           )}
         </div>
+
+        {/* Reminder Settings - for creditors */}
+        {isCreditor && iou.status !== "paid" && (
+          <div className="card-elevated p-4 space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                {iou.reminder_enabled ? (
+                  <Bell className="h-4 w-4 text-primary" />
+                ) : (
+                  <BellOff className="h-4 w-4 text-muted-foreground" />
+                )}
+                <span className="font-medium text-sm">Automatic Reminders</span>
+              </div>
+              <Switch
+                checked={iou.reminder_enabled || false}
+                onCheckedChange={async (checked) => {
+                  try {
+                    await updateIOUOfflineFirst(iou.id, {
+                      reminder_enabled: checked,
+                      reminder_interval_days: checked ? (iou.reminder_interval_days || 3) : iou.reminder_interval_days,
+                    });
+                    updateIOULocally(prev => ({
+                      ...prev,
+                      reminder_enabled: checked,
+                      reminder_interval_days: checked ? (prev.reminder_interval_days || 3) : prev.reminder_interval_days,
+                    }));
+                    sync();
+                    toast.success(checked ? "Reminders enabled" : "Reminders disabled");
+                  } catch (error) {
+                    toast.error("Failed to update reminder settings");
+                  }
+                }}
+              />
+            </div>
+
+            {iou.reminder_enabled && (
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-muted-foreground">Every</span>
+                <Select
+                  value={String(iou.reminder_interval_days || 3)}
+                  onValueChange={async (value) => {
+                    try {
+                      await updateIOUOfflineFirst(iou.id, {
+                        reminder_interval_days: parseInt(value),
+                      });
+                      updateIOULocally(prev => ({
+                        ...prev,
+                        reminder_interval_days: parseInt(value),
+                      }));
+                      sync();
+                    } catch (error) {
+                      toast.error("Failed to update interval");
+                    }
+                  }}
+                >
+                  <SelectTrigger className="w-20">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="1">1</SelectItem>
+                    <SelectItem value="2">2</SelectItem>
+                    <SelectItem value="3">3</SelectItem>
+                    <SelectItem value="5">5</SelectItem>
+                    <SelectItem value="7">7</SelectItem>
+                    <SelectItem value="14">14</SelectItem>
+                  </SelectContent>
+                </Select>
+                <span className="text-sm text-muted-foreground">days</span>
+              </div>
+            )}
+
+            {/* Send Push Reminder Button */}
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full"
+              onClick={async () => {
+                const debtorSuffix = iou.debtor_phone_suffix || getPhoneSuffix(iou.debtor_phone_number);
+                if (!debtorSuffix) {
+                  toast.error("Cannot send reminder - debtor phone not available");
+                  return;
+                }
+                try {
+                  await sendPushNotification({
+                    phoneSuffixes: [debtorSuffix],
+                    title: "Payment Reminder",
+                    body: `You owe ${iou.currency} ${remaining.toFixed(2)}${iou.description ? ` for ${iou.description}` : ''}`,
+                    data: { type: 'iou_reminder', iou_id: iou.id },
+                  });
+                  toast.success("Reminder sent");
+                } catch (error) {
+                  console.error("Failed to send push:", error);
+                  toast.error("Failed to send reminder");
+                }
+              }}
+            >
+              <Send className="h-4 w-4 mr-2" />
+              Send Push Reminder
+            </Button>
+          </div>
+        )}
 
         {/* Payment Requests Panel - for creditors to manage requests */}
         {isCreditor && requests.length > 0 && (

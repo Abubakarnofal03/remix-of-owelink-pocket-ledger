@@ -3,6 +3,27 @@ import { supabase } from '@/integrations/supabase/client';
 
 const MAX_RETRY_COUNT = 5;
 const BASE_DELAY_MS = 1000;
+const SYNC_REQUEST_TIMEOUT_MS = 8000;
+
+// Wrap a thenable (PostgrestBuilder or Promise) with a timeout
+function withTimeout<T>(thenable: PromiseLike<T>, ms: number, label: string): Promise<T> {
+  // Convert PostgrestBuilder to Promise explicitly
+  const promise = Promise.resolve(thenable);
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(`${label} timed out after ${ms}ms`));
+    }, ms);
+    promise
+      .then((result) => {
+        clearTimeout(timer);
+        resolve(result);
+      })
+      .catch((err) => {
+        clearTimeout(timer);
+        reject(err);
+      });
+  });
+}
 
 // Add action to sync queue
 export async function addToSyncQueue(
@@ -160,65 +181,64 @@ async function syncBill(item: SyncQueueItem): Promise<boolean> {
       // Remove internal fields from payload
       const { _participants, _local_bill_id, id: _, is_local: __, synced_at: ___, ...billData } = payload;
       
-      // Step 1: Create bill on server
-      const { data: serverBill, error } = await supabase
-        .from('bills')
-        .insert(billData as any)
-        .select()
-        .single();
+      // Step 1: Create bill on server using upsert (idempotent with UUID)
+      const { data: serverBill, error } = await withTimeout(
+        supabase
+          .from('bills')
+          .upsert({ ...billData, id: localId } as any, { onConflict: 'id' })
+          .select()
+          .single(),
+        SYNC_REQUEST_TIMEOUT_MS,
+        'Bill upsert'
+      );
 
       if (error) throw error;
       if (!serverBill) throw new Error('No bill returned from server');
 
-      console.log(`[SyncQueue] Bill created on server: ${serverBill.id}`);
+      console.log(`[SyncQueue] Bill upserted on server: ${serverBill.id}`);
 
       // Step 2: Create participants on server
       if (participants && participants.length > 0) {
-        const participantsToInsert = participants.map(p => ({
+        const localParticipants = await offlineDb.billParticipants
+          .where('bill_id')
+          .equals(localId)
+          .toArray();
+
+        const participantsToUpsert = localParticipants.map((lp, idx) => ({
+          id: lp.id, // Use local UUID directly
           bill_id: serverBill.id,
-          phone_number: p.phone_number,
-          amount_owed: p.amount_owed,
-          amount_paid: p.amount_paid || 0,
-          status: p.status || 'pending',
+          phone_number: lp.phone_number,
+          amount_owed: lp.amount_owed,
+          amount_paid: lp.amount_paid || 0,
+          status: lp.status || 'pending',
         }));
 
-        const { data: serverParticipants, error: pError } = await supabase
-          .from('bill_participants')
-          .insert(participantsToInsert)
-          .select();
+        const { data: serverParticipants, error: pError } = await withTimeout(
+          supabase
+            .from('bill_participants')
+            .upsert(participantsToUpsert, { onConflict: 'id' })
+            .select(),
+          SYNC_REQUEST_TIMEOUT_MS,
+          'Participants upsert'
+        );
 
         if (pError) {
-          console.error('[SyncQueue] Failed to create participants:', pError);
-          // Don't fail the whole operation, bill is created
+          console.error('[SyncQueue] Failed to upsert participants:', pError);
         } else {
-          console.log(`[SyncQueue] Created ${serverParticipants?.length || 0} participants`);
+          console.log(`[SyncQueue] Upserted ${serverParticipants?.length || 0} participants`);
           
-          // Update local participants with server IDs
-          const localParticipants = await offlineDb.billParticipants
-            .where('bill_id')
-            .equals(localId)
-            .toArray();
-          
-          for (let i = 0; i < localParticipants.length; i++) {
-            const localP = localParticipants[i];
-            const serverP = serverParticipants?.find(sp => sp.phone_number === localP.phone_number);
-            
-            if (serverP) {
-              await offlineDb.billParticipants.delete(localP.id);
-              await offlineDb.billParticipants.put({
-                ...serverP,
-                synced_at: Date.now(),
-                is_local: false,
-              });
-            }
+          // Mark local participants as synced
+          for (const lp of localParticipants) {
+            await offlineDb.billParticipants.update(lp.id, {
+              synced_at: Date.now(),
+              is_local: false,
+            });
           }
         }
       }
 
-      // Step 3: Update local bill with server ID
-      await offlineDb.bills.delete(localId);
-      await offlineDb.bills.put({
-        ...serverBill,
+      // Step 3: Mark local bill as synced (no need to delete/replace since IDs match)
+      await offlineDb.bills.update(localId, {
         synced_at: Date.now(),
         is_local: false,
       });
@@ -228,10 +248,14 @@ async function syncBill(item: SyncQueueItem): Promise<boolean> {
 
     case 'update': {
       const { id: _, is_local: __, synced_at: ___, ...updateData } = payload;
-      const { error } = await supabase
-        .from('bills')
-        .update(updateData)
-        .eq('id', entity_id);
+      const { error } = await withTimeout(
+        supabase
+          .from('bills')
+          .update(updateData)
+          .eq('id', entity_id),
+        SYNC_REQUEST_TIMEOUT_MS,
+        'Bill update'
+      );
 
       if (error) throw error;
       
@@ -317,31 +341,37 @@ async function syncIOU(item: SyncQueueItem): Promise<boolean> {
   switch (operation) {
     case 'create': {
       const { id: _, is_local: __, synced_at: ___, ...data } = payload;
-      const { data: result, error } = await supabase
-        .from('ious')
-        .insert(data as any)
-        .select()
-        .single();
+      // Use upsert with the local UUID for idempotency
+      const { data: result, error } = await withTimeout(
+        supabase
+          .from('ious')
+          .upsert({ ...data, id: entity_id } as any, { onConflict: 'id' })
+          .select()
+          .single(),
+        SYNC_REQUEST_TIMEOUT_MS,
+        'IOU upsert'
+      );
 
       if (error) throw error;
       
-      if (result && entity_id.startsWith('local-')) {
-        await offlineDb.ious.delete(entity_id);
-        await offlineDb.ious.put({
-          ...result,
-          synced_at: Date.now(),
-          is_local: false,
-        });
-      }
+      // Mark as synced (no need to delete/replace since IDs match)
+      await offlineDb.ious.update(entity_id, {
+        synced_at: Date.now(),
+        is_local: false,
+      });
       return true;
     }
 
     case 'update': {
       const { id: _, is_local: __, synced_at: ___, ...updateData } = payload;
-      const { error } = await supabase
-        .from('ious')
-        .update(updateData)
-        .eq('id', entity_id);
+      const { error } = await withTimeout(
+        supabase
+          .from('ious')
+          .update(updateData)
+          .eq('id', entity_id),
+        SYNC_REQUEST_TIMEOUT_MS,
+        'IOU update'
+      );
 
       if (error) throw error;
       
@@ -556,10 +586,8 @@ async function syncIOUPaymentRequest(item: SyncQueueItem): Promise<boolean> {
 
 // Process all pending sync items
 export async function processAllPendingSync(): Promise<{ processed: number; failed: number }> {
-  if (!navigator.onLine) {
-    console.log('[SyncQueue] Offline, skipping sync');
-    return { processed: 0, failed: 0 };
-  }
+  // Skip explicit offline check—rely on request timeouts instead
+  // This fixes Android where navigator.onLine can stay true after losing connectivity
 
   const ready = await offlineDb.ensureReady();
   if (!ready) {
