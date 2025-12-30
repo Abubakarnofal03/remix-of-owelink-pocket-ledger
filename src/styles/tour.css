@@ -1,0 +1,97 @@
+/* Custom styles for driver.js tour */
+.driver-popover {
+  background: hsl(var(--card)) !important;
+  color: hsl(var(--card-foreground)) !important;
+  border: 1px solid hsl(var(--border)) !important;
+  border-radius: 12px !important;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25) !important;
+  max-width: 320px !important;
+}
+
+.driver-popover-title {
+  font-size: 16px !important;
+  font-weight: 600 !important;
+  color: hsl(var(--foreground)) !important;
+  font-family: var(--font-display), sans-serif !important;
+}
+
+.driver-popover-description {
+  font-size: 14px !important;
+  color: hsl(var(--muted-foreground)) !important;
+  line-height: 1.5 !important;
+}
+
+.driver-popover-progress-text {
+  font-size: 12px !important;
+  color: hsl(var(--muted-foreground)) !important;
+}
+
+.driver-popover-navigation-btns {
+  gap: 8px !important;
+}
+
+.driver-popover-prev-btn,
+.driver-popover-next-btn {
+  background: hsl(var(--secondary)) !important;
+  color: hsl(var(--secondary-foreground)) !important;
+  border: none !important;
+  border-radius: 8px !important;
+  padding: 8px 16px !important;
+  font-size: 14px !important;
+  font-weight: 500 !important;
+  transition: all 0.2s !important;
+}
+
+.driver-popover-prev-btn:hover,
+.driver-popover-next-btn:hover {
+  background: hsl(var(--secondary) / 0.8) !important;
+}
+
+.driver-popover-next-btn,
+.driver-popover-close-btn {
+  background: hsl(var(--primary)) !important;
+  color: hsl(var(--primary-foreground)) !important;
+}
+
+.driver-popover-next-btn:hover,
+.driver-popover-close-btn:hover {
+  background: hsl(var(--primary) / 0.9) !important;
+}
+
+.driver-popover-close-btn {
+  color: hsl(var(--muted-foreground)) !important;
+}
+
+.driver-popover-close-btn:hover {
+  color: hsl(var(--foreground)) !important;
+  background: hsl(var(--secondary)) !important;
+}
+
+.driver-popover-arrow {
+  border-color: hsl(var(--card)) !important;
+}
+
+.driver-popover-arrow-side-left {
+  border-left-color: hsl(var(--card)) !important;
+}
+
+.driver-popover-arrow-side-right {
+  border-right-color: hsl(var(--card)) !important;
+}
+
+.driver-popover-arrow-side-top {
+  border-top-color: hsl(var(--card)) !important;
+}
+
+.driver-popover-arrow-side-bottom {
+  border-bottom-color: hsl(var(--card)) !important;
+}
+
+.driver-overlay {
+  background: rgba(0, 0, 0, 0.6) !important;
+}
+
+/* Highlighted element */
+.driver-active-element {
+  border-radius: 8px !important;
+}

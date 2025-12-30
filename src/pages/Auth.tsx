@@ -93,6 +93,8 @@ export default function Auth() {
           toast({ title: "Sign up failed", description: error.message, variant: "destructive" });
         } else {
           toast({ title: "Welcome to Owelink!", description: "Your account has been created." });
+          // Trigger onboarding for new users
+          localStorage.setItem("onboarding_triggered", "true");
           navigate("/");
         }
       } else {

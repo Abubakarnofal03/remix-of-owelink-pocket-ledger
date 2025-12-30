@@ -5,11 +5,11 @@ import { hapticLight } from "@/lib/haptics";
 import { useLocalNotifications } from "@/hooks/useLocalNotifications";
 
 const navItems = [
-  { path: "/", icon: Home, label: "Home" },
-  { path: "/bills", icon: Receipt, label: "Bills" },
-  { path: "/ious", icon: FileText, label: "IOUs" },
-  { path: "/contacts", icon: Users, label: "Contacts" },
-  { path: "/notifications", icon: Bell, label: "Alerts" },
+  { path: "/", icon: Home, label: "Home", tourId: "nav-home" },
+  { path: "/bills", icon: Receipt, label: "Bills", tourId: "nav-bills" },
+  { path: "/ious", icon: FileText, label: "IOUs", tourId: "nav-ious" },
+  { path: "/contacts", icon: Users, label: "Contacts", tourId: "nav-contacts" },
+  { path: "/notifications", icon: Bell, label: "Alerts", tourId: "nav-alerts" },
 ];
 
 export function BottomNav() {
@@ -29,6 +29,7 @@ export function BottomNav() {
               key={item.path}
               to={item.path}
               onClick={() => hapticLight()}
+              data-tour={item.tourId}
               className={cn(
                 "flex flex-col items-center justify-center w-full h-full transition-all duration-200",
                 isActive

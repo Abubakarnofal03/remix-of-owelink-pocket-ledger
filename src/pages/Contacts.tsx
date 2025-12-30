@@ -63,7 +63,7 @@ export default function Contacts() {
           <div className="flex items-center justify-between mb-4">
             <h1 className="font-display text-2xl font-bold text-foreground">Contacts</h1>
             <div className="flex gap-2">
-              <Button size="sm" onClick={() => setShowAddDialog(true)}>
+              <Button size="sm" onClick={() => setShowAddDialog(true)} data-tour="add-contact-btn">
                 <Plus className="h-4 w-4 mr-1" />
                 Add
               </Button>
@@ -84,7 +84,7 @@ export default function Contacts() {
 
             <TabsContent value="all" className="mt-4">
               {contacts.length > 0 && (
-                <div className="mb-4">
+                <div className="mb-4" data-tour="contact-search">
                   <Input
                     placeholder="Search contacts..."
                     value={searchQuery}
