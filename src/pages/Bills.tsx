@@ -110,7 +110,7 @@ export default function Bills() {
           <div className="flex items-center justify-between mb-4">
             <h1 className="font-display text-2xl font-bold text-foreground">Bills</h1>
             <Link to="/bills/new">
-              <Button size="sm">
+              <Button size="sm" data-tour="new-bill-btn">
                 <Plus className="h-4 w-4 mr-1" />
                 New Bill
               </Button>
@@ -128,7 +128,7 @@ export default function Bills() {
           </div>
 
           {/* Filter Tabs */}
-          <div className="flex gap-2 mb-4">
+          <div className="flex gap-2 mb-4" data-tour="bills-tabs">
             <Tabs value={filter} onValueChange={(v) => setFilter(v as BillFilter)} className="flex-1">
               <TabsList className="w-full grid grid-cols-3">
                 <TabsTrigger value="all" className="text-xs">
@@ -147,7 +147,7 @@ export default function Bills() {
           </div>
 
           {/* Status Filter */}
-          <div className="mb-4">
+          <div className="mb-4" data-tour="status-filter">
             <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as StatusFilter)}>
               <SelectTrigger className="w-full">
                 <div className="flex items-center gap-2">
