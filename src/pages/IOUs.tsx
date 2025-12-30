@@ -5,6 +5,7 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import { useIOUs } from "@/hooks/useIOUs";
 import { useContacts } from "@/hooks/useContacts";
 import { IOUList } from "@/components/ious/IOUList";
+import { GroupedIOUList } from "@/components/ious/GroupedIOUList";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -86,23 +87,25 @@ export default function IOUs() {
           {/* Header */}
           <div className="flex items-center justify-between">
             <h1 className="font-display text-2xl font-bold text-foreground">IOUs</h1>
-            <Button size="sm" onClick={() => navigate("/ious/new")}>
+            <Button size="sm" onClick={() => navigate("/ious/new")} data-tour="new-iou-btn">
               <Plus className="h-4 w-4 mr-1" />
               New IOU
             </Button>
           </div>
 
           {/* Search */}
-          <Input
-            placeholder="Search by name, phone, description..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            icon={<Search className="h-4 w-4" />}
-          />
+          <div data-tour="iou-search">
+            <Input
+              placeholder="Search by name, phone, description..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              icon={<Search className="h-4 w-4" />}
+            />
+          </div>
 
           {/* Tabs */}
           {hasAnyIOUs && (
-            <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "owed" | "owe")}>
+            <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "owed" | "owe")} data-tour="iou-tabs">
               <TabsList className="w-full">
                 <TabsTrigger value="owed" className="flex-1 gap-2">
                   <ArrowDownLeft className="h-4 w-4" />
@@ -133,10 +136,10 @@ export default function IOUs() {
 
           {/* List */}
           {loading ? (
-            <IOUList ious={[]} loading />
+            <GroupedIOUList ious={[]} loading isCreditor={activeTab === "owed"} />
           ) : hasAnyIOUs ? (
             filteredList.length > 0 ? (
-              <IOUList ious={filteredList} />
+              <GroupedIOUList ious={filteredList} isCreditor={activeTab === "owed"} />
             ) : (
               <EmptyState
                 icon={searchQuery ? Search : activeTab === "owed" ? ArrowDownLeft : ArrowUpRight}

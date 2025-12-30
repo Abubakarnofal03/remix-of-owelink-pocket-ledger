@@ -62,7 +62,7 @@ export default function Index() {
           </div>
 
           {/* Balance Cards */}
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-2 gap-4" data-tour="balance-overview">
             <div className="card-elevated p-4 stagger-1 opacity-0 animate-slide-up">
               <div className="flex items-center gap-2 mb-2">
                 <div className="h-8 w-8 rounded-lg bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center">
@@ -134,7 +134,7 @@ export default function Index() {
           </div>
 
           {/* Quick Actions */}
-          <div className="space-y-3 stagger-4 opacity-0 animate-slide-up">
+          <div className="space-y-3 stagger-4 opacity-0 animate-slide-up" data-tour="quick-actions">
             <h2 className="font-semibold text-foreground">Quick Actions</h2>
             <div className="grid grid-cols-2 gap-3">
               <Link to="/bills/new">
@@ -157,7 +157,7 @@ export default function Index() {
           </div>
 
           {/* Recent Activity */}
-          <div className="space-y-3 stagger-5 opacity-0 animate-slide-up">
+          <div className="space-y-3 stagger-5 opacity-0 animate-slide-up" data-tour="recent-activity">
             <h2 className="font-semibold text-foreground">Recent Activity</h2>
             {recentActivity.length === 0 ? (
               <div className="card-elevated p-8 text-center">
