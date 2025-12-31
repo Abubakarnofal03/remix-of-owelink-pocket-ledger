@@ -155,22 +155,24 @@ export function GroupedIOUList({ ious, loading, isCreditor = true }: GroupedIOUL
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       {groups.map((group) => {
         const isExpanded = expandedGroups.has(group.phone) || group.ious.length <= 2;
         const remaining = group.totalOwed - group.totalPaid;
         const hasPending = group.pendingIOUs.length > 0;
 
         return (
-          <div key={group.phone} className="card-elevated overflow-hidden">
-            {/* Group Header */}
-            <div className="p-4 bg-muted/30 border-b border-border">
+          <div key={group.phone} className="rounded-2xl overflow-hidden border-2 border-primary/20 bg-card shadow-lg">
+            {/* Group Header - More prominent */}
+            <div className="p-4 bg-gradient-to-r from-primary/15 via-primary/10 to-primary/5 border-b-2 border-primary/20">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <AvatarCustom name={group.name} size="md" />
+                  <div className="ring-2 ring-primary/30 rounded-full">
+                    <AvatarCustom name={group.name} size="lg" />
+                  </div>
                   <div>
-                    <h3 className="font-semibold text-foreground">{group.name}</h3>
-                    <p className="text-xs text-muted-foreground">
+                    <h3 className="font-bold text-lg text-foreground">{group.name}</h3>
+                    <p className="text-sm text-muted-foreground font-medium">
                       {group.ious.length} IOU{group.ious.length !== 1 ? 's' : ''}
                     </p>
                   </div>
@@ -180,34 +182,33 @@ export function GroupedIOUList({ ious, loading, isCreditor = true }: GroupedIOUL
                 {isCreditor && hasPending && (
                   <Button
                     variant="outline"
-                    size="sm"
+                    size="icon"
                     onClick={(e) => {
                       e.stopPropagation();
                       openWhatsApp(group);
                     }}
-                    className="gap-2 text-green-600 border-green-200 hover:bg-green-50 dark:border-green-800 dark:hover:bg-green-950"
+                    className="h-10 w-10 rounded-full text-green-600 border-green-300 hover:bg-green-50 dark:border-green-700 dark:hover:bg-green-950"
                   >
-                    <MessageCircle className="h-4 w-4" />
-                    <span className="hidden sm:inline">WhatsApp</span>
+                    <MessageCircle className="h-5 w-5" />
                   </Button>
                 )}
               </div>
 
-              {/* Totals */}
-              <div className="flex items-center gap-4 mt-3">
-                <div className="flex-1">
-                  <p className="text-xs text-muted-foreground">
+              {/* Totals - More prominent */}
+              <div className="grid grid-cols-3 gap-3 mt-4 p-3 rounded-xl bg-background/80 border border-border/50">
+                <div>
+                  <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">
                     {isCreditor ? "Total Owed" : "You Owe"}
                   </p>
                   <MoneyDisplay 
                     amount={remaining} 
                     currency={group.currency} 
-                    size="lg"
-                    className={isCreditor ? "text-emerald-600" : "text-rose-600"}
+                    size="xl"
+                    className={isCreditor ? "text-emerald-600 font-bold" : "text-rose-600 font-bold"}
                   />
                 </div>
-                <div className="text-right">
-                  <p className="text-xs text-muted-foreground">Paid</p>
+                <div className="text-center">
+                  <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Paid</p>
                   <MoneyDisplay 
                     amount={group.totalPaid} 
                     currency={group.currency} 
@@ -216,7 +217,7 @@ export function GroupedIOUList({ ious, loading, isCreditor = true }: GroupedIOUL
                   />
                 </div>
                 <div className="text-right">
-                  <p className="text-xs text-muted-foreground">Total</p>
+                  <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Total</p>
                   <MoneyDisplay 
                     amount={group.totalOwed} 
                     currency={group.currency} 
@@ -226,12 +227,14 @@ export function GroupedIOUList({ ious, loading, isCreditor = true }: GroupedIOUL
               </div>
             </div>
 
-            {/* IOUs List */}
+            {/* IOUs List - Subtle nested cards */}
             <Collapsible open={isExpanded} onOpenChange={() => toggleGroup(group.phone)}>
-              <div className="p-3 space-y-2">
+              <div className="p-3 space-y-2 bg-muted/20">
                 {/* Show first 2 IOUs always */}
                 {group.ious.slice(0, 2).map((iou) => (
-                  <IOUCard key={iou.id} iou={iou} />
+                  <div key={iou.id} className="ml-2 border-l-2 border-primary/20 pl-2">
+                    <IOUCard iou={iou} />
+                  </div>
                 ))}
 
                 {/* Collapsible content for remaining IOUs */}
@@ -239,12 +242,14 @@ export function GroupedIOUList({ ious, loading, isCreditor = true }: GroupedIOUL
                   <>
                     <CollapsibleContent className="space-y-2">
                       {group.ious.slice(2).map((iou) => (
-                        <IOUCard key={iou.id} iou={iou} />
+                        <div key={iou.id} className="ml-2 border-l-2 border-primary/20 pl-2">
+                          <IOUCard iou={iou} />
+                        </div>
                       ))}
                     </CollapsibleContent>
 
                     <CollapsibleTrigger asChild>
-                      <Button variant="ghost" size="sm" className="w-full mt-2">
+                      <Button variant="ghost" size="sm" className="w-full mt-2 text-primary">
                         {isExpanded ? (
                           <>
                             <ChevronUp className="h-4 w-4 mr-2" />

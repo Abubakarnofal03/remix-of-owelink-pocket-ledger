@@ -277,7 +277,7 @@ export function useBalances() {
   const { isOnline } = useNetworkStatus();
 
   const { data, isLoading: loading } = useQuery({
-    queryKey: [...DASHBOARD_QUERY_KEY, isOnline ? 'online' : 'offline'],
+    queryKey: [...DASHBOARD_QUERY_KEY, user?.id],
     queryFn: async () => {
       if (!user || !profile) {
         return {
@@ -286,26 +286,69 @@ export function useBalances() {
         };
       }
 
-      // Use offline data when not online
-      if (!isOnline) {
-        console.log('[useBalances] Fetching from local DB (offline)');
-        return fetchDashboardDataOffline(
+      // Always try local first for instant UI
+      console.log('[useBalances] Fetching from local DB first...');
+      try {
+        const localData = await fetchDashboardDataOffline(
           user.id,
           profile.phone_number,
           profile.phone_suffix
         );
+        
+        // If we have local data, return it immediately
+        // Background sync will update if online
+        if (localData.recentActivity.length > 0 || localData.balances.owedToYou > 0 || localData.balances.youOwe > 0) {
+          console.log('[useBalances] Using local data');
+          
+          // If online, fetch from server in background (don't block)
+          if (isOnline) {
+            setTimeout(async () => {
+              try {
+                const serverData = await fetchDashboardData(
+                  user.id,
+                  profile.phone_number,
+                  profile.phone_suffix
+                );
+                queryClient.setQueryData([...DASHBOARD_QUERY_KEY, user.id], serverData);
+              } catch (e) {
+                console.warn('[useBalances] Background server fetch failed:', e);
+              }
+            }, 100);
+          }
+          
+          return localData;
+        }
+      } catch (e) {
+        console.warn('[useBalances] Local DB error:', e);
       }
 
-      // Online: fetch from Supabase
-      console.log('[useBalances] Fetching from Supabase (online)');
-      return fetchDashboardData(
-        user.id,
-        profile.phone_number,
-        profile.phone_suffix
-      );
+      // No local data - try server with short timeout
+      if (isOnline) {
+        console.log('[useBalances] No local data, fetching from server...');
+        try {
+          const timeoutPromise = new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error('timeout')), 3000)
+          );
+          
+          const serverData = await Promise.race([
+            fetchDashboardData(user.id, profile.phone_number, profile.phone_suffix),
+            timeoutPromise
+          ]);
+          
+          return serverData;
+        } catch (e) {
+          console.warn('[useBalances] Server fetch failed/timeout:', e);
+        }
+      }
+
+      // Fallback to empty
+      return {
+        balances: { owedToYou: 0, youOwe: 0, netBalance: 0 },
+        recentActivity: [],
+      };
     },
     enabled: !!user && !!profile,
-    staleTime: 2 * 60 * 1000, // 2 minutes
+    staleTime: 30 * 1000, // 30 seconds - more responsive
     gcTime: 15 * 60 * 1000, // 15 minutes
   });
 
