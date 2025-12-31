@@ -10,6 +10,7 @@ import { useContacts } from "@/hooks/useContacts";
 import { formatPhoneForWhatsApp } from "@/lib/phoneUtils";
 import { useState } from "react";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { cn } from "@/lib/utils";
 
 interface GroupedIOUListProps {
   ious: IOU[];
@@ -194,35 +195,43 @@ export function GroupedIOUList({ ious, loading, isCreditor = true }: GroupedIOUL
                 )}
               </div>
 
-              {/* Totals - More prominent */}
-              <div className="grid grid-cols-3 gap-3 mt-4 p-3 rounded-xl bg-background/80 border border-border/50">
-                <div>
-                  <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">
+              {/* Totals - Responsive layout */}
+              <div className="mt-4 p-3 rounded-xl bg-background/80 border border-border/50">
+                {/* Main amount - full width on small screens */}
+                <div className="mb-3">
+                  <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-wide">
                     {isCreditor ? "Total Owed" : "You Owe"}
                   </p>
                   <MoneyDisplay 
                     amount={remaining} 
                     currency={group.currency} 
-                    size="xl"
-                    className={isCreditor ? "text-emerald-600 font-bold" : "text-rose-600 font-bold"}
+                    size="lg"
+                    className={cn(
+                      "block truncate",
+                      isCreditor ? "text-emerald-600 font-bold" : "text-rose-600 font-bold"
+                    )}
                   />
                 </div>
-                <div className="text-center">
-                  <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Paid</p>
-                  <MoneyDisplay 
-                    amount={group.totalPaid} 
-                    currency={group.currency} 
-                    size="sm"
-                    className="text-muted-foreground"
-                  />
-                </div>
-                <div className="text-right">
-                  <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Total</p>
-                  <MoneyDisplay 
-                    amount={group.totalOwed} 
-                    currency={group.currency} 
-                    size="sm"
-                  />
+                {/* Secondary amounts - side by side */}
+                <div className="flex items-center justify-between gap-2 pt-2 border-t border-border/50">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-wide">Paid</p>
+                    <MoneyDisplay 
+                      amount={group.totalPaid} 
+                      currency={group.currency} 
+                      size="sm"
+                      className="text-muted-foreground block truncate"
+                    />
+                  </div>
+                  <div className="min-w-0 flex-1 text-right">
+                    <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-wide">Total</p>
+                    <MoneyDisplay 
+                      amount={group.totalOwed} 
+                      currency={group.currency} 
+                      size="sm"
+                      className="block truncate"
+                    />
+                  </div>
                 </div>
               </div>
             </div>
