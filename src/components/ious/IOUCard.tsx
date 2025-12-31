@@ -30,80 +30,72 @@ export function IOUCard({ iou }: IOUCardProps) {
 
   return (
     <Link to={`/ious/${iou.id}`} className="block">
-      <div className="card-elevated p-4 hover:ring-2 hover:ring-primary/20 transition-all">
-        <div className="flex items-start justify-between mb-3">
-          <div className="flex items-center gap-3">
-            <AvatarCustom name={debtorName} size="md" />
+      <div className="bg-card rounded-lg p-3 hover:bg-accent/30 transition-all border border-border/50 shadow-sm">
+        <div className="flex items-start justify-between gap-2 mb-2">
+          <div className="flex items-center gap-2 flex-1 min-w-0">
+            <AvatarCustom name={debtorName} size="sm" />
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
-                <h3 className="font-semibold text-foreground truncate">{debtorName}</h3>
+                <h4 className="font-medium text-sm text-foreground truncate">{debtorName}</h4>
                 {isArchived && (
-                  <span className="inline-flex items-center gap-1 text-xs bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-400 px-2 py-0.5 rounded-full shrink-0">
-                    <Archive className="h-3 w-3" />
+                  <span className="inline-flex items-center gap-0.5 text-[10px] bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-400 px-1.5 py-0.5 rounded-full shrink-0">
+                    <Archive className="h-2.5 w-2.5" />
                     Archived
                   </span>
                 )}
                 {isCreditor ? (
-                  <span className="flex items-center gap-1 text-xs text-emerald-600 bg-emerald-50 dark:bg-emerald-950/50 px-2 py-0.5 rounded-full">
-                    <ArrowDownLeft className="h-3 w-3" />
+                  <span className="flex items-center gap-0.5 text-[10px] text-emerald-600 bg-emerald-50 dark:bg-emerald-950/50 px-1.5 py-0.5 rounded-full">
+                    <ArrowDownLeft className="h-2.5 w-2.5" />
                     owes you
                   </span>
                 ) : (
-                  <span className="flex items-center gap-1 text-xs text-rose-600 bg-rose-50 dark:bg-rose-950/50 px-2 py-0.5 rounded-full">
-                    <ArrowUpRight className="h-3 w-3" />
+                  <span className="flex items-center gap-0.5 text-[10px] text-rose-600 bg-rose-50 dark:bg-rose-950/50 px-1.5 py-0.5 rounded-full">
+                    <ArrowUpRight className="h-2.5 w-2.5" />
                     you owe
                   </span>
                 )}
               </div>
               {iou.description && (
-                <p className="text-sm text-muted-foreground truncate mt-0.5">
-                  {iou.description}
-                </p>
+                <p className="text-xs text-muted-foreground truncate">{iou.description}</p>
               )}
             </div>
           </div>
-          <StatusBadge status={iou.status as any} />
+          <StatusBadge status={iou.status as any} className="text-[10px] px-1.5 py-0.5" />
         </div>
 
-        <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center justify-between mb-2">
           <div>
-            <p className="text-xs text-muted-foreground mb-0.5">
-              {isCreditor ? "Remaining" : "You owe"}
-            </p>
+            <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Remaining</p>
             <MoneyDisplay 
               amount={remaining} 
               currency={iou.currency} 
-              size="lg" 
+              size="md" 
               className={isCreditor ? "text-emerald-600" : "text-rose-600"}
             />
           </div>
           <div className="text-right">
-            <p className="text-xs text-muted-foreground mb-0.5">Total</p>
+            <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Total</p>
             <MoneyDisplay amount={iou.amount} currency={iou.currency} size="sm" />
           </div>
         </div>
 
         {/* Progress bar */}
-        <div className="h-1.5 bg-muted rounded-full overflow-hidden mb-3">
+        <div className="h-1 bg-muted rounded-full overflow-hidden mb-2">
           <div
             className="h-full bg-primary transition-all duration-500"
             style={{ width: `${Math.min(progress, 100)}%` }}
           />
         </div>
 
-        <div className="flex items-center justify-between">
-          <p className="text-xs text-muted-foreground">
-            {progress.toFixed(0)}% paid
-          </p>
-
+        <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+          <span>{progress.toFixed(0)}% paid</span>
           {iou.due_date && (
-            <div className="flex items-center gap-1 text-xs text-muted-foreground">
-              <Calendar className="h-3 w-3" />
+            <div className="flex items-center gap-1">
+              <Calendar className="h-2.5 w-2.5" />
               <span>Due {format(new Date(iou.due_date), "MMM d")}</span>
             </div>
           )}
-
-          <ChevronRight className="h-4 w-4 text-muted-foreground" />
+          <ChevronRight className="h-3 w-3" />
         </div>
       </div>
     </Link>

@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { useBalances } from "@/hooks/useBalances";
 import { useCurrency } from "@/hooks/useCurrency";
 import { PullToRefresh } from "@/components/ui/PullToRefresh";
+import { useOnboarding } from "@/hooks/useOnboarding";
 import { format } from "date-fns";
 import {
   ArrowUpRight,
@@ -22,6 +23,9 @@ export default function Index() {
   const { user, profile, loading } = useAuth();
   const { owedToYou, youOwe, netBalance, recentActivity, loading: balancesLoading, refetch } = useBalances();
   const { currency } = useCurrency();
+  
+  // Initialize onboarding - this hook will auto-start the tour for new users
+  useOnboarding();
 
   if (loading) {
     return (

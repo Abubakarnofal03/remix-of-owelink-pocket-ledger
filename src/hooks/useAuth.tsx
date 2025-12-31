@@ -116,8 +116,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     );
 
-    // THEN check for existing session
+    // THEN check for existing session with timeout for slow networks
+    const sessionTimeout = setTimeout(() => {
+      // If still loading after 2 seconds, check for cached data
+      const cached = loadCachedProfile();
+      if (cached && loading) {
+        console.log('[Auth] Session check taking too long, using cached profile');
+        setProfile(cached);
+        setLoading(false);
+      }
+    }, 2000);
+
     supabase.auth.getSession().then(({ data: { session } }) => {
+      clearTimeout(sessionTimeout);
       setSession(session);
       setUser(session?.user ?? null);
       if (session?.user) {
@@ -125,15 +136,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const cached = loadCachedProfile();
         if (cached && cached.user_id === session.user.id) {
           setProfile(cached);
+          setLoading(false); // Don't wait for server
         }
-        // Then fetch from server
-        fetchProfile(session.user.id).finally(() => setLoading(false));
+        // Then fetch from server with timeout
+        const fetchWithTimeout = async () => {
+          const timeoutPromise = new Promise<void>((resolve) => setTimeout(resolve, 3000));
+          await Promise.race([fetchProfile(session.user.id), timeoutPromise]);
+          setLoading(false);
+        };
+        fetchWithTimeout();
       } else {
         setLoading(false);
       }
+    }).catch((e) => {
+      console.warn('[Auth] Session check failed:', e);
+      clearTimeout(sessionTimeout);
+      // Try to use cached profile anyway
+      const cached = loadCachedProfile();
+      if (cached) {
+        setProfile(cached);
+      }
+      setLoading(false);
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      subscription.unsubscribe();
+      clearTimeout(sessionTimeout);
+    };
   }, []);
 
   const signUp = async (email: string, password: string, username: string, phoneNumber: string, userCurrency: string = DEFAULT_CURRENCY) => {
