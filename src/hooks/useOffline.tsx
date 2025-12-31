@@ -59,7 +59,7 @@ export function OfflineProvider({ children }: { children: React.ReactNode }) {
     queryClient.invalidateQueries({ queryKey: ['notifications'] });
   }, [queryClient]);
 
-  // Sync pending items
+  // Sync pending items (silently - don't show syncing indicator for quick syncs)
   const syncPending = useCallback(async () => {
     // IMPORTANT: trust OfflineProvider status (badge), not navigator.onLine
     if (isSyncingRef.current || status === 'offline') return;
@@ -71,7 +71,14 @@ export function OfflineProvider({ children }: { children: React.ReactNode }) {
     }
 
     isSyncingRef.current = true;
-    setStatus('syncing');
+    
+    // Only show "syncing" status if there are many items to sync
+    // This prevents UI flicker for quick background syncs
+    const showSyncingStatus = pending > 2;
+    if (showSyncingStatus) {
+      setStatus('syncing');
+    }
+    
     console.log('[Offline] Starting sync...');
 
     try {
@@ -89,7 +96,9 @@ export function OfflineProvider({ children }: { children: React.ReactNode }) {
     } finally {
       isSyncingRef.current = false;
       // If we went offline during sync, don't overwrite it back to online
-      setStatus((prev) => (prev === 'offline' ? 'offline' : 'online'));
+      if (showSyncingStatus) {
+        setStatus((prev) => (prev === 'offline' ? 'offline' : 'online'));
+      }
     }
   }, [status, updateCounts, invalidateCaches]);
 

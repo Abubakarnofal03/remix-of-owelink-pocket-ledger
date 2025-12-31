@@ -10,17 +10,20 @@ interface SyncStatusProps {
 }
 
 export function SyncStatus({ status, pendingCount, className, onSyncComplete }: SyncStatusProps) {
-  // Only show if offline OR if there are pending items
-  if (status === 'online' && pendingCount === 0) {
+  const isVisible = status !== 'online' || pendingCount > 0;
+  const isOnline = status === 'online' || status === 'syncing';
+
+  // Always render but control visibility with opacity to prevent layout shifts
+  if (!isVisible) {
     return null;
   }
-
-  const isOnline = status === 'online' || status === 'syncing';
 
   const badgeContent = (
     <div
       className={cn(
-        "flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-medium transition-all duration-300 cursor-pointer hover:opacity-80",
+        "flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-medium cursor-pointer hover:opacity-80",
+        // Use will-change to hint browser about animations
+        "will-change-opacity",
         status === 'offline' && "bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300",
         status === 'syncing' && "bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300",
         status === 'online' && pendingCount > 0 && "bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300",
@@ -29,7 +32,7 @@ export function SyncStatus({ status, pendingCount, className, onSyncComplete }: 
     >
       {status === 'offline' && (
         <>
-          <CloudOff className="h-3 w-3" />
+          <CloudOff className="h-3 w-3 shrink-0" />
           <span>Offline</span>
           {pendingCount > 0 && (
             <span className="bg-amber-200 dark:bg-amber-800 px-1 rounded text-[10px]">
@@ -41,19 +44,14 @@ export function SyncStatus({ status, pendingCount, className, onSyncComplete }: 
       
       {status === 'syncing' && (
         <>
-          <RefreshCw className="h-3 w-3 animate-spin" />
+          <RefreshCw className="h-3 w-3 animate-spin shrink-0" />
           <span>Syncing</span>
-          {pendingCount > 0 && (
-            <span className="bg-blue-200 dark:bg-blue-800 px-1 rounded text-[10px]">
-              {pendingCount}
-            </span>
-          )}
         </>
       )}
       
       {status === 'online' && pendingCount > 0 && (
         <>
-          <Cloud className="h-3 w-3" />
+          <Cloud className="h-3 w-3 shrink-0" />
           <span>Pending</span>
           <span className="bg-blue-200 dark:bg-blue-800 px-1 rounded text-[10px]">
             {pendingCount}
