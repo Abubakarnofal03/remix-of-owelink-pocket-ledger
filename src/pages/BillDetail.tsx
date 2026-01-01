@@ -90,6 +90,10 @@ export default function BillDetail() {
   const [showAddParticipantDialog, setShowAddParticipantDialog] = useState(false);
   const [showAddContactDialog, setShowAddContactDialog] = useState(false);
   const [showPaymentRequestDialog, setShowPaymentRequestDialog] = useState(false);
+  const [showRemoveParticipantDialog, setShowRemoveParticipantDialog] = useState(false);
+  const [participantToRemove, setParticipantToRemove] = useState<BillParticipant | null>(null);
+  const [editingParticipantAmount, setEditingParticipantAmount] = useState<string | null>(null);
+  const [tempParticipantAmount, setTempParticipantAmount] = useState("");
   const [selectedParticipant, setSelectedParticipant] = useState<BillParticipant | null>(null);
   const [paymentAmount, setPaymentAmount] = useState("");
   const [editForm, setEditForm] = useState({
@@ -185,10 +189,30 @@ export default function BillDetail() {
   const pendingRequestsCount = requests.filter(r => r.status === 'pending').length;
 
   const handleEditSubmit = async () => {
+    const newTotal = parseFloat(editForm.total_amount);
+    const oldTotal = bill.total_amount;
+    
+    // If total changed, update participant amounts proportionally
+    let updatedParticipants = bill.participants;
+    if (Math.abs(newTotal - oldTotal) > 0.01 && bill.participants && bill.participants.length > 0) {
+      const ratio = newTotal / oldTotal;
+      updatedParticipants = bill.participants.map(p => ({
+        ...p,
+        amount_owed: Math.round(p.amount_owed * ratio * 100) / 100,
+      }));
+      
+      // Update each participant
+      for (const p of updatedParticipants) {
+        await updateBillParticipantOfflineFirst(p.id, {
+          amount_owed: p.amount_owed,
+        });
+      }
+    }
+    
     const success = await updateBill(bill.id, {
       title: editForm.title,
       description: editForm.description || undefined,
-      total_amount: parseFloat(editForm.total_amount),
+      total_amount: newTotal,
       due_date: editForm.due_date || undefined,
       reminder_enabled: editForm.reminder_enabled,
       reminder_interval_days: editForm.reminder_enabled ? parseInt(editForm.reminder_interval_days) : undefined,
@@ -199,12 +223,15 @@ export default function BillDetail() {
         ...prev,
         title: editForm.title,
         description: editForm.description || null,
-        total_amount: parseFloat(editForm.total_amount),
+        total_amount: newTotal,
         due_date: editForm.due_date || null,
         reminder_enabled: editForm.reminder_enabled,
         reminder_interval_days: editForm.reminder_enabled ? parseInt(editForm.reminder_interval_days) : null,
+        participants: updatedParticipants,
       }));
       setShowEditDialog(false);
+      sync();
+      toast.success("Bill updated");
     }
   };
 
@@ -439,19 +466,85 @@ export default function BillDetail() {
     }
   };
 
-  const handleRemoveParticipant = async (participant: BillParticipant) => {
+  // Update participant amount (creator only)
+  const handleUpdateParticipantAmount = async (participant: BillParticipant, newAmount: number) => {
+    if (!isCreator || isNaN(newAmount) || newAmount < 0) return;
+    
     try {
-      // Delete offline-first
-      await deleteBillParticipantOfflineFirst(participant.id);
-
-      // Update UI immediately
+      const amountDiff = newAmount - participant.amount_owed;
+      const newTotal = bill.total_amount + amountDiff;
+      
+      // Update participant
+      await updateBillParticipantOfflineFirst(participant.id, {
+        amount_owed: newAmount,
+      });
+      
+      // Update bill total
+      await updateBillOfflineFirst(bill.id, { total_amount: newTotal });
+      
+      // Update UI
       updateBillLocally(prev => ({
         ...prev,
-        participants: prev.participants?.filter(p => p.id !== participant.id),
+        total_amount: newTotal,
+        participants: prev.participants?.map(p =>
+          p.id === participant.id ? { ...p, amount_owed: newAmount } : p
+        ),
       }));
+      
+      toast.success("Amount updated");
+      setEditingParticipantAmount(null);
+      sync();
+    } catch (error) {
+      console.error("Error updating amount:", error);
+      toast.error("Failed to update amount");
+    }
+  };
 
-      toast.success("Participant removed");
-      sync(); // Trigger sync in background
+  // Confirm remove participant with redistribution
+  const confirmRemoveParticipant = (participant: BillParticipant) => {
+    setParticipantToRemove(participant);
+    setShowRemoveParticipantDialog(true);
+  };
+
+  const handleRemoveParticipant = async (participant: BillParticipant) => {
+    try {
+      const remainingParticipants = bill.participants?.filter(p => p.id !== participant.id) || [];
+      const amountToRedistribute = participant.amount_owed - participant.amount_paid;
+      
+      // Delete offline-first
+      await deleteBillParticipantOfflineFirst(participant.id);
+      
+      // If there are remaining participants, redistribute the amount
+      if (remainingParticipants.length > 0 && amountToRedistribute > 0) {
+        const amountPerPerson = amountToRedistribute / remainingParticipants.length;
+        
+        for (const p of remainingParticipants) {
+          const newAmount = p.amount_owed + amountPerPerson;
+          await updateBillParticipantOfflineFirst(p.id, { amount_owed: newAmount });
+        }
+        
+        // Update local state with redistributed amounts
+        updateBillLocally(prev => ({
+          ...prev,
+          participants: remainingParticipants.map(p => ({
+            ...p,
+            amount_owed: p.amount_owed + amountPerPerson,
+          })),
+        }));
+        
+        toast.success(`Participant removed. ${bill.currency} ${amountToRedistribute.toFixed(2)} redistributed.`);
+      } else {
+        // No redistribution needed
+        updateBillLocally(prev => ({
+          ...prev,
+          participants: remainingParticipants,
+        }));
+        toast.success("Participant removed");
+      }
+      
+      setShowRemoveParticipantDialog(false);
+      setParticipantToRemove(null);
+      sync();
     } catch (error) {
       console.error("Error removing participant:", error);
       toast.error("Failed to remove participant");
@@ -685,10 +778,52 @@ Never lose track of debts again. Split bills, send reminders & get paid faster.
                 </div>
 
                 <div className="mt-3 space-y-3">
-                  <div className="flex gap-4">
+                  <div className="flex gap-4 items-end">
                     <div>
-                      <p className="text-xs text-muted-foreground">Remaining</p>
-                      <MoneyDisplay amount={participant.amount_owed - participant.amount_paid} currency={bill.currency} size="sm" />
+                      <p className="text-xs text-muted-foreground">Owed</p>
+                      {isCreator && editingParticipantAmount === participant.id ? (
+                        <div className="flex items-center gap-1">
+                          <Input
+                            type="number"
+                            step="0.01"
+                            className="w-20 h-7 text-sm"
+                            value={tempParticipantAmount}
+                            onChange={(e) => setTempParticipantAmount(e.target.value)}
+                            autoFocus
+                          />
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 w-7 p-0"
+                            onClick={() => {
+                              handleUpdateParticipantAmount(participant, parseFloat(tempParticipantAmount) || 0);
+                            }}
+                          >
+                            <Check className="h-3 w-3" />
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 w-7 p-0"
+                            onClick={() => setEditingParticipantAmount(null)}
+                          >
+                            <X className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      ) : (
+                        <button
+                          className={`text-left ${isCreator ? 'hover:text-primary cursor-pointer' : ''}`}
+                          onClick={() => {
+                            if (isCreator) {
+                              setEditingParticipantAmount(participant.id);
+                              setTempParticipantAmount(participant.amount_owed.toString());
+                            }
+                          }}
+                          disabled={!isCreator}
+                        >
+                          <MoneyDisplay amount={participant.amount_owed} currency={bill.currency} size="sm" />
+                        </button>
+                      )}
                     </div>
                     <div>
                       <p className="text-xs text-muted-foreground">Paid</p>
@@ -698,6 +833,10 @@ Never lose track of debts again. Split bills, send reminders & get paid faster.
                         size="sm"
                         className={participant.amount_paid >= participant.amount_owed ? "text-emerald-600" : ""}
                       />
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground">Remaining</p>
+                      <MoneyDisplay amount={participant.amount_owed - participant.amount_paid} currency={bill.currency} size="sm" />
                     </div>
                   </div>
 
@@ -741,7 +880,7 @@ Never lose track of debts again. Split bills, send reminders & get paid faster.
                       <Button
                         size="sm"
                         variant="ghost"
-                        onClick={() => handleRemoveParticipant(participant)}
+                        onClick={() => confirmRemoveParticipant(participant)}
                       >
                         <X className="h-4 w-4" />
                       </Button>
@@ -1080,6 +1219,50 @@ Never lose track of debts again. Split bills, send reminders & get paid faster.
           </AlertDialog>
         );
       })()}
+
+      {/* Remove Participant Confirmation */}
+      <AlertDialog open={showRemoveParticipantDialog} onOpenChange={setShowRemoveParticipantDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove Participant</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-3">
+                {participantToRemove && (
+                  <>
+                    <p>
+                      Are you sure you want to remove{' '}
+                      <span className="font-medium">{getContactName(participantToRemove.phone_number)}</span>?
+                    </p>
+                    {bill.participants && bill.participants.length > 1 && participantToRemove.amount_owed > participantToRemove.amount_paid && (
+                      <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg p-3">
+                        <p className="text-sm text-amber-800 dark:text-amber-300 font-medium">
+                          ⚠️ Amount Redistribution Warning
+                        </p>
+                        <p className="text-sm text-amber-700 dark:text-amber-400 mt-1">
+                          The remaining amount of{' '}
+                          <span className="font-medium">
+                            {bill.currency} {(participantToRemove.amount_owed - participantToRemove.amount_paid).toFixed(2)}
+                          </span>{' '}
+                          will be redistributed equally among the remaining {bill.participants.length - 1} participant(s).
+                        </p>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setParticipantToRemove(null)}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => participantToRemove && handleRemoveParticipant(participantToRemove)}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Remove
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Payment Request Dialog for Debtors */}
       {currentUserParticipant && (

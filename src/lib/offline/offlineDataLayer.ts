@@ -186,7 +186,7 @@ export async function deleteBillOfflineFirst(billId: string): Promise<boolean> {
 
 export async function updateBillParticipantOfflineFirst(
   participantId: string,
-  updates: { status?: string; amount_paid?: number }
+  updates: { status?: string; amount_paid?: number; amount_owed?: number }
 ): Promise<LocalBillParticipant | null> {
   const existing = await offlineDb.billParticipants.get(participantId);
   if (!existing) return null;
@@ -196,6 +196,7 @@ export async function updateBillParticipantOfflineFirst(
     ...existing,
     status: updates.status ?? existing.status,
     amount_paid: updates.amount_paid ?? existing.amount_paid,
+    amount_owed: updates.amount_owed ?? existing.amount_owed,
     updated_at: now,
     is_local: true,
   };
@@ -208,6 +209,7 @@ export async function updateBillParticipantOfflineFirst(
     await addToSyncQueue("bill_participant", "update", participantId, {
       status: updatedParticipant.status,
       amount_paid: updatedParticipant.amount_paid,
+      amount_owed: updatedParticipant.amount_owed,
     });
   }
 

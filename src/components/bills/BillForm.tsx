@@ -49,6 +49,22 @@ interface Participant {
   status?: string;
 }
 
+// Helper to create user's own participant entry
+const createMeParticipant = (
+  profile: { phone_number: string; username?: string } | null,
+  amount: number
+): Participant | null => {
+  if (!profile?.phone_number) return null;
+  return {
+    id: 'me',
+    phone_number: profile.phone_number,
+    nickname: profile.username || 'Me',
+    amount,
+    isMe: true,
+    status: 'paid',
+  };
+};
+
 const SUBMIT_TIMEOUT_MS = 2000;
 
 export function BillForm() {
@@ -199,6 +215,16 @@ export function BillForm() {
     return null;
   };
 
+  // State for user's own amount in custom split
+  const [myAmount, setMyAmount] = useState<number>(0);
+
+  // Update myAmount when split changes
+  useEffect(() => {
+    if (equalSplit) {
+      setMyAmount(splitAmount);
+    }
+  }, [equalSplit, splitAmount]);
+
   // Validate form
   const validate = (): boolean => {
     const newErrors: Record<string, string> = {};
@@ -217,8 +243,8 @@ export function BillForm() {
 
     if (!equalSplit) {
       const participantTotal = participants.reduce((sum, p) => sum + p.amount, 0);
-      const myAmount = includeMe ? splitAmount : 0;
-      const expectedTotal = participantTotal + myAmount;
+      const myAmountForCalc = includeMe ? myAmount : 0;
+      const expectedTotal = participantTotal + myAmountForCalc;
       if (Math.abs(expectedTotal - total) > 0.01) {
         newErrors.split = `Amounts must equal ${currencySymbol}${total.toFixed(2)} (currently ${currencySymbol}${expectedTotal.toFixed(2)})`;
       }
@@ -251,11 +277,12 @@ export function BillForm() {
 
       // Add current user if included
       if (includeMe && profile?.phone_number) {
+        const userAmount = equalSplit ? splitAmount : myAmount;
         allParticipants.push({
           phone_number: profile.phone_number,
-          amount_owed: splitAmount,
+          amount_owed: userAmount,
           status: "paid", // Marked as paid by default
-          amount_paid: splitAmount,
+          amount_paid: userAmount,
         });
       }
 
@@ -587,8 +614,43 @@ export function BillForm() {
         )}
 
         {/* Selected Participants */}
-        {participants.length > 0 && (
+        {(participants.length > 0 || includeMe) && (
           <div className="space-y-2">
+            {/* Show user's own card when includeMe is true */}
+            {includeMe && profile && (
+              <div className="flex items-center gap-3 p-3 bg-primary/10 rounded-lg border border-primary/30">
+                <AvatarCustom
+                  name={profile.username || 'Me'}
+                  size="sm"
+                />
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium text-sm truncate flex items-center gap-1">
+                    {profile.username || 'Me'}
+                    <span className="text-xs bg-primary/20 text-primary px-1.5 py-0.5 rounded">You</span>
+                  </p>
+                  <p className="text-xs text-muted-foreground truncate flex items-center gap-1">
+                    <Phone className="h-3 w-3" />
+                    {profile.phone_number}
+                  </p>
+                </div>
+                {equalSplit ? (
+                  <span className="text-sm font-medium text-primary">
+                    {currencySymbol}{splitAmount.toFixed(2)}
+                  </span>
+                ) : (
+                  <Input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={myAmount}
+                    onChange={(e) => setMyAmount(parseFloat(e.target.value) || 0)}
+                    className="w-24 text-right"
+                  />
+                )}
+                <span className="text-xs text-emerald-600 font-medium px-2">Paid</span>
+              </div>
+            )}
+
             {participants.map((p) => (
               <div
                 key={p.phone_number}

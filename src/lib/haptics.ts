@@ -4,47 +4,56 @@ import { Haptics, ImpactStyle, NotificationType } from "@capacitor/haptics";
 // Check if haptics is available
 const isHapticsAvailable = () => Capacitor.isNativePlatform();
 
-/**
- * Light impact - for subtle feedback (toggles, selections)
- */
+// Get intensity from localStorage
+const getIntensity = (): "off" | "low" | "medium" | "high" => {
+  if (typeof window === "undefined") return "medium";
+  return (localStorage.getItem("app-haptic-intensity") as any) || "medium";
+};
+
+// Map intensity to impact style
+const getImpactStyle = (base: ImpactStyle): ImpactStyle | null => {
+  const intensity = getIntensity();
+  if (intensity === "off") return null;
+  if (intensity === "low") return ImpactStyle.Light;
+  if (intensity === "high") return ImpactStyle.Heavy;
+  return base; // medium uses the base style
+};
+
 export const hapticLight = async () => {
   if (!isHapticsAvailable()) return;
+  const style = getImpactStyle(ImpactStyle.Light);
+  if (!style) return;
   try {
-    await Haptics.impact({ style: ImpactStyle.Light });
+    await Haptics.impact({ style });
   } catch (e) {
     console.log("Haptic feedback not available");
   }
 };
 
-/**
- * Medium impact - for button presses, confirmations
- */
 export const hapticMedium = async () => {
   if (!isHapticsAvailable()) return;
+  const style = getImpactStyle(ImpactStyle.Medium);
+  if (!style) return;
   try {
-    await Haptics.impact({ style: ImpactStyle.Medium });
+    await Haptics.impact({ style });
   } catch (e) {
     console.log("Haptic feedback not available");
   }
 };
 
-/**
- * Heavy impact - for important actions, deletions
- */
 export const hapticHeavy = async () => {
   if (!isHapticsAvailable()) return;
+  const style = getImpactStyle(ImpactStyle.Heavy);
+  if (!style) return;
   try {
-    await Haptics.impact({ style: ImpactStyle.Heavy });
+    await Haptics.impact({ style });
   } catch (e) {
     console.log("Haptic feedback not available");
   }
 };
 
-/**
- * Success notification - for completed actions
- */
 export const hapticSuccess = async () => {
-  if (!isHapticsAvailable()) return;
+  if (!isHapticsAvailable() || getIntensity() === "off") return;
   try {
     await Haptics.notification({ type: NotificationType.Success });
   } catch (e) {
@@ -52,11 +61,8 @@ export const hapticSuccess = async () => {
   }
 };
 
-/**
- * Warning notification - for warnings
- */
 export const hapticWarning = async () => {
-  if (!isHapticsAvailable()) return;
+  if (!isHapticsAvailable() || getIntensity() === "off") return;
   try {
     await Haptics.notification({ type: NotificationType.Warning });
   } catch (e) {
@@ -64,11 +70,8 @@ export const hapticWarning = async () => {
   }
 };
 
-/**
- * Error notification - for errors
- */
 export const hapticError = async () => {
-  if (!isHapticsAvailable()) return;
+  if (!isHapticsAvailable() || getIntensity() === "off") return;
   try {
     await Haptics.notification({ type: NotificationType.Error });
   } catch (e) {
@@ -76,11 +79,8 @@ export const hapticError = async () => {
   }
 };
 
-/**
- * Selection changed - for picker/scroll selections
- */
 export const hapticSelection = async () => {
-  if (!isHapticsAvailable()) return;
+  if (!isHapticsAvailable() || getIntensity() === "off") return;
   try {
     await Haptics.selectionStart();
     await Haptics.selectionChanged();

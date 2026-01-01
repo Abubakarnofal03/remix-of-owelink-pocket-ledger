@@ -20,7 +20,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
-import { ArrowLeft, User, Phone, Bell, Moon, Shield, LogOut, Coins, Database, ChevronDown } from "lucide-react";
+import { ArrowLeft, User, Phone, Bell, Moon, Shield, LogOut, Coins, Database, ChevronDown, Vibrate } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { CURRENCIES, getCurrencySymbol } from "@/lib/currencies";
@@ -29,7 +29,7 @@ import { OfflineDiagnostics } from "@/components/settings/OfflineDiagnostics";
 
 export default function Settings() {
   const { user, profile, loading: authLoading, signOut, currency, updateSettings } = useAuth();
-  const { theme, setTheme, resolvedTheme } = useTheme();
+  const { theme, setTheme, resolvedTheme, hapticIntensity, setHapticIntensity } = useTheme();
   const navigate = useNavigate();
   const [username, setUsername] = useState(profile?.username || "");
   const [selectedCurrency, setSelectedCurrency] = useState(currency);
@@ -81,9 +81,13 @@ export default function Settings() {
     }
   };
 
-  const handleDarkModeToggle = (checked: boolean) => {
-    setTheme(checked ? "dark" : "light");
-    hapticSuccess();
+  const handleDarkModeChange = (value: string) => {
+    setTheme(value as "light" | "dark" | "amoled" | "system");
+    if (hapticIntensity !== "off") hapticSuccess();
+  };
+
+  const handleHapticChange = (value: string) => {
+    setHapticIntensity(value as "off" | "low" | "medium" | "high");
   };
 
   return (
@@ -182,18 +186,46 @@ export default function Settings() {
             <Switch defaultChecked />
           </div>
 
-          <div className="flex items-center justify-between">
+          <div className="space-y-3">
             <div className="flex items-center gap-2">
               <Moon className="h-4 w-4 text-muted-foreground" />
-              <div>
-                <p className="text-sm font-medium">Dark Mode</p>
-                <p className="text-xs text-muted-foreground">Toggle dark/light theme</p>
+              <div className="flex-1">
+                <p className="text-sm font-medium">Theme</p>
+                <p className="text-xs text-muted-foreground">Choose your preferred theme</p>
               </div>
             </div>
-            <Switch 
-              checked={resolvedTheme === "dark"}
-              onCheckedChange={handleDarkModeToggle}
-            />
+            <Select value={theme} onValueChange={handleDarkModeChange}>
+              <SelectTrigger className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="light">Light</SelectItem>
+                <SelectItem value="dark">Dark</SelectItem>
+                <SelectItem value="amoled">Super AMOLED Dark</SelectItem>
+                <SelectItem value="system">System Default</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              <Vibrate className="h-4 w-4 text-muted-foreground" />
+              <div className="flex-1">
+                <p className="text-sm font-medium">Haptic Feedback</p>
+                <p className="text-xs text-muted-foreground">Control vibration intensity</p>
+              </div>
+            </div>
+            <Select value={hapticIntensity} onValueChange={handleHapticChange}>
+              <SelectTrigger className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="off">Off</SelectItem>
+                <SelectItem value="low">Low</SelectItem>
+                <SelectItem value="medium">Medium</SelectItem>
+                <SelectItem value="high">High</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
         </div>
 

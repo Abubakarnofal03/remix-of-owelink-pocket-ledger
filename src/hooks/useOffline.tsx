@@ -197,12 +197,15 @@ export function OfflineProvider({ children }: { children: React.ReactNode }) {
     // Initial state
     updateCounts();
 
-    // Periodic sync every 30 seconds when online
+    // Periodic sync every 60 seconds when online (reduced from 30s to reduce DB costs)
     const intervalId = setInterval(() => {
       if (status !== 'offline' && !isSyncingRef.current) {
-        syncPending();
+        // Only sync if there are pending items
+        offlineDb.getPendingSyncCount().then(count => {
+          if (count > 0) syncPending();
+        });
       }
-    }, 30000);
+    }, 60000);
 
     return () => {
       window.removeEventListener('online', handleOnline);
