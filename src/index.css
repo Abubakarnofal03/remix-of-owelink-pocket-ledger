@@ -141,6 +141,19 @@
     --sidebar-border: 220 20% 16%;
     --sidebar-ring: 160 70% 45%;
   }
+
+  /* Super AMOLED Dark Mode - True black backgrounds */
+  .amoled {
+    --background: 0 0% 0%;
+    --card: 0 0% 3%;
+    --popover: 0 0% 3%;
+    --secondary: 0 0% 8%;
+    --muted: 0 0% 8%;
+    --border: 0 0% 12%;
+    --input: 0 0% 12%;
+    --sidebar-background: 0 0% 0%;
+    --sidebar-border: 0 0% 12%;
+  }
 }
 
 @layer base {

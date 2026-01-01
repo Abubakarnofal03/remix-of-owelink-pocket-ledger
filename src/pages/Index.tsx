@@ -175,10 +175,15 @@ export default function Index() {
               </div>
             ) : (
               <div className="space-y-2">
-                {recentActivity.map((activity) => (
+                {recentActivity.map((activity) => {
+                  // Extract the actual ID from the activity id (remove prefixes)
+                  const actualId = activity.id.replace("owe-bill-", "").replace("bill-", "").replace("owe-iou-", "").replace("iou-", "");
+                  const linkPath = activity.type === "bill" ? `/bills/${actualId}` : `/ious/${actualId}`;
+                  
+                  return (
                   <Link
                     key={activity.id}
-                    to={activity.type === "bill" ? `/bills/${activity.id.replace("owe-bill-", "").replace("bill-", "")}` : `/ious`}
+                    to={linkPath}
                     className="block"
                   >
                     <div className="card-elevated p-3 hover:ring-2 hover:ring-primary/20 transition-all">
@@ -221,7 +226,8 @@ export default function Index() {
                       </div>
                     </div>
                   </Link>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
