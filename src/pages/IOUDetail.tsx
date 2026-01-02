@@ -83,6 +83,20 @@ export default function IOUDetail() {
     due_date: "",
   });
 
+  // Check if current user is the debtor - must be before any early returns
+  const userPhoneSuffix = profile?.phone_suffix || (profile?.phone_number ? getPhoneSuffix(profile.phone_number) : null);
+  const isDebtor = useMemo(() => {
+    if (!userPhoneSuffix || !iou || !user) return false;
+    if (iou.debtor_user_id === user.id) return true;
+    const iouDebtorSuffix = iou.debtor_phone_suffix || getPhoneSuffix(iou.debtor_phone_number);
+    return iouDebtorSuffix === userPhoneSuffix;
+  }, [iou, user?.id, userPhoneSuffix]);
+
+  // Pending payment requests count - must be before any early returns
+  const pendingRequestsCount = useMemo(() => {
+    return requests.filter(r => r.status === 'pending').length;
+  }, [requests]);
+
   if (authLoading || loading) {
     return (
       <AppLayout hideNav>
@@ -112,18 +126,6 @@ export default function IOUDetail() {
   const isCreditor = iou.creditor_id === user.id;
   const remaining = iou.amount - iou.amount_paid;
   const progress = iou.amount > 0 ? (iou.amount_paid / iou.amount) * 100 : 0;
-
-  // Check if current user is the debtor
-  const userPhoneSuffix = profile?.phone_suffix || (profile?.phone_number ? getPhoneSuffix(profile.phone_number) : null);
-  const isDebtor = useMemo(() => {
-    if (!userPhoneSuffix) return false;
-    if (iou.debtor_user_id === user.id) return true;
-    const iouDebtorSuffix = iou.debtor_phone_suffix || getPhoneSuffix(iou.debtor_phone_number);
-    return iouDebtorSuffix === userPhoneSuffix;
-  }, [iou, user.id, userPhoneSuffix]);
-
-  // Pending payment requests count
-  const pendingRequestsCount = requests.filter(r => r.status === 'pending').length;
 
   const getContactName = (phone: string) => {
     const contact = contacts.find(c => c.phone_number === phone);
