@@ -37,6 +37,12 @@ export function OfflineProvider({ children }: { children: React.ReactNode }) {
   const [dbDiagnostics, setDbDiagnostics] = useState<DbDiagnostics>(getDbDiagnostics());
   const isSyncingRef = useRef(false);
   const syncTimeoutRef = useRef<number | null>(null);
+  const statusRef = useRef<NetworkStatus>(status);
+  const initialFullSyncDoneRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    statusRef.current = status;
+  }, [status]);
 
   // Update counts
   const updateCounts = useCallback(async () => {
@@ -62,7 +68,7 @@ export function OfflineProvider({ children }: { children: React.ReactNode }) {
   // Sync pending items (silently - don't show syncing indicator for quick syncs)
   const syncPending = useCallback(async () => {
     // IMPORTANT: trust OfflineProvider status (badge), not navigator.onLine
-    if (isSyncingRef.current || status === 'offline') return;
+    if (isSyncingRef.current || statusRef.current === 'offline') return;
 
     const pending = await offlineDb.getPendingSyncCount();
     if (pending === 0) {
@@ -71,14 +77,14 @@ export function OfflineProvider({ children }: { children: React.ReactNode }) {
     }
 
     isSyncingRef.current = true;
-    
+
     // Only show "syncing" status if there are many items to sync
     // This prevents UI flicker for quick background syncs
     const showSyncingStatus = pending > 2;
     if (showSyncingStatus) {
       setStatus('syncing');
     }
-    
+
     console.log('[Offline] Starting sync...');
 
     try {
@@ -100,12 +106,12 @@ export function OfflineProvider({ children }: { children: React.ReactNode }) {
         setStatus((prev) => (prev === 'offline' ? 'offline' : 'online'));
       }
     }
-  }, [status, updateCounts, invalidateCaches]);
+  }, [updateCounts, invalidateCaches]);
 
   // Full sync from server
   const fullSync = useCallback(async () => {
     // IMPORTANT: trust OfflineProvider status (badge), not navigator.onLine
-    if (!user || status === 'offline') return;
+    if (!user || statusRef.current === 'offline') return;
 
     isSyncingRef.current = true;
     setStatus('syncing');
@@ -130,7 +136,7 @@ export function OfflineProvider({ children }: { children: React.ReactNode }) {
       isSyncingRef.current = false;
       setStatus((prev) => (prev === 'offline' ? 'offline' : 'online'));
     }
-  }, [user, profile, status, updateCounts, invalidateCaches]);
+  }, [user, profile, updateCounts, invalidateCaches]);
 
   // Clear all local data
   const clearData = useCallback(async () => {
@@ -180,7 +186,7 @@ export function OfflineProvider({ children }: { children: React.ReactNode }) {
 
     // Capacitor Network plugin for native
     let networkListener: (() => void) | undefined;
-    
+
     if (Capacitor.isNativePlatform()) {
       Network.addListener('networkStatusChange', (status) => {
         console.log('[Offline] Network status changed:', status.connected);
@@ -199,7 +205,7 @@ export function OfflineProvider({ children }: { children: React.ReactNode }) {
 
     // Periodic sync every 60 seconds when online (reduced from 30s to reduce DB costs)
     const intervalId = setInterval(() => {
-      if (status !== 'offline' && !isSyncingRef.current) {
+      if (statusRef.current !== 'offline' && !isSyncingRef.current) {
         // Only sync if there are pending items
         offlineDb.getPendingSyncCount().then(count => {
           if (count > 0) syncPending();
@@ -214,7 +220,7 @@ export function OfflineProvider({ children }: { children: React.ReactNode }) {
       clearInterval(intervalId);
       if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
     };
-  }, [status, syncPending, updateCounts, scheduleSync]);
+  }, [syncPending, updateCounts, scheduleSync]);
 
   // Sync on app resume (native)
   useEffect(() => {
@@ -236,16 +242,27 @@ export function OfflineProvider({ children }: { children: React.ReactNode }) {
     };
   }, [user, status, scheduleSync]);
 
-  // Initial full sync when user logs in
+  // Initial full sync when user logs in (run once per login session, not on every status change)
   useEffect(() => {
-    if (user && status !== 'offline') {
-      // Delay slightly to let the app render first
-      const timer = setTimeout(() => {
-        fullSync();
-      }, 1000);
-      return () => clearTimeout(timer);
+    if (!user) {
+      initialFullSyncDoneRef.current = null;
+      return;
     }
-  }, [user?.id, status]); // Only trigger on user ID change / network status
+
+    // If we were offline at login, wait until we're back online
+    if (statusRef.current === 'offline') return;
+
+    // Only do this once per user session
+    if (initialFullSyncDoneRef.current === user.id) return;
+    initialFullSyncDoneRef.current = user.id;
+
+    // Delay slightly to let the app render first
+    const timer = window.setTimeout(() => {
+      fullSync();
+    }, 1000);
+
+    return () => clearTimeout(timer);
+  }, [user?.id, status === 'offline', fullSync]);
 
   const value: OfflineContextType = {
     status,
