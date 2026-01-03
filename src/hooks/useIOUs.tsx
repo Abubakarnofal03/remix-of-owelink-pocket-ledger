@@ -34,6 +34,9 @@ export interface IOU {
   reminder_enabled?: boolean;
   reminder_interval_days?: number | null;
   last_reminder_sent_at?: string | null;
+  // Creditor info (for debtor view)
+  creditor_username?: string | null;
+  creditor_phone_number?: string | null;
 }
 
 export interface IOUInsert {
@@ -67,6 +70,8 @@ function localIOUToIOU(local: LocalIOU): IOU {
     reminder_enabled: local.reminder_enabled,
     reminder_interval_days: local.reminder_interval_days,
     last_reminder_sent_at: local.last_reminder_sent_at,
+    creditor_username: local.creditor_username,
+    creditor_phone_number: local.creditor_phone_number,
   };
 }
 

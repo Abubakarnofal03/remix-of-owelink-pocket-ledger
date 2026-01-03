@@ -141,7 +141,11 @@ export default function IOUDetail() {
     return contact?.nickname || phoneSuffix;
   };
 
+  // For creditors, show debtor name. For debtors, show creditor name.
   const debtorName = getContactName(iou.debtor_phone_number);
+  const creditorName = iou.creditor_username || getContactName(iou.creditor_phone_number || '') || 'Unknown';
+  const displayName = isCreditor ? debtorName : creditorName;
+  const displayPhone = isCreditor ? iou.debtor_phone_number : (iou.creditor_phone_number || '');
 
   // Handle payment request submission from debtor
   const handlePaymentRequestSubmit = async (data: {
@@ -361,13 +365,13 @@ Never lose track of debts again. Split bills, send reminders & get paid faster.
           )}
         </div>
 
-        {/* Debtor Info */}
+        {/* Person Info */}
         <div className="card-elevated p-4">
           <div className="flex items-center gap-4">
-            <AvatarCustom name={debtorName} size="lg" />
+            <AvatarCustom name={displayName} size="lg" />
             <div className="flex-1">
               <div className="flex items-center gap-2">
-                <h2 className="font-semibold text-lg text-foreground">{debtorName}</h2>
+                <h2 className="font-semibold text-lg text-foreground">{displayName}</h2>
                 {isCreditor ? (
                   <span className="flex items-center gap-1 text-xs text-emerald-600 bg-emerald-50 dark:bg-emerald-950/50 px-2 py-0.5 rounded-full">
                     <ArrowDownLeft className="h-3 w-3" />
@@ -380,10 +384,12 @@ Never lose track of debts again. Split bills, send reminders & get paid faster.
                   </span>
                 )}
               </div>
-              <p className="text-sm text-muted-foreground flex items-center gap-1">
-                <Phone className="h-3 w-3" />
-                {iou.debtor_phone_number}
-              </p>
+              {displayPhone && (
+                <p className="text-sm text-muted-foreground flex items-center gap-1">
+                  <Phone className="h-3 w-3" />
+                  {displayPhone}
+                </p>
+              )}
             </div>
             <div className="flex items-center gap-2">
               {iou.deleted_at && (

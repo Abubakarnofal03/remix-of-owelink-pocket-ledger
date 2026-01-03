@@ -70,38 +70,60 @@ export async function syncBillsFromServer(userId: string): Promise<void> {
   }
 }
 
-// Fetch and store IOUs from server
+// Fetch and store IOUs from server (with creditor profile info for debtors)
 export async function syncIOUsFromServer(userId: string, phoneSuffix: string | null): Promise<void> {
   try {
-    const { data, error } = await supabase
+    // Fetch IOUs
+    const { data: iousData, error: iousError } = await supabase
       .from('ious')
       .select('*')
       .is('deleted_at', null)
       .order('created_at', { ascending: false });
 
-    if (error) throw error;
+    if (iousError) throw iousError;
 
-    if (data) {
+    if (iousData) {
       const now = Date.now();
       
-      const ious: LocalIOU[] = data.map(iou => ({
-        id: iou.id,
-        creditor_id: iou.creditor_id,
-        debtor_phone_number: iou.debtor_phone_number,
-        debtor_phone_suffix: iou.debtor_phone_suffix,
-        debtor_user_id: iou.debtor_user_id,
-        amount: iou.amount,
-        amount_paid: iou.amount_paid,
-        currency: iou.currency,
-        description: iou.description,
-        due_date: iou.due_date,
-        status: iou.status,
-        created_at: iou.created_at,
-        updated_at: iou.updated_at,
-        deleted_at: iou.deleted_at,
-        synced_at: now,
-        is_local: false,
-      }));
+      // Collect unique creditor IDs
+      const creditorIds = [...new Set(iousData.map(iou => iou.creditor_id))];
+      
+      // Fetch creditor profiles in batch
+      const { data: profilesData } = await supabase
+        .from('profiles')
+        .select('user_id, username, phone_number')
+        .in('user_id', creditorIds);
+      
+      // Create a map for quick lookup
+      const profileMap = new Map<string, { username: string; phone_number: string }>();
+      profilesData?.forEach(p => {
+        profileMap.set(p.user_id, { username: p.username, phone_number: p.phone_number });
+      });
+      
+      const ious: LocalIOU[] = iousData.map(iou => {
+        const creditorProfile = profileMap.get(iou.creditor_id);
+        return {
+          id: iou.id,
+          creditor_id: iou.creditor_id,
+          debtor_phone_number: iou.debtor_phone_number,
+          debtor_phone_suffix: iou.debtor_phone_suffix,
+          debtor_user_id: iou.debtor_user_id,
+          amount: iou.amount,
+          amount_paid: iou.amount_paid,
+          currency: iou.currency,
+          description: iou.description,
+          due_date: iou.due_date,
+          status: iou.status,
+          created_at: iou.created_at,
+          updated_at: iou.updated_at,
+          deleted_at: iou.deleted_at,
+          synced_at: now,
+          is_local: false,
+          // Creditor info from profile lookup
+          creditor_username: creditorProfile?.username || null,
+          creditor_phone_number: creditorProfile?.phone_number || null,
+        };
+      });
 
       // Preserve local IOUs
       const localIOUs = await offlineDb.ious.filter(i => i.is_local === true).toArray();

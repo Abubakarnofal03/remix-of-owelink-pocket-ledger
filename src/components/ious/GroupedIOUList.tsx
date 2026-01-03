@@ -18,7 +18,7 @@ interface GroupedIOUListProps {
   isCreditor?: boolean; // true = "owed to me", false = "I owe"
 }
 
-interface DebtorGroup {
+interface PersonGroup {
   phone: string;
   name: string;
   ious: IOU[];
@@ -41,18 +41,26 @@ export function GroupedIOUList({ ious, loading, isCreditor = true }: GroupedIOUL
     return contact?.nickname || phone;
   };
 
-  // Group IOUs by debtor phone
-  const groups = useMemo((): DebtorGroup[] => {
-    const groupMap = new Map<string, DebtorGroup>();
+  // Group IOUs by the other party (debtor for creditors, creditor for debtors)
+  const groups = useMemo((): PersonGroup[] => {
+    const groupMap = new Map<string, PersonGroup>();
 
     ious.forEach(iou => {
-      const phone = iou.debtor_phone_number;
+      // For creditor view, group by debtor. For debtor view, group by creditor.
+      const phone = isCreditor 
+        ? iou.debtor_phone_number 
+        : (iou.creditor_phone_number || '');
       const suffix = phone.replace(/[^0-9]/g, '').slice(-10);
+      
+      // Get the appropriate name
+      const name = isCreditor 
+        ? getContactName(iou.debtor_phone_number)
+        : (iou.creditor_username || getContactName(phone) || 'Unknown');
       
       if (!groupMap.has(suffix)) {
         groupMap.set(suffix, {
           phone,
-          name: getContactName(phone),
+          name,
           ious: [],
           totalOwed: 0,
           totalPaid: 0,
@@ -76,7 +84,7 @@ export function GroupedIOUList({ ious, loading, isCreditor = true }: GroupedIOUL
     return Array.from(groupMap.values()).sort((a, b) => 
       (b.totalOwed - b.totalPaid) - (a.totalOwed - a.totalPaid)
     );
-  }, [ious, contacts]);
+  }, [ious, contacts, isCreditor]);
 
   // Toggle group expansion
   const toggleGroup = (phone: string) => {
@@ -91,8 +99,8 @@ export function GroupedIOUList({ ious, loading, isCreditor = true }: GroupedIOUL
     });
   };
 
-  // Generate WhatsApp message for a debtor's pending IOUs
-  const generateWhatsAppMessage = (group: DebtorGroup): string => {
+  // Generate WhatsApp message for a debtor's pending IOUs (only for creditors)
+  const generateWhatsAppMessage = (group: PersonGroup): string => {
     const totalRemaining = group.pendingIOUs.reduce(
       (sum, iou) => sum + (iou.amount - iou.amount_paid), 0
     );
@@ -122,7 +130,7 @@ export function GroupedIOUList({ ious, loading, isCreditor = true }: GroupedIOUL
   };
 
   // Open WhatsApp with pre-filled message
-  const openWhatsApp = (group: DebtorGroup) => {
+  const openWhatsApp = (group: PersonGroup) => {
     const message = generateWhatsAppMessage(group);
     const phone = formatPhoneForWhatsApp(group.phone);
     const url = `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;

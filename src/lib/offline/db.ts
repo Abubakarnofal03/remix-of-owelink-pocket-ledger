@@ -142,6 +142,9 @@ export interface LocalIOU {
   last_reminder_sent_at?: string | null;
   synced_at?: number;
   is_local?: boolean;
+  // Creditor info (for debtor view)
+  creditor_username?: string | null;
+  creditor_phone_number?: string | null;
 }
 
 export interface LocalPayment {
