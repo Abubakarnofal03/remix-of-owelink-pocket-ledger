@@ -175,6 +175,7 @@ export function useBills() {
     onSuccess: (newBill) => {
       queryClient.setQueryData<Bill[]>(billsQueryKey, (old = []) => [newBill, ...old]);
 
+      // Show appropriate toast message
       if (newBill.is_local) {
         toast.success(
           offline.isOnline
@@ -183,19 +184,19 @@ export function useBills() {
         );
       } else {
         toast.success("Bill created successfully");
+      }
 
-        // Send push notifications to participants
-        const phoneSuffixes = newBill.participants
-          ?.map((p) => getPhoneSuffix(p.phone_number))
-          .filter(Boolean) || [];
-        if (phoneSuffixes.length > 0) {
-          sendPushNotification({
-            phoneSuffixes: phoneSuffixes as string[],
-            title: "New Bill Added",
-            body: `You've been added to "${newBill.title}" - ${newBill.currency} ${newBill.total_amount}`,
-            data: { type: "bill", id: newBill.id },
-          });
-        }
+      // Send push notifications to participants (regardless of online/offline status)
+      const phoneSuffixes = newBill.participants
+        ?.map((p) => getPhoneSuffix(p.phone_number))
+        .filter(Boolean) || [];
+      if (phoneSuffixes.length > 0 && navigator.onLine) {
+        sendPushNotification({
+          phoneSuffixes: phoneSuffixes as string[],
+          title: "New Bill Added",
+          body: `You've been added to "${newBill.title}" - ${newBill.currency} ${newBill.total_amount}`,
+          data: { type: "bill", id: newBill.id },
+        });
       }
     },
     onError: (error: Error) => {

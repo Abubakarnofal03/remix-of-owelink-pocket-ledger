@@ -106,7 +106,7 @@ export function useIOUs() {
   // Background sync effect - runs when online, doesn't block UI
   useEffect(() => {
     if (!user || !offline.isOnline || hasSyncedRef.current) return;
-    
+
     const syncInBackground = async () => {
       try {
         console.log('[IOUs] Background sync starting...');
@@ -158,6 +158,7 @@ export function useIOUs() {
     onSuccess: (newIOU) => {
       queryClient.setQueryData<IOU[]>(iousQueryKey, (old = []) => [newIOU, ...old]);
 
+      // Show appropriate toast message
       if (newIOU.is_local) {
         toast.success(
           offline.isOnline
@@ -166,17 +167,17 @@ export function useIOUs() {
         );
       } else {
         toast.success("IOU created successfully");
+      }
 
-        // Send push notification to debtor
-        const phoneSuffix = getPhoneSuffix(newIOU.debtor_phone_number);
-        if (phoneSuffix) {
-          sendPushNotification({
-            phoneSuffixes: [phoneSuffix],
-            title: "New IOU",
-            body: `You owe ${newIOU.currency} ${newIOU.amount}${newIOU.description ? ` for "${newIOU.description}"` : ""}`,
-            data: { type: "iou", id: newIOU.id },
-          });
-        }
+      // Send push notification to debtor (regardless of online/offline status)
+      const phoneSuffix = getPhoneSuffix(newIOU.debtor_phone_number);
+      if (phoneSuffix && navigator.onLine) {
+        sendPushNotification({
+          phoneSuffixes: [phoneSuffix],
+          title: "New IOU",
+          body: `You owe ${newIOU.currency} ${newIOU.amount}${newIOU.description ? ` for "${newIOU.description}"` : ""}`,
+          data: { type: "iou", id: newIOU.id },
+        });
       }
     },
     onError: (error: Error) => {
