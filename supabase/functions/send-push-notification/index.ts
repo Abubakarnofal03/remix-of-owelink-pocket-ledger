@@ -82,7 +82,18 @@ async function sendFCMNotification(
         priority: "high",
         notification: {
           sound: "default",
-          click_action: "FLUTTER_NOTIFICATION_CLICK",
+          // Remove Flutter-specific click_action - Capacitor handles tap automatically
+          // The data payload is enough for pushNotificationActionPerformed to work
+          channel_id: "default",
+        },
+      },
+      // Add APNs config for iOS
+      apns: {
+        payload: {
+          aps: {
+            sound: "default",
+            "content-available": 1,
+          },
         },
       },
     },
