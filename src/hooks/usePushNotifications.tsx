@@ -1,4 +1,5 @@
-import { useEffect, useCallback } from 'react';
+import { useEffect, useCallback, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Capacitor } from '@capacitor/core';
 import { PushNotifications, Token, PushNotificationSchema, ActionPerformed } from '@capacitor/push-notifications';
 import { supabase } from '@/integrations/supabase/client';
@@ -6,8 +7,24 @@ import { useAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
 import { saveNotification } from '@/lib/localNotifications';
 
+// Global pending navigation for when notification is tapped before router is ready
+let pendingNotificationNavigation: string | null = null;
+
+export function getPendingNotificationNavigation(): string | null {
+  const path = pendingNotificationNavigation;
+  pendingNotificationNavigation = null;
+  return path;
+}
+
 export function usePushNotifications() {
   const { user, profile } = useAuth();
+  const navigate = useNavigate();
+  const navigateRef = useRef(navigate);
+  
+  // Keep navigate ref updated
+  useEffect(() => {
+    navigateRef.current = navigate;
+  }, [navigate]);
 
   const registerToken = useCallback(async (token: string) => {
     if (!user || !profile?.phone_suffix) {
@@ -71,19 +88,38 @@ export function usePushNotifications() {
           // Dispatch event to update UI
           window.dispatchEvent(new Event('notification-update'));
 
-          // Show toast
-          toast(notification.title || 'Notification', {
-            description: notification.body,
-          });
+          // Show toast with action to navigate
+          const data = notification.data;
+          if (data?.type === 'bill' && data?.id) {
+            toast(notification.title || 'Notification', {
+              description: notification.body,
+              action: {
+                label: 'View',
+                onClick: () => navigateRef.current(`/bills/${data.id}`),
+              },
+            });
+          } else if (data?.type === 'iou' && data?.id) {
+            toast(notification.title || 'Notification', {
+              description: notification.body,
+              action: {
+                label: 'View',
+                onClick: () => navigateRef.current(`/ious/${data.id}`),
+              },
+            });
+          } else {
+            toast(notification.title || 'Notification', {
+              description: notification.body,
+            });
+          }
         } catch (err) {
           console.error('Error handling notification:', err);
         }
       });
 
       await PushNotifications.addListener('pushNotificationActionPerformed', (action: ActionPerformed) => {
-        console.log('Push notification action:', action);
+        console.log('Push notification action performed:', action);
         try {
-          // Also save when user taps on notification
+          // Save when user taps on notification
           const notification = action.notification;
           saveNotification({
             title: notification.title || 'Notification',
@@ -94,10 +130,25 @@ export function usePushNotifications() {
           window.dispatchEvent(new Event('notification-update'));
 
           const data = notification.data;
+          let targetPath: string | null = null;
+          
           if (data?.type === 'bill' && data?.id) {
-            window.location.href = `/bills/${data.id}`;
+            targetPath = `/bills/${data.id}`;
           } else if (data?.type === 'iou' && data?.id) {
-            window.location.href = `/ious/${data.id}`;
+            targetPath = `/ious/${data.id}`;
+          }
+          
+          if (targetPath) {
+            console.log('Navigating to:', targetPath);
+            // Use React Router navigation instead of window.location
+            // This works properly within the WebView and maintains app state
+            try {
+              navigateRef.current(targetPath);
+            } catch (navErr) {
+              // If navigation fails (e.g., app not fully initialized), store for later
+              console.log('Navigation failed, storing for later:', navErr);
+              pendingNotificationNavigation = targetPath;
+            }
           }
         } catch (err) {
           console.error('Error handling notification action:', err);
@@ -117,6 +168,18 @@ export function usePushNotifications() {
       console.error('Error initializing push notifications:', err);
     }
   }, [registerToken]);
+
+  // Check for pending navigation on mount/user change
+  useEffect(() => {
+    if (user) {
+      const pendingPath = getPendingNotificationNavigation();
+      if (pendingPath) {
+        console.log('Processing pending notification navigation:', pendingPath);
+        // Small delay to ensure app is ready
+        setTimeout(() => navigate(pendingPath), 100);
+      }
+    }
+  }, [user, navigate]);
 
   useEffect(() => {
     if (user && profile?.phone_suffix) {
