@@ -88,10 +88,6 @@ export async function createBillOfflineFirst(
     is_local: true,
   };
 
-  // Save bill to local DB (fire-and-forget with catch)
-  offlineDb.bills.put(localBill).catch(e => console.warn('[Offline] Bill put failed:', e));
-  console.log('[Offline] Bill saved locally:', localBillId);
-
   // Save participants locally
   const participants: LocalBillParticipant[] = bill.participants.map((p) => ({
     id: generateLocalId(),
@@ -107,24 +103,33 @@ export async function createBillOfflineFirst(
     is_local: true,
   }));
 
-  // Fire-and-forget participant save
-  offlineDb.billParticipants.bulkPut(participants).catch(e => console.warn('[Offline] Participants put failed:', e));
-  console.log('[Offline] Participants saved locally:', participants.length);
+  // CRITICAL: Must await these operations to ensure data is persisted
+  // before returning. Fire-and-forget was causing data loss when network
+  // state changed during creation.
+  try {
+    await offlineDb.bills.put(localBill);
+    console.log('[Offline] Bill saved locally:', localBillId);
 
-  // Queue bill creation (fire-and-forget)
-  void addToSyncQueue("bill", "create", localBillId, {
-    creator_id: localBill.creator_id,
-    title: localBill.title,
-    description: localBill.description,
-    total_amount: localBill.total_amount,
-    currency: localBill.currency,
-    due_date: localBill.due_date,
-    status: localBill.status,
-    reminder_enabled: localBill.reminder_enabled,
-    reminder_interval_days: localBill.reminder_interval_days,
-    _participants: bill.participants,
-    _local_bill_id: localBillId,
-  }).catch((e) => console.warn('[Offline] Failed to queue bill create:', e));
+    await offlineDb.billParticipants.bulkPut(participants);
+    console.log('[Offline] Participants saved locally:', participants.length);
+
+    await addToSyncQueue("bill", "create", localBillId, {
+      creator_id: localBill.creator_id,
+      title: localBill.title,
+      description: localBill.description,
+      total_amount: localBill.total_amount,
+      currency: localBill.currency,
+      due_date: localBill.due_date,
+      status: localBill.status,
+      reminder_enabled: localBill.reminder_enabled,
+      reminder_interval_days: localBill.reminder_interval_days,
+      _participants: bill.participants,
+      _local_bill_id: localBillId,
+    });
+  } catch (e) {
+    console.error('[Offline] Failed to save bill locally:', e);
+    throw new Error('Failed to save bill. Please try again.');
+  }
 
   return { ...localBill, participants };
 }
@@ -175,9 +180,22 @@ export async function deleteBillOfflineFirst(billId: string): Promise<boolean> {
   if (!existing) return false;
 
   const now = new Date().toISOString();
-  await offlineDb.bills.update(billId, { deleted_at: now, is_local: true });
-
-  await addToSyncQueue("bill", "delete", billId, { deleted_at: now });
+  
+  // Check if this is an unsynced local bill (never made it to server)
+  const isUnsyncedLocal = existing.is_local && !existing.synced_at;
+  
+  if (isUnsyncedLocal) {
+    // For unsynced local bills, completely remove them from local DB
+    // and remove any pending create operations from sync queue
+    await offlineDb.bills.delete(billId);
+    await offlineDb.billParticipants.where('bill_id').equals(billId).delete();
+    await offlineDb.syncQueue.where('entity_id').equals(billId).delete();
+    console.log('[Offline] Removed unsynced local bill:', billId);
+  } else {
+    // For synced bills, soft-delete and queue for server sync
+    await offlineDb.bills.update(billId, { deleted_at: now, is_local: true });
+    await addToSyncQueue("bill", "delete", billId, { deleted_at: now });
+  }
 
   return true;
 }
@@ -384,23 +402,27 @@ export async function createIOUOfflineFirst(
     is_local: true,
   };
 
-  // Fire-and-forget IOU save
-  offlineDb.ious.put(localIOU).catch(e => console.warn('[Offline] IOU put failed:', e));
-  console.log('[Offline] IOU saved locally:', localId);
+  // CRITICAL: Must await these operations to ensure data is persisted
+  try {
+    await offlineDb.ious.put(localIOU);
+    console.log('[Offline] IOU saved locally:', localId);
 
-  // Queue IOU creation (fire-and-forget)
-  void addToSyncQueue("iou", "create", localId, {
-    creditor_id: localIOU.creditor_id,
-    debtor_phone_number: localIOU.debtor_phone_number,
-    amount: localIOU.amount,
-    amount_paid: 0,
-    currency: localIOU.currency,
-    description: localIOU.description,
-    due_date: localIOU.due_date,
-    status: "pending",
-    reminder_enabled: localIOU.reminder_enabled,
-    reminder_interval_days: localIOU.reminder_interval_days,
-  }).catch((e) => console.warn('[Offline] Failed to queue IOU create:', e));
+    await addToSyncQueue("iou", "create", localId, {
+      creditor_id: localIOU.creditor_id,
+      debtor_phone_number: localIOU.debtor_phone_number,
+      amount: localIOU.amount,
+      amount_paid: 0,
+      currency: localIOU.currency,
+      description: localIOU.description,
+      due_date: localIOU.due_date,
+      status: "pending",
+      reminder_enabled: localIOU.reminder_enabled,
+      reminder_interval_days: localIOU.reminder_interval_days,
+    });
+  } catch (e) {
+    console.error('[Offline] Failed to save IOU locally:', e);
+    throw new Error('Failed to save IOU. Please try again.');
+  }
 
   return localIOU;
 }
@@ -457,9 +479,21 @@ export async function deleteIOUOfflineFirst(iouId: string): Promise<boolean> {
   if (!existing) return false;
 
   const now = new Date().toISOString();
-  await offlineDb.ious.update(iouId, { deleted_at: now, is_local: true });
-
-  await addToSyncQueue("iou", "delete", iouId, { deleted_at: now });
+  
+  // Check if this is an unsynced local IOU (never made it to server)
+  const isUnsyncedLocal = existing.is_local && !existing.synced_at;
+  
+  if (isUnsyncedLocal) {
+    // For unsynced local IOUs, completely remove them from local DB
+    // and remove any pending create operations from sync queue
+    await offlineDb.ious.delete(iouId);
+    await offlineDb.syncQueue.where('entity_id').equals(iouId).delete();
+    console.log('[Offline] Removed unsynced local IOU:', iouId);
+  } else {
+    // For synced IOUs, soft-delete and queue for server sync
+    await offlineDb.ious.update(iouId, { deleted_at: now, is_local: true });
+    await addToSyncQueue("iou", "delete", iouId, { deleted_at: now });
+  }
 
   return true;
 }
