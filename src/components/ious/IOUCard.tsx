@@ -26,17 +26,20 @@ export function IOUCard({ iou }: IOUCardProps) {
     return contact?.nickname || phone;
   };
 
-  const debtorName = getContactName(iou.debtor_phone_number);
+  // For creditors, show debtor name. For debtors, show creditor name.
+  const displayName = isCreditor 
+    ? getContactName(iou.debtor_phone_number)
+    : (iou.creditor_username || getContactName(iou.creditor_phone_number || '') || 'Unknown');
 
   return (
     <Link to={`/ious/${iou.id}`} className="block">
       <div className="bg-card rounded-lg p-3 hover:bg-accent/30 transition-all border border-border/50 shadow-sm">
         <div className="flex items-start justify-between gap-2 mb-2">
           <div className="flex items-center gap-2 flex-1 min-w-0">
-            <AvatarCustom name={debtorName} size="sm" />
+            <AvatarCustom name={displayName} size="sm" />
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
-                <h4 className="font-medium text-sm text-foreground truncate">{debtorName}</h4>
+                <h4 className="font-medium text-sm text-foreground truncate">{displayName}</h4>
                 {isArchived && (
                   <span className="inline-flex items-center gap-0.5 text-[10px] bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-400 px-1.5 py-0.5 rounded-full shrink-0">
                     <Archive className="h-2.5 w-2.5" />
