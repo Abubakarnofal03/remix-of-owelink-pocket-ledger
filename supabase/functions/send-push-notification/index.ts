@@ -34,7 +34,10 @@ async function getAccessToken(serviceAccount: any): Promise<string> {
 
   // Parse private key and sign
   const privateKey = serviceAccount.private_key;
-  const pemContents = privateKey.replace(/-----BEGIN PRIVATE KEY-----/, "").replace(/-----END PRIVATE KEY-----/, "").replace(/\n/g, "");
+  const pemContents = privateKey
+    .replace(/-----BEGIN PRIVATE KEY-----/, "")
+    .replace(/-----END PRIVATE KEY-----/, "")
+    .replace(/\n/g, "");
   const binaryKey = Uint8Array.from(atob(pemContents), (c) => c.charCodeAt(0));
 
   const cryptoKey = await crypto.subtle.importKey(
@@ -42,11 +45,14 @@ async function getAccessToken(serviceAccount: any): Promise<string> {
     binaryKey,
     { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
     false,
-    ["sign"]
+    ["sign"],
   );
 
   const signature = await crypto.subtle.sign("RSASSA-PKCS1-v1_5", cryptoKey, encoder.encode(unsignedToken));
-  const signatureB64 = btoa(String.fromCharCode(...new Uint8Array(signature))).replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
+  const signatureB64 = btoa(String.fromCharCode(...new Uint8Array(signature)))
+    .replace(/=/g, "")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_");
 
   const jwt = `${unsignedToken}.${signatureB64}`;
 
@@ -71,7 +77,7 @@ async function sendFCMNotification(
   fcmToken: string,
   title: string,
   body: string,
-  data?: Record<string, string>
+  data?: Record<string, string>,
 ): Promise<boolean> {
   const message = {
     message: {
@@ -143,11 +149,12 @@ const handler = async (req: Request): Promise<Response> => {
       try {
         return JSON.parse(jsonStr);
       } catch {
-        const hint = jsonStr.length < 200
-          ? "It looks like a short key/id was saved instead of the full JSON."
-          : "The saved value isn't valid JSON.";
+        const hint =
+          jsonStr.length < 200
+            ? "It looks like a short key/id was saved instead of the full JSON."
+            : "The saved value isn't valid JSON.";
         throw new Error(
-          `FIREBASE_SERVICE_ACCOUNT is invalid. Please paste the full Firebase service account JSON into the backend secret. ${hint}`
+          `FIREBASE_SERVICE_ACCOUNT is invalid. Please paste the full Firebase service account JSON into the backend secret. ${hint}`,
         );
       }
     };
