@@ -198,10 +198,10 @@ export default function IOUDetail() {
   // Generate WhatsApp message for the debtor
   const generateWhatsAppMessage = () => {
     const remaining = iou.amount - iou.amount_paid;
-    const dueDateInfo = iou.due_date 
+    const dueDateInfo = iou.due_date
       ? `\n📅 Due Date: ${format(new Date(iou.due_date), "MMMM d, yyyy")}`
       : '';
-    
+
     return `Hi ${debtorName},
 
 This is a reminder for your pending payment.
@@ -669,7 +669,7 @@ Never lose track of debts again. Split bills, send reminders & get paid faster.
                 />
               </div>
               <p className="text-sm text-muted-foreground">
-                Recording payment of ${paymentAmount || "0.00"} from {debtorName}
+                Recording payment of {iou.currency} {paymentAmount || "0.00"} from {debtorName}
               </p>
             </div>
             <DialogFooter>

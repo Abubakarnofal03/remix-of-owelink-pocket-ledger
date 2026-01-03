@@ -79,7 +79,7 @@ export function IOUForm() {
   // Filter device contacts based on search
   const filteredDeviceContacts = useMemo(() => {
     const appContactPhones = new Set(contacts.map(c => c.phone_number));
-    
+
     let filtered = deviceContacts.filter(
       (c) => !appContactPhones.has(c.phone_number)
     );
@@ -378,7 +378,7 @@ export function IOUForm() {
             setAmount(e.target.value);
             if (errors.amount) setErrors((prev) => ({ ...prev, amount: "" }));
           }}
-          icon={<DollarSign className="h-4 w-4" />}
+          icon={<span className="text-sm font-medium text-muted-foreground">{currencySymbol}</span>}
           error={!!errors.amount}
         />
         {errors.amount && (

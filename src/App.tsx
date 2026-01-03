@@ -4,7 +4,7 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider, useQueryClient } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
-import { AuthProvider } from "@/hooks/useAuth";
+import { AuthProvider, useAuth } from "@/hooks/useAuth";
 import { ThemeProvider } from "@/hooks/useTheme";
 import { CurrencyProvider } from "@/hooks/useCurrency";
 import { OfflineProvider } from "@/hooks/useOffline";
@@ -13,6 +13,10 @@ import { offlineDb } from "@/lib/offline/db";
 import { useCapacitor } from "@/hooks/useCapacitor";
 import { usePushNotifications } from "@/hooks/usePushNotifications";
 import { useBackButton } from "@/hooks/useBackButton";
+import { useAppPermissions } from "@/hooks/useAppPermissions";
+import { useBills } from "@/hooks/useBills";
+import { useIOUs } from "@/hooks/useIOUs";
+import { useContacts } from "@/hooks/useContacts";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import Bills from "./pages/Bills";
@@ -56,11 +60,23 @@ function AuthCacheClearer() {
   return null;
 }
 
-// Component to initialize Capacitor native features
+// Component to initialize Capacitor native features and pre-fetch data
 function CapacitorInitializer() {
+  const { user } = useAuth();
   useCapacitor();
+  useAppPermissions(); // Request both notifications and contacts permissions
   usePushNotifications();
   useBackButton();
+
+  // Pre-fetch bills, IOUs, and contacts when user is logged in
+  // This ensures data is available when clicking from dashboard
+  const { bills } = useBills();
+  const { ious } = useIOUs();
+  const { contacts } = useContacts();
+
+  // Just accessing these hooks triggers the queries to run
+  // No need to do anything with the data here
+
   return null;
 }
 

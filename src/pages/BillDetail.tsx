@@ -63,8 +63,8 @@ import { useBills } from "@/hooks/useBills";
 import { AddContactDialog } from "@/components/contacts/AddContactDialog";
 import { PaymentRequestDialog } from "@/components/bills/PaymentRequestDialog";
 import { PaymentRequestsPanel } from "@/components/bills/PaymentRequestsPanel";
-import { 
-  updateBillParticipantOfflineFirst, 
+import {
+  updateBillParticipantOfflineFirst,
   createBillParticipantOfflineFirst,
   deleteBillParticipantOfflineFirst,
   createPaymentOfflineFirst,
@@ -181,8 +181,8 @@ export default function BillDetail() {
 
   // Check if user is a debtor (participant but not creator)
   const isDebtor = !isCreator && !!currentUserParticipant;
-  const debtorRemainingAmount = currentUserParticipant 
-    ? currentUserParticipant.amount_owed - currentUserParticipant.amount_paid 
+  const debtorRemainingAmount = currentUserParticipant
+    ? currentUserParticipant.amount_owed - currentUserParticipant.amount_paid
     : 0;
 
   // Pending payment requests count for creators
@@ -191,7 +191,7 @@ export default function BillDetail() {
   const handleEditSubmit = async () => {
     const newTotal = parseFloat(editForm.total_amount);
     const oldTotal = bill.total_amount;
-    
+
     // If total changed, update participant amounts proportionally
     let updatedParticipants = bill.participants;
     if (Math.abs(newTotal - oldTotal) > 0.01 && bill.participants && bill.participants.length > 0) {
@@ -200,7 +200,7 @@ export default function BillDetail() {
         ...p,
         amount_owed: Math.round(p.amount_owed * ratio * 100) / 100,
       }));
-      
+
       // Update each participant
       for (const p of updatedParticipants) {
         await updateBillParticipantOfflineFirst(p.id, {
@@ -208,7 +208,7 @@ export default function BillDetail() {
         });
       }
     }
-    
+
     const success = await updateBill(bill.id, {
       title: editForm.title,
       description: editForm.description || undefined,
@@ -277,7 +277,7 @@ export default function BillDetail() {
           ? { ...p, amount_paid: newAmountPaid, status: newStatus }
           : p
       );
-      
+
       // Check if all participants are now paid
       const allPaid = updatedParticipants?.every(p => p.amount_paid >= p.amount_owed);
 
@@ -324,7 +324,7 @@ export default function BillDetail() {
       setShowPaymentDialog(false);
       setPaymentAmount("");
       setSelectedParticipant(null);
-      
+
       // Trigger sync in background
       sync();
     } catch (error) {
@@ -349,7 +349,7 @@ export default function BillDetail() {
           ? { ...p, status: newStatus, amount_paid: amountPaid }
           : p
       );
-      const allPaid = updatedParticipants?.every(p => 
+      const allPaid = updatedParticipants?.every(p =>
         p.status === 'paid' || p.amount_paid >= p.amount_owed
       );
 
@@ -396,7 +396,7 @@ export default function BillDetail() {
     }
 
     const remaining = participant.amount_owed - participant.amount_paid;
-    const dueInfo = bill.due_date 
+    const dueInfo = bill.due_date
       ? ` Due: ${format(new Date(bill.due_date), "MMM d, yyyy")}`
       : '';
 
@@ -437,10 +437,10 @@ export default function BillDetail() {
 
       // Update bill total offline-first
       const newTotal = bill.total_amount + amount;
-      
+
       // If bill was paid, revert to pending since we added a new unpaid participant
       const newStatus = bill.status === 'paid' ? 'pending' : bill.status;
-      await updateBillOfflineFirst(bill.id, { 
+      await updateBillOfflineFirst(bill.id, {
         total_amount: newTotal,
         status: newStatus,
       });
@@ -458,7 +458,7 @@ export default function BillDetail() {
       setNewParticipantPhone("");
       setNewParticipantAmount("");
       setSearchQuery("");
-      
+
       sync(); // Trigger sync in background
     } catch (error) {
       console.error("Error adding participant:", error);
@@ -469,19 +469,19 @@ export default function BillDetail() {
   // Update participant amount (creator only)
   const handleUpdateParticipantAmount = async (participant: BillParticipant, newAmount: number) => {
     if (!isCreator || isNaN(newAmount) || newAmount < 0) return;
-    
+
     try {
       const amountDiff = newAmount - participant.amount_owed;
       const newTotal = bill.total_amount + amountDiff;
-      
+
       // Update participant
       await updateBillParticipantOfflineFirst(participant.id, {
         amount_owed: newAmount,
       });
-      
+
       // Update bill total
       await updateBillOfflineFirst(bill.id, { total_amount: newTotal });
-      
+
       // Update UI
       updateBillLocally(prev => ({
         ...prev,
@@ -490,7 +490,7 @@ export default function BillDetail() {
           p.id === participant.id ? { ...p, amount_owed: newAmount } : p
         ),
       }));
-      
+
       toast.success("Amount updated");
       setEditingParticipantAmount(null);
       sync();
@@ -510,19 +510,19 @@ export default function BillDetail() {
     try {
       const remainingParticipants = bill.participants?.filter(p => p.id !== participant.id) || [];
       const amountToRedistribute = participant.amount_owed - participant.amount_paid;
-      
+
       // Delete offline-first
       await deleteBillParticipantOfflineFirst(participant.id);
-      
+
       // If there are remaining participants, redistribute the amount
       if (remainingParticipants.length > 0 && amountToRedistribute > 0) {
         const amountPerPerson = amountToRedistribute / remainingParticipants.length;
-        
+
         for (const p of remainingParticipants) {
           const newAmount = p.amount_owed + amountPerPerson;
           await updateBillParticipantOfflineFirst(p.id, { amount_owed: newAmount });
         }
-        
+
         // Update local state with redistributed amounts
         updateBillLocally(prev => ({
           ...prev,
@@ -531,7 +531,7 @@ export default function BillDetail() {
             amount_owed: p.amount_owed + amountPerPerson,
           })),
         }));
-        
+
         toast.success(`Participant removed. ${bill.currency} ${amountToRedistribute.toFixed(2)} redistributed.`);
       } else {
         // No redistribution needed
@@ -541,7 +541,7 @@ export default function BillDetail() {
         }));
         toast.success("Participant removed");
       }
-      
+
       setShowRemoveParticipantDialog(false);
       setParticipantToRemove(null);
       sync();
@@ -577,10 +577,10 @@ export default function BillDetail() {
   const generateWhatsAppMessage = (participant: BillParticipant) => {
     const remainingAmount = participant.amount_owed - participant.amount_paid;
     const contactName = getContactName(participant.phone_number);
-    const dueDateInfo = bill.due_date 
+    const dueDateInfo = bill.due_date
       ? `\n📅 Due Date: ${format(new Date(bill.due_date), "MMMM d, yyyy")}`
       : '';
-    
+
     return `Hi ${contactName},
 
 This is a reminder for your pending payment.
@@ -726,7 +726,7 @@ Never lose track of debts again. Split bills, send reminders & get paid faster.
             <div className="flex items-center gap-2 mt-4 pt-4 border-t border-border">
               <User className="h-4 w-4 text-muted-foreground" />
               <span className="text-sm text-muted-foreground">
-                Created by <span className="font-medium text-foreground">{bill.creator.username}</span>
+                Created by <span className="font-medium text-foreground">{bill.creator?.username || 'Unknown'}</span>
               </span>
             </div>
           )}
@@ -972,7 +972,7 @@ Never lose track of debts again. Split bills, send reminders & get paid faster.
                 onChange={(e) => setEditForm(prev => ({ ...prev, due_date: e.target.value }))}
               />
             </div>
-            
+
             {/* Reminder Settings */}
             <div className="space-y-3 pt-2 border-t border-border">
               <div className="flex items-center justify-between">
@@ -985,12 +985,12 @@ Never lose track of debts again. Split bills, send reminders & get paid faster.
                   onCheckedChange={(checked) => setEditForm(prev => ({ ...prev, reminder_enabled: checked }))}
                 />
               </div>
-              
+
               {editForm.reminder_enabled && (
                 <div className="pl-6">
                   <Label className="text-sm text-muted-foreground">Send reminder every:</Label>
-                  <Select 
-                    value={editForm.reminder_interval_days} 
+                  <Select
+                    value={editForm.reminder_interval_days}
                     onValueChange={(value) => setEditForm(prev => ({ ...prev, reminder_interval_days: value }))}
                   >
                     <SelectTrigger className="w-full mt-1">
@@ -1170,7 +1170,7 @@ Never lose track of debts again. Split bills, send reminders & get paid faster.
       {(() => {
         const unpaidParticipants = bill.participants?.filter(p => p.status !== "paid") || [];
         const canArchive = unpaidParticipants.length === 0;
-        
+
         return (
           <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
             <AlertDialogContent>

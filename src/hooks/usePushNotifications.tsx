@@ -67,10 +67,10 @@ export function usePushNotifications() {
             body: notification.body || '',
             data: notification.data,
           });
-          
+
           // Dispatch event to update UI
           window.dispatchEvent(new Event('notification-update'));
-          
+
           // Show toast
           toast(notification.title || 'Notification', {
             description: notification.body,
@@ -90,9 +90,9 @@ export function usePushNotifications() {
             body: notification.body || '',
             data: notification.data,
           });
-          
+
           window.dispatchEvent(new Event('notification-update'));
-          
+
           const data = notification.data;
           if (data?.type === 'bill' && data?.id) {
             window.location.href = `/bills/${data.id}`;
@@ -104,14 +104,14 @@ export function usePushNotifications() {
         }
       });
 
-      // Request permission
-      const permStatus = await PushNotifications.requestPermissions();
-      
+      // Check current permission status (don't request here, it's handled by useAppPermissions)
+      const permStatus = await PushNotifications.checkPermissions();
+
       if (permStatus.receive === 'granted') {
         // Register with FCM
         await PushNotifications.register();
       } else {
-        console.log('Push notification permission denied');
+        console.log('Push notification permission not granted yet');
       }
     } catch (err) {
       console.error('Error initializing push notifications:', err);

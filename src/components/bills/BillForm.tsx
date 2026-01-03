@@ -137,7 +137,7 @@ export function BillForm() {
     }
     // Also exclude contacts that are already in app contacts
     const appContactPhones = new Set(contacts.map(c => c.phone_number));
-    
+
     let filtered = deviceContacts.filter(
       (c) => !selectedPhones.has(c.phone_number) && !appContactPhones.has(c.phone_number)
     );
@@ -157,10 +157,10 @@ export function BillForm() {
   const handleShowDeviceContacts = async () => {
     console.log("handleShowDeviceContacts called");
     console.log("Current deviceContacts:", deviceContacts.length);
-    
+
     const result = await fetchDeviceContacts();
     console.log("fetchDeviceContacts returned:", result.length, "contacts");
-    
+
     if (result.length > 0) {
       setShowDeviceContacts(true);
     }
@@ -368,7 +368,7 @@ export function BillForm() {
             setTotalAmount(e.target.value);
             if (errors.total) setErrors((prev) => ({ ...prev, total: "" }));
           }}
-          icon={<DollarSign className="h-4 w-4" />}
+          icon={<span className="text-sm font-medium text-muted-foreground">{currencySymbol}</span>}
           error={!!errors.total}
         />
         {errors.total && (

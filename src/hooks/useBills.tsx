@@ -131,7 +131,7 @@ export function useBills() {
   // Background sync effect - runs when online, doesn't block UI
   useEffect(() => {
     if (!user || !offline.isOnline || hasSyncedRef.current) return;
-    
+
     const syncInBackground = async () => {
       try {
         console.log('[Bills] Background sync starting...');
@@ -269,6 +269,8 @@ export function useBills() {
       // Delete locally first
       await deleteBillOfflineFirst(id);
 
+      let serverSyncFailed = false;
+
       // If online and not a local-only item, sync to server
       if (offline.isOnline && !id.startsWith("local-")) {
         try {
@@ -277,20 +279,38 @@ export function useBills() {
             .update({ deleted_at: new Date().toISOString() })
             .eq("id", id);
 
-          if (error) throw error;
+          if (error) {
+            console.error("Server sync error:", error);
+            serverSyncFailed = true;
+            throw error;
+          }
 
-          // Clear sync queue
+          // Clear sync queue only if server update succeeded
           await offlineDb.syncQueue.where("entity_id").equals(id).delete();
         } catch (e) {
-          console.warn("Failed to sync delete to server:", e);
+          console.error("Failed to sync delete to server:", e);
+          serverSyncFailed = true;
+          // Don't throw - allow local deletion to succeed
+          // The sync queue will retry later
         }
       }
 
-      return id;
+      return { id, serverSyncFailed };
     },
-    onSuccess: (id) => {
+    onSuccess: ({ id, serverSyncFailed }) => {
       queryClient.setQueryData<Bill[]>(billsQueryKey, (old = []) => old.filter((b) => b.id !== id));
-      toast.success("Bill archived");
+      // Force immediate refetch of dashboard to update recent activity
+      // Use type: 'active' to refetch even if query is not stale
+      queryClient.refetchQueries({ queryKey: ["dashboard"], type: 'active' });
+      // Also invalidate bills query to refetch and exclude deleted bill
+      queryClient.invalidateQueries({ queryKey: billsQueryKey });
+      queryClient.invalidateQueries({ queryKey: ["bill", user?.id, id] });
+
+      if (serverSyncFailed) {
+        toast.success("Bill archived locally. Will sync to server when online.");
+      } else {
+        toast.success("Bill archived");
+      }
     },
     onError: (error: Error) => {
       console.error("Error deleting bill:", error);
@@ -364,6 +384,10 @@ export function useBillDetail(billId: string | undefined) {
       try {
         const localBill = await offlineDb.bills.get(billId);
         if (localBill) {
+          // Filter out deleted bills
+          if (localBill.deleted_at) {
+            return null;
+          }
           const participants = await offlineDb.billParticipants.where("bill_id").equals(billId).toArray();
           return localBillToBill({ ...localBill, participants });
         }
@@ -371,8 +395,11 @@ export function useBillDetail(billId: string | undefined) {
         console.warn("Local DB error:", e);
       }
 
-      // Return cached data if available
-      return cachedBill || null;
+      // Return cached data if available, but only if not deleted
+      if (cachedBill && !cachedBill.deleted_at) {
+        return cachedBill;
+      }
+      return null;
     },
     enabled: !!user && !!billId && !cachedBill,
     initialData: cachedBill,
