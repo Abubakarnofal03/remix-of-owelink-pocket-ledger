@@ -6,6 +6,7 @@ import { normalizeToE164, phoneToEmail } from "@/lib/phoneUtils";
 import { DEFAULT_CURRENCY } from "@/lib/currencies";
 
 const PROFILE_STORAGE_KEY = "cached_profile";
+const SESSION_STORAGE_KEY = "cached_session";
 
 interface AuthContextType {
   user: User | null;
@@ -46,6 +47,46 @@ const loadCachedProfile = (): Profile | null => {
     }
   } catch (e) {
     console.warn('[Auth] Failed to load cached profile:', e);
+  }
+  return null;
+};
+
+// Cache session to localStorage for offline access
+const cacheSession = (session: Session | null) => {
+  try {
+    if (session) {
+      localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify({
+        user: session.user,
+        access_token: session.access_token,
+        refresh_token: session.refresh_token,
+        expires_at: session.expires_at,
+      }));
+      console.log('[Auth] Session cached locally');
+    } else {
+      localStorage.removeItem(SESSION_STORAGE_KEY);
+    }
+  } catch (e) {
+    console.warn('[Auth] Failed to cache session:', e);
+  }
+};
+
+// Load cached session from localStorage
+const loadCachedSession = (): { user: User; session: Partial<Session> } | null => {
+  try {
+    const cached = localStorage.getItem(SESSION_STORAGE_KEY);
+    if (cached) {
+      const parsed = JSON.parse(cached);
+      // Check if session hasn't expired (with 1 hour buffer)
+      if (parsed.expires_at && parsed.expires_at * 1000 > Date.now() - 3600000) {
+        console.log('[Auth] Using cached session');
+        return { user: parsed.user, session: parsed };
+      } else {
+        console.log('[Auth] Cached session expired');
+        localStorage.removeItem(SESSION_STORAGE_KEY);
+      }
+    }
+  } catch (e) {
+    console.warn('[Auth] Failed to load cached session:', e);
   }
   return null;
 };
@@ -120,9 +161,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const sessionTimeout = setTimeout(() => {
       // If still loading after 2 seconds, check for cached data
       const cached = loadCachedProfile();
-      if (cached && loading) {
-        console.log('[Auth] Session check taking too long, using cached profile');
-        setProfile(cached);
+      const cachedSession = loadCachedSession();
+      if ((cached || cachedSession) && loading) {
+        console.log('[Auth] Session check taking too long, using cached data');
+        if (cachedSession) {
+          setUser(cachedSession.user);
+          setSession(cachedSession.session as Session);
+        }
+        if (cached) {
+          setProfile(cached);
+        }
         setLoading(false);
       }
     }, 2000);
@@ -131,6 +179,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       clearTimeout(sessionTimeout);
       setSession(session);
       setUser(session?.user ?? null);
+      if (session) {
+        cacheSession(session);
+      }
       if (session?.user) {
         // Load cached profile immediately for UI
         const cached = loadCachedProfile();
@@ -146,12 +197,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         };
         fetchWithTimeout();
       } else {
+        // No session from server - try cached session for offline access
+        const cachedSession = loadCachedSession();
+        if (cachedSession) {
+          console.log('[Auth] Using cached session for offline access');
+          setUser(cachedSession.user);
+          setSession(cachedSession.session as Session);
+          const cached = loadCachedProfile();
+          if (cached && cached.user_id === cachedSession.user.id) {
+            setProfile(cached);
+          }
+        }
         setLoading(false);
       }
     }).catch((e) => {
       console.warn('[Auth] Session check failed:', e);
       clearTimeout(sessionTimeout);
-      // Try to use cached profile anyway
+      // Try to use cached session and profile for offline access
+      const cachedSession = loadCachedSession();
+      if (cachedSession) {
+        console.log('[Auth] Network error - using cached session');
+        setUser(cachedSession.user);
+        setSession(cachedSession.session as Session);
+      }
       const cached = loadCachedProfile();
       if (cached) {
         setProfile(cached);
@@ -219,6 +287,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setSession(null);
     setProfile(null);
     cacheProfile(null);
+    cacheSession(null);
   };
 
   const refreshProfile = async () => {

@@ -233,10 +233,25 @@ export interface LocalIOUPaymentRequest {
   is_local?: boolean;
 }
 
+export interface LocalExpense {
+  id: string;
+  user_id: string;
+  amount: number;
+  description: string | null;
+  currency: string;
+  created_at: string;
+  updated_at: string;
+  deleted_at: string | null;
+  reference_type: string | null;
+  reference_id: string | null;
+  synced_at?: number;
+  is_local?: boolean;
+}
+
 export interface SyncQueueItem {
   id?: number;
   action_id: string;
-  entity_type: 'bill' | 'bill_participant' | 'iou' | 'payment' | 'contact' | 'notification' | 'payment_request' | 'iou_payment_request';
+  entity_type: 'bill' | 'bill_participant' | 'iou' | 'payment' | 'contact' | 'notification' | 'payment_request' | 'iou_payment_request' | 'expense';
   operation: 'create' | 'update' | 'delete';
   entity_id: string;
   payload: Record<string, unknown>;
@@ -284,6 +299,7 @@ class OfflineDatabase extends Dexie {
   notifications!: Table<LocalNotification, string>;
   paymentRequests!: Table<LocalPaymentRequest, string>;
   iouPaymentRequests!: Table<LocalIOUPaymentRequest, string>;
+  expenses!: Table<LocalExpense, string>;
   syncQueue!: Table<SyncQueueItem, number>;
   syncMetadata!: Table<SyncMetadata, string>;
   localAppContacts!: Table<LocalAppContact, string>;
@@ -334,6 +350,23 @@ class OfflineDatabase extends Dexie {
       notifications: 'id, user_id, read, created_at, synced_at',
       paymentRequests: 'id, bill_id, participant_id, status, created_at, synced_at',
       iouPaymentRequests: 'id, iou_id, status, created_at, synced_at',
+      syncQueue: '++id, action_id, entity_type, operation, entity_id, status, created_at',
+      syncMetadata: 'id, entity_type, last_synced_at',
+      localAppContacts: 'id, phone_suffix, nickname, created_at',
+      nicknameOverrides: 'phone_suffix, updated_at',
+    });
+
+    this.version(4).stores({
+      profiles: 'id, user_id, phone_suffix, synced_at',
+      bills: 'id, creator_id, status, created_at, updated_at, synced_at',
+      billParticipants: 'id, bill_id, phone_number, phone_suffix, user_id, synced_at',
+      ious: 'id, creditor_id, debtor_phone_suffix, debtor_user_id, status, created_at, synced_at',
+      payments: 'id, reference_type, reference_id, payer_phone_number, synced_at',
+      contacts: 'id, user_id, phone_number, phone_suffix, synced_at',
+      notifications: 'id, user_id, read, created_at, synced_at',
+      paymentRequests: 'id, bill_id, participant_id, status, created_at, synced_at',
+      iouPaymentRequests: 'id, iou_id, status, created_at, synced_at',
+      expenses: 'id, user_id, created_at, synced_at',
       syncQueue: '++id, action_id, entity_type, operation, entity_id, status, created_at',
       syncMetadata: 'id, entity_type, last_synced_at',
       localAppContacts: 'id, phone_suffix, nickname, created_at',
