@@ -29,6 +29,7 @@ import Contacts from "./pages/Contacts";
 import ContactDetail from "./pages/ContactDetail";
 import Notifications from "./pages/Notifications";
 import Settings from "./pages/Settings";
+import Expenses from "./pages/Expenses";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient({
@@ -97,6 +98,7 @@ function AppRoutes() {
         <Route path="/contacts" element={<Contacts />} />
         <Route path="/contacts/:id" element={<ContactDetail />} />
         <Route path="/notifications" element={<Notifications />} />
+        <Route path="/expenses" element={<Expenses />} />
         <Route path="/settings" element={<Settings />} />
         <Route path="*" element={<NotFound />} />
       </Routes>
