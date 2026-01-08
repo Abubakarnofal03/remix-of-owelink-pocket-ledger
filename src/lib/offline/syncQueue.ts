@@ -132,6 +132,9 @@ export async function processSyncItem(item: SyncQueueItem): Promise<boolean> {
       case 'iou_payment_request':
         success = await syncIOUPaymentRequest(item);
         break;
+      case 'expense':
+        success = await syncExpense(item);
+        break;
     }
 
     if (success) {
@@ -577,6 +580,65 @@ async function syncIOUPaymentRequest(item: SyncQueueItem): Promise<boolean> {
       if (error) throw error;
       
       await offlineDb.iouPaymentRequests.update(entity_id, { synced_at: Date.now(), is_local: false });
+      return true;
+    }
+  }
+
+  return false;
+}
+
+// Sync expense operations
+async function syncExpense(item: SyncQueueItem): Promise<boolean> {
+  const { operation, entity_id, payload } = item;
+
+  switch (operation) {
+    case 'create': {
+      const { id: _, is_local: __, synced_at: ___, ...data } = payload;
+      const { data: result, error } = await withTimeout(
+        supabase
+          .from('expenses')
+          .upsert({ ...data, id: entity_id } as any, { onConflict: 'id' })
+          .select()
+          .single(),
+        SYNC_REQUEST_TIMEOUT_MS,
+        'Expense upsert'
+      );
+
+      if (error) throw error;
+      
+      await offlineDb.expenses.update(entity_id, {
+        synced_at: Date.now(),
+        is_local: false,
+      });
+      return true;
+    }
+
+    case 'update': {
+      const { id: _, is_local: __, synced_at: ___, ...updateData } = payload;
+      const { error } = await withTimeout(
+        supabase
+          .from('expenses')
+          .update(updateData)
+          .eq('id', entity_id),
+        SYNC_REQUEST_TIMEOUT_MS,
+        'Expense update'
+      );
+
+      if (error) throw error;
+      
+      await offlineDb.expenses.update(entity_id, { synced_at: Date.now(), is_local: false });
+      return true;
+    }
+
+    case 'delete': {
+      const { error } = await supabase
+        .from('expenses')
+        .update({ deleted_at: new Date().toISOString() })
+        .eq('id', entity_id);
+
+      if (error) throw error;
+      
+      await offlineDb.expenses.delete(entity_id);
       return true;
     }
   }
