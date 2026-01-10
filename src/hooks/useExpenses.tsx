@@ -17,6 +17,7 @@ export interface Expense {
   deleted_at: string | null;
   reference_type: string | null;
   reference_id: string | null;
+  bucket_id: string | null;
   is_local?: boolean;
   synced_at?: number;
 }
@@ -27,6 +28,7 @@ export interface ExpenseInsert {
   currency?: string;
   reference_type?: string;
   reference_id?: string;
+  bucket_id?: string;
 }
 
 export function useExpenses() {
@@ -134,6 +136,7 @@ export function useExpenses() {
       deleted_at: null,
       reference_type: expenseData.reference_type || null,
       reference_id: expenseData.reference_id || null,
+      bucket_id: expenseData.bucket_id || null,
       is_local: true,
       synced_at: undefined,
     };
@@ -197,8 +200,37 @@ export function useExpenses() {
     }
   };
 
+  // Assign expense to bucket
+  const assignToBucket = async (expenseId: string, bucketId: string | null) => {
+    try {
+      const ready = await offlineDb.ensureReady();
+      if (ready) {
+        const now = new Date().toISOString();
+        await offlineDb.expenses.update(expenseId, {
+          bucket_id: bucketId,
+          updated_at: now,
+        });
+        await addToSyncQueue(
+          'expense',
+          'update',
+          expenseId,
+          { bucket_id: bucketId, updated_at: now }
+        );
+      }
+
+      setExpenses(prev =>
+        prev.map(e =>
+          e.id === expenseId ? { ...e, bucket_id: bucketId } : e
+        )
+      );
+    } catch (error) {
+      console.error('[useExpenses] Assign to bucket error:', error);
+      toast.error("Failed to update expense");
+    }
+  };
+
   // Calculate totals
-  const getTotals = useCallback((filter: 'day' | 'week' | 'month' | 'all' = 'all') => {
+  const getTotals = useCallback((filter: 'day' | 'week' | 'month' | 'all' = 'all', bucketId?: string | null) => {
     const now = new Date();
     let startDate: Date;
 
@@ -219,10 +251,21 @@ export function useExpenses() {
         startDate = new Date(0); // All time
     }
 
-    const filtered = expenses.filter(e => new Date(e.created_at) >= startDate);
+    let filtered = expenses.filter(e => new Date(e.created_at) >= startDate);
+    
+    // Filter by bucket if specified
+    if (bucketId !== undefined) {
+      filtered = filtered.filter(e => e.bucket_id === bucketId);
+    }
+    
     const total = filtered.reduce((sum, e) => sum + e.amount, 0);
     
     return { total, count: filtered.length, expenses: filtered };
+  }, [expenses]);
+
+  // Get expenses by bucket
+  const getExpensesByBucket = useCallback((bucketId: string | null) => {
+    return expenses.filter(e => e.bucket_id === bucketId);
   }, [expenses]);
 
   useEffect(() => {
@@ -234,7 +277,9 @@ export function useExpenses() {
     loading,
     createExpense,
     deleteExpense,
+    assignToBucket,
     getTotals,
+    getExpensesByBucket,
     refetch: fetchExpenses,
   };
 }

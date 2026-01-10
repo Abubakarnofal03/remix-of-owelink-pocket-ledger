@@ -135,6 +135,9 @@ export async function processSyncItem(item: SyncQueueItem): Promise<boolean> {
       case 'expense':
         success = await syncExpense(item);
         break;
+      case 'expense_bucket':
+        success = await syncExpenseBucket(item);
+        break;
     }
 
     if (success) {
@@ -639,6 +642,65 @@ async function syncExpense(item: SyncQueueItem): Promise<boolean> {
       if (error) throw error;
       
       await offlineDb.expenses.delete(entity_id);
+      return true;
+    }
+  }
+
+  return false;
+}
+
+// Sync expense bucket operations
+async function syncExpenseBucket(item: SyncQueueItem): Promise<boolean> {
+  const { operation, entity_id, payload } = item;
+
+  switch (operation) {
+    case 'create': {
+      const { id: _, is_local: __, synced_at: ___, ...data } = payload;
+      const { data: result, error } = await withTimeout(
+        supabase
+          .from('expense_buckets')
+          .upsert({ ...data, id: entity_id } as any, { onConflict: 'id' })
+          .select()
+          .single(),
+        SYNC_REQUEST_TIMEOUT_MS,
+        'Expense bucket upsert'
+      );
+
+      if (error) throw error;
+
+      await offlineDb.expenseBuckets.update(entity_id, {
+        synced_at: Date.now(),
+        is_local: false,
+      });
+      return true;
+    }
+
+    case 'update': {
+      const { id: _, is_local: __, synced_at: ___, ...updateData } = payload;
+      const { error } = await withTimeout(
+        supabase
+          .from('expense_buckets')
+          .update(updateData)
+          .eq('id', entity_id),
+        SYNC_REQUEST_TIMEOUT_MS,
+        'Expense bucket update'
+      );
+
+      if (error) throw error;
+
+      await offlineDb.expenseBuckets.update(entity_id, { synced_at: Date.now(), is_local: false });
+      return true;
+    }
+
+    case 'delete': {
+      const { error } = await supabase
+        .from('expense_buckets')
+        .delete()
+        .eq('id', entity_id);
+
+      if (error) throw error;
+
+      await offlineDb.expenseBuckets.delete(entity_id);
       return true;
     }
   }
