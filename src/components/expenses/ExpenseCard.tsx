@@ -1,0 +1,129 @@
+import { useState, useRef } from "react";
+import { Expense } from "@/hooks/useExpenses";
+import { ExpenseBucket } from "@/hooks/useExpenseBuckets";
+import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { MoneyDisplay } from "@/components/ui/MoneyDisplay";
+import { format } from "date-fns";
+import { Wallet, Calendar, Trash2, FolderOpen } from "lucide-react";
+import { cn } from "@/lib/utils";
+
+interface ExpenseCardProps {
+  expense: Expense;
+  bucket?: ExpenseBucket | null;
+  onDelete: (id: string) => void;
+  onDragStart?: (expense: Expense) => void;
+  onDragEnd?: () => void;
+  isDragging?: boolean;
+}
+
+export function ExpenseCard({
+  expense,
+  bucket,
+  onDelete,
+  onDragStart,
+  onDragEnd,
+  isDragging,
+}: ExpenseCardProps) {
+  const [isPressed, setIsPressed] = useState(false);
+  const pressTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  const handlePointerDown = () => {
+    pressTimerRef.current = setTimeout(() => {
+      setIsPressed(true);
+      onDragStart?.(expense);
+    }, 400); // Long press threshold
+  };
+
+  const handlePointerUp = () => {
+    if (pressTimerRef.current) {
+      clearTimeout(pressTimerRef.current);
+      pressTimerRef.current = null;
+    }
+    if (isPressed) {
+      setIsPressed(false);
+      onDragEnd?.();
+    }
+  };
+
+  const handlePointerCancel = () => {
+    if (pressTimerRef.current) {
+      clearTimeout(pressTimerRef.current);
+      pressTimerRef.current = null;
+    }
+    setIsPressed(false);
+  };
+
+  return (
+    <Card
+      className={cn(
+        "group transition-all duration-200 touch-manipulation",
+        isDragging && "opacity-50 scale-95",
+        bucket && "border-l-4",
+      )}
+      style={bucket ? { borderLeftColor: bucket.color } : undefined}
+      onPointerDown={handlePointerDown}
+      onPointerUp={handlePointerUp}
+      onPointerCancel={handlePointerCancel}
+      onPointerLeave={handlePointerCancel}
+    >
+      <CardContent className="p-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3 flex-1 min-w-0">
+            <div
+              className="h-9 w-9 rounded-full flex items-center justify-center shrink-0"
+              style={{ backgroundColor: bucket ? `${bucket.color}20` : undefined }}
+            >
+              {bucket ? (
+                <FolderOpen
+                  className="h-4 w-4"
+                  style={{ color: bucket.color }}
+                />
+              ) : (
+                <Wallet className="h-4 w-4 text-muted-foreground" />
+              )}
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="font-medium text-sm truncate">
+                {expense.description || "Expense"}
+              </p>
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <div className="flex items-center gap-1">
+                  <Calendar className="h-3 w-3" />
+                  {format(new Date(expense.created_at), "MMM d, h:mm a")}
+                </div>
+                {bucket && (
+                  <span
+                    className="px-1.5 py-0.5 rounded text-[10px] font-medium"
+                    style={{
+                      backgroundColor: `${bucket.color}20`,
+                      color: bucket.color,
+                    }}
+                  >
+                    {bucket.name}
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <p className="font-semibold text-destructive">
+              -<MoneyDisplay amount={expense.amount} currency={expense.currency} />
+            </p>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive"
+              onClick={(e) => {
+                e.stopPropagation();
+                onDelete(expense.id);
+              }}
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}

@@ -213,9 +213,40 @@ export type Database = {
         }
         Relationships: []
       }
+      expense_buckets: {
+        Row: {
+          color: string | null
+          created_at: string
+          description: string | null
+          id: string
+          name: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          color?: string | null
+          created_at?: string
+          description?: string | null
+          id?: string
+          name: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          color?: string | null
+          created_at?: string
+          description?: string | null
+          id?: string
+          name?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       expenses: {
         Row: {
           amount: number
+          bucket_id: string | null
           created_at: string
           currency: string
           deleted_at: string | null
@@ -228,6 +259,7 @@ export type Database = {
         }
         Insert: {
           amount: number
+          bucket_id?: string | null
           created_at?: string
           currency?: string
           deleted_at?: string | null
@@ -240,6 +272,7 @@ export type Database = {
         }
         Update: {
           amount?: number
+          bucket_id?: string | null
           created_at?: string
           currency?: string
           deleted_at?: string | null
@@ -250,7 +283,15 @@ export type Database = {
           updated_at?: string
           user_id?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "expenses_bucket_id_fkey"
+            columns: ["bucket_id"]
+            isOneToOne: false
+            referencedRelation: "expense_buckets"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       invoices: {
         Row: {

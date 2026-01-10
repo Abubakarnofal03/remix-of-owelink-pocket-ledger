@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useAuth } from "@/hooks/useAuth";
-import { useExpenses, ExpenseInsert } from "@/hooks/useExpenses";
+import { useExpenses, Expense } from "@/hooks/useExpenses";
+import { useExpenseBuckets } from "@/hooks/useExpenseBuckets";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,17 +9,20 @@ import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent } from "@/components/ui/card";
 import { MoneyDisplay } from "@/components/ui/MoneyDisplay";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { ExpenseCard } from "@/components/expenses/ExpenseCard";
+import { BucketCard } from "@/components/expenses/BucketCard";
+import { CreateBucketDialog } from "@/components/expenses/CreateBucketDialog";
+import { DragOverlay } from "@/components/expenses/DragOverlay";
+import { BucketDetailSheet } from "@/components/expenses/BucketDetailSheet";
 import { getCurrencySymbol } from "@/lib/currencies";
-import { format } from "date-fns";
 import { toast } from "sonner";
 import {
   Plus,
   Loader2,
-  Trash2,
   TrendingUp,
-  Calendar,
   Receipt,
   Wallet,
+  FolderPlus,
 } from "lucide-react";
 import {
   AlertDialog,
@@ -30,26 +34,38 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
-type FilterPeriod = 'day' | 'week' | 'month' | 'all';
+type FilterPeriod = "day" | "week" | "month" | "all";
 
 export default function Expenses() {
   const { user, currency, loading: authLoading } = useAuth();
-  const { expenses, loading, createExpense, deleteExpense, getTotals } = useExpenses();
+  const { expenses, loading, createExpense, deleteExpense, assignToBucket, getExpensesByBucket, getTotals } = useExpenses();
+  const { buckets, createBucket, deleteBucket } = useExpenseBuckets();
   const currencySymbol = getCurrencySymbol(currency);
 
   const [showForm, setShowForm] = useState(false);
   const [amount, setAmount] = useState("");
   const [description, setDescription] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [filter, setFilter] = useState<FilterPeriod>('month');
+  const [filter, setFilter] = useState<FilterPeriod>("month");
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [deleteBucketId, setDeleteBucketId] = useState<string | null>(null);
+  const [showCreateBucket, setShowCreateBucket] = useState(false);
+  const [activeTab, setActiveTab] = useState("all");
+
+  // Drag and drop state
+  const [draggingExpense, setDraggingExpense] = useState<Expense | null>(null);
+  const [hoveredBucketId, setHoveredBucketId] = useState<string | null>(null);
+
+  // Bucket detail sheet
+  const [selectedBucket, setSelectedBucket] = useState<typeof buckets[0] | null>(null);
 
   const { total, count, expenses: filteredExpenses } = getTotals(filter);
+  const unbucketedExpenses = filteredExpenses.filter((e) => !e.bucket_id);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
     const amountNum = parseFloat(amount);
     if (!amountNum || amountNum <= 0) {
       toast.error("Enter a valid amount");
@@ -63,12 +79,11 @@ export default function Expenses() {
         description: description.trim() || undefined,
         currency,
       });
-      
       setAmount("");
       setDescription("");
       setShowForm(false);
       toast.success("Expense added");
-    } catch (error) {
+    } catch {
       toast.error("Failed to add expense");
     } finally {
       setSubmitting(false);
@@ -81,11 +96,38 @@ export default function Expenses() {
     setDeleteId(null);
   };
 
+  const handleDeleteBucket = async () => {
+    if (!deleteBucketId) return;
+    await deleteBucket(deleteBucketId);
+    setDeleteBucketId(null);
+  };
+
+  const handleDragStart = (expense: Expense) => {
+    if (buckets.length === 0) {
+      toast.error("Create a bucket first to organize expenses");
+      return;
+    }
+    setDraggingExpense(expense);
+  };
+
+  const handleDrop = async (bucketId: string | null) => {
+    if (!draggingExpense) return;
+    
+    const targetBucketId = bucketId === "remove" ? null : bucketId;
+    if (draggingExpense.bucket_id !== targetBucketId) {
+      await assignToBucket(draggingExpense.id, targetBucketId);
+      const bucket = buckets.find((b) => b.id === targetBucketId);
+      toast.success(bucket ? `Moved to ${bucket.name}` : "Removed from bucket");
+    }
+    setDraggingExpense(null);
+    setHoveredBucketId(null);
+  };
+
   const filterLabels: Record<FilterPeriod, string> = {
-    day: 'Today',
-    week: 'This Week',
-    month: 'This Month',
-    all: 'All Time',
+    day: "Today",
+    week: "This Week",
+    month: "This Month",
+    all: "All Time",
   };
 
   if (authLoading) {
@@ -116,6 +158,10 @@ export default function Expenses() {
         {/* Header */}
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-bold">Expenses</h1>
+          <Button variant="outline" size="sm" onClick={() => setShowCreateBucket(true)}>
+            <FolderPlus className="h-4 w-4 mr-1" />
+            Bucket
+          </Button>
         </div>
 
         {/* Total Summary Card */}
@@ -135,23 +181,23 @@ export default function Expenses() {
               </div>
               <div className="text-right">
                 <p className="text-xs text-muted-foreground">{filterLabels[filter]}</p>
-                <p className="text-sm font-medium">{count} expense{count !== 1 ? 's' : ''}</p>
+                <p className="text-sm font-medium">{count} expense{count !== 1 ? "s" : ""}</p>
               </div>
             </div>
 
             {/* Filter Tabs */}
             <div className="flex gap-1 bg-muted/50 rounded-lg p-1">
-              {(['day', 'week', 'month', 'all'] as FilterPeriod[]).map((period) => (
+              {(["day", "week", "month", "all"] as FilterPeriod[]).map((period) => (
                 <button
                   key={period}
                   onClick={() => setFilter(period)}
                   className={`flex-1 py-1.5 px-2 text-xs font-medium rounded-md transition-all ${
                     filter === period
-                      ? 'bg-background text-foreground shadow-sm'
-                      : 'text-muted-foreground hover:text-foreground'
+                      ? "bg-background text-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground"
                   }`}
                 >
-                  {period === 'day' ? 'Day' : period === 'week' ? 'Week' : period === 'month' ? 'Month' : 'All'}
+                  {period === "day" ? "Day" : period === "week" ? "Week" : period === "month" ? "Month" : "All"}
                 </button>
               ))}
             </div>
@@ -188,106 +234,138 @@ export default function Expenses() {
                   className="resize-none"
                 />
                 <div className="flex gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="flex-1"
-                    onClick={() => {
-                      setShowForm(false);
-                      setAmount("");
-                      setDescription("");
-                    }}
-                  >
+                  <Button type="button" variant="outline" className="flex-1" onClick={() => { setShowForm(false); setAmount(""); setDescription(""); }}>
                     Cancel
                   </Button>
                   <Button type="submit" className="flex-1" disabled={submitting}>
-                    {submitting ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      "Add"
-                    )}
+                    {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Add"}
                   </Button>
                 </div>
               </form>
             </CardContent>
           </Card>
         ) : (
-          <Button
-            onClick={() => setShowForm(true)}
-            className="w-full"
-            size="lg"
-          >
+          <Button onClick={() => setShowForm(true)} className="w-full" size="lg">
             <Plus className="h-5 w-5 mr-2" />
             Add Expense
           </Button>
         )}
 
-        {/* Expense List */}
-        {loading ? (
-          <div className="flex items-center justify-center h-32">
-            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-          </div>
-        ) : filteredExpenses.length === 0 ? (
-          <EmptyState
-            icon={Receipt}
-            title={filter === 'all' ? "No expenses yet" : `No expenses ${filterLabels[filter].toLowerCase()}`}
-            description="Tap the button above to add your first expense"
-          />
-        ) : (
-          <div className="space-y-2">
-            {filteredExpenses.map((expense) => (
-              <Card key={expense.id} className="group">
-                <CardContent className="p-3">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3 flex-1 min-w-0">
-                      <div className="h-9 w-9 rounded-full bg-muted flex items-center justify-center shrink-0">
-                        <Wallet className="h-4 w-4 text-muted-foreground" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="font-medium text-sm truncate">
-                          {expense.description || "Expense"}
-                        </p>
-                        <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                          <Calendar className="h-3 w-3" />
-                          {format(new Date(expense.created_at), "MMM d, h:mm a")}
-                        </div>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <p className="font-semibold text-destructive">
-                        -<MoneyDisplay amount={expense.amount} currency={expense.currency} />
-                      </p>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive"
-                        onClick={() => setDeleteId(expense.id)}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        )}
+        {/* Tabs: All Expenses vs Buckets */}
+        <Tabs value={activeTab} onValueChange={setActiveTab}>
+          <TabsList className="grid w-full grid-cols-2">
+            <TabsTrigger value="all">All Expenses</TabsTrigger>
+            <TabsTrigger value="buckets">Buckets ({buckets.length})</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="all" className="mt-4 space-y-2">
+            {loading ? (
+              <div className="flex items-center justify-center h-32">
+                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+              </div>
+            ) : filteredExpenses.length === 0 ? (
+              <EmptyState
+                icon={Receipt}
+                title={filter === "all" ? "No expenses yet" : `No expenses ${filterLabels[filter].toLowerCase()}`}
+                description="Tap the button above to add your first expense"
+              />
+            ) : (
+              <>
+                <p className="text-xs text-muted-foreground px-1">
+                  {buckets.length > 0 && "Long press to drag expenses into buckets"}
+                </p>
+                {filteredExpenses.map((expense) => (
+                  <ExpenseCard
+                    key={expense.id}
+                    expense={expense}
+                    bucket={buckets.find((b) => b.id === expense.bucket_id)}
+                    onDelete={setDeleteId}
+                    onDragStart={handleDragStart}
+                    onDragEnd={() => setDraggingExpense(null)}
+                    isDragging={draggingExpense?.id === expense.id}
+                  />
+                ))}
+              </>
+            )}
+          </TabsContent>
+
+          <TabsContent value="buckets" className="mt-4 space-y-3">
+            {buckets.length === 0 ? (
+              <EmptyState
+                icon={FolderPlus}
+                title="No buckets yet"
+                description="Create buckets to organize related expenses"
+                action={{ label: "Create Bucket", onClick: () => setShowCreateBucket(true) }}
+              />
+            ) : (
+              buckets.map((bucket) => {
+                const bucketExpenses = getExpensesByBucket(bucket.id);
+                const bucketTotal = bucketExpenses.reduce((sum, e) => sum + e.amount, 0);
+                return (
+                  <BucketCard
+                    key={bucket.id}
+                    bucket={bucket}
+                    expenseCount={bucketExpenses.length}
+                    total={bucketTotal}
+                    currency={currency}
+                    onDelete={setDeleteBucketId}
+                    onClick={setSelectedBucket}
+                  />
+                );
+              })
+            )}
+          </TabsContent>
+        </Tabs>
       </div>
 
-      {/* Delete Confirmation */}
+      {/* Drag overlay */}
+      <DragOverlay
+        visible={!!draggingExpense}
+        draggingExpense={draggingExpense}
+        buckets={buckets}
+        hoveredBucketId={hoveredBucketId}
+        onBucketHover={setHoveredBucketId}
+        onDrop={handleDrop}
+        onCancel={() => { setDraggingExpense(null); setHoveredBucketId(null); }}
+      />
+
+      {/* Bucket detail sheet */}
+      <BucketDetailSheet
+        bucket={selectedBucket}
+        expenses={selectedBucket ? getExpensesByBucket(selectedBucket.id) : []}
+        currency={currency}
+        open={!!selectedBucket}
+        onOpenChange={(open) => !open && setSelectedBucket(null)}
+        onDeleteExpense={setDeleteId}
+      />
+
+      {/* Create bucket dialog */}
+      <CreateBucketDialog open={showCreateBucket} onOpenChange={setShowCreateBucket} onCreate={createBucket} />
+
+      {/* Delete expense confirmation */}
       <AlertDialog open={!!deleteId} onOpenChange={() => setDeleteId(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete expense?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This action cannot be undone.
-            </AlertDialogDescription>
+            <AlertDialogDescription>This action cannot be undone.</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground">
-              Delete
-            </AlertDialogAction>
+            <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground">Delete</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Delete bucket confirmation */}
+      <AlertDialog open={!!deleteBucketId} onOpenChange={() => setDeleteBucketId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete bucket?</AlertDialogTitle>
+            <AlertDialogDescription>Expenses in this bucket will not be deleted, just unassigned.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDeleteBucket} className="bg-destructive text-destructive-foreground">Delete</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
