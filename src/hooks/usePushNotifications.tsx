@@ -1,13 +1,18 @@
-import { useEffect, useCallback, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Capacitor } from '@capacitor/core';
-import { PushNotifications, Token, PushNotificationSchema, ActionPerformed } from '@capacitor/push-notifications';
-import { supabase } from '@/integrations/supabase/client';
-import { useAuth } from '@/hooks/useAuth';
-import { toast } from 'sonner';
-import { saveNotification } from '@/lib/localNotifications';
+import { useEffect, useCallback, useRef } from "react";
+import { useNavigate } from "react-router-dom";
+import { Capacitor } from "@capacitor/core";
+import {
+  PushNotifications,
+  Token,
+  PushNotificationSchema,
+  ActionPerformed,
+} from "@capacitor/push-notifications";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
+import { toast } from "sonner";
+import { saveNotification } from "@/lib/localNotifications";
 
-// Global pending navigation for when notification is tapped before router is ready
+// Global pending navigation for when notification is tapped before router/auth is ready
 let pendingNotificationNavigation: string | null = null;
 
 export function getPendingNotificationNavigation(): string | null {
@@ -16,182 +21,186 @@ export function getPendingNotificationNavigation(): string | null {
   return path;
 }
 
+function getTargetPathFromNotificationData(data?: Record<string, any>): string | null {
+  if (data?.type === "bill" && data?.id) return `/bills/${data.id}`;
+  if (data?.type === "iou" && data?.id) return `/ious/${data.id}`;
+  return null;
+}
+
 export function usePushNotifications() {
   const { user, profile } = useAuth();
   const navigate = useNavigate();
+
   const navigateRef = useRef(navigate);
-  
-  // Keep navigate ref updated
+  const userRef = useRef(user);
+  const profileRef = useRef(profile);
+  const latestTokenRef = useRef<string | null>(null);
+  const didInitRef = useRef(false);
+
+  // Keep refs updated (so listeners always see latest values)
   useEffect(() => {
     navigateRef.current = navigate;
   }, [navigate]);
 
+  useEffect(() => {
+    userRef.current = user;
+    profileRef.current = profile;
+  }, [user, profile]);
+
   const registerToken = useCallback(async (token: string) => {
-    if (!user || !profile?.phone_suffix) {
-      console.log('Cannot register token: no user or phone_suffix');
+    const u = userRef.current;
+    const p = profileRef.current;
+
+    if (!u || !p?.phone_suffix) {
+      // user/profile might not be ready on cold start; we'll retry later
+      latestTokenRef.current = token;
       return;
     }
 
     try {
       const { error } = await supabase
-        .from('device_tokens')
-        .upsert({
-          user_id: user.id,
-          phone_suffix: profile.phone_suffix,
-          fcm_token: token,
-          device_platform: Capacitor.getPlatform(),
-        }, {
-          onConflict: 'user_id,fcm_token'
-        });
+        .from("device_tokens")
+        .upsert(
+          {
+            user_id: u.id,
+            phone_suffix: p.phone_suffix,
+            fcm_token: token,
+            device_platform: Capacitor.getPlatform(),
+          },
+          {
+            onConflict: "user_id,fcm_token",
+          },
+        );
 
       if (error) {
-        console.error('Error registering device token:', error);
+        console.error("Error registering device token:", error);
       } else {
-        console.log('Device token registered successfully');
+        console.log("Device token registered successfully");
       }
     } catch (err) {
-      console.error('Failed to register token:', err);
+      console.error("Failed to register token:", err);
     }
-  }, [user, profile]);
+  }, []);
 
   const initializePushNotifications = useCallback(async () => {
     if (!Capacitor.isNativePlatform()) {
-      console.log('Push notifications only available on native platforms');
+      console.log("Push notifications only available on native platforms");
       return;
     }
 
+    // Prevent duplicate listeners
+    if (didInitRef.current) return;
+    didInitRef.current = true;
+
     try {
-      // Set up listeners BEFORE requesting permission to catch all events
-      await PushNotifications.addListener('registration', (token: Token) => {
-        console.log('Push registration success, token:', token.value);
-        try {
-          registerToken(token.value);
-        } catch (err) {
-          console.error('Error in registerToken:', err);
-        }
+      // Listeners FIRST so we don't miss tap events during cold start
+      await PushNotifications.addListener("registration", (token: Token) => {
+        console.log("Push registration success, token:", token.value);
+        latestTokenRef.current = token.value;
+        registerToken(token.value);
       });
 
-      await PushNotifications.addListener('registrationError', (error: any) => {
-        console.error('Push registration error:', error);
+      await PushNotifications.addListener("registrationError", (error: any) => {
+        console.error("Push registration error:", error);
       });
 
-      await PushNotifications.addListener('pushNotificationReceived', (notification: PushNotificationSchema) => {
-        console.log('Push notification received:', notification);
-        try {
-          // Save notification to local storage
+      await PushNotifications.addListener(
+        "pushNotificationReceived",
+        (notification: PushNotificationSchema) => {
+          console.log("Push notification received:", notification);
+
+          // Save notification locally for the in-app notifications screen
           saveNotification({
-            title: notification.title || 'Notification',
-            body: notification.body || '',
+            title: notification.title || "Notification",
+            body: notification.body || "",
             data: notification.data,
           });
+          window.dispatchEvent(new Event("notification-update"));
 
-          // Dispatch event to update UI
-          window.dispatchEvent(new Event('notification-update'));
-
-          // Show toast with action to navigate
-          const data = notification.data;
-          if (data?.type === 'bill' && data?.id) {
-            toast(notification.title || 'Notification', {
+          // Toast + optional deep link
+          const targetPath = getTargetPathFromNotificationData(notification.data);
+          if (targetPath) {
+            toast(notification.title || "Notification", {
               description: notification.body,
               action: {
-                label: 'View',
-                onClick: () => navigateRef.current(`/bills/${data.id}`),
-              },
-            });
-          } else if (data?.type === 'iou' && data?.id) {
-            toast(notification.title || 'Notification', {
-              description: notification.body,
-              action: {
-                label: 'View',
-                onClick: () => navigateRef.current(`/ious/${data.id}`),
+                label: "View",
+                onClick: () => navigateRef.current(targetPath),
               },
             });
           } else {
-            toast(notification.title || 'Notification', {
+            toast(notification.title || "Notification", {
               description: notification.body,
             });
           }
-        } catch (err) {
-          console.error('Error handling notification:', err);
-        }
-      });
+        },
+      );
 
-      await PushNotifications.addListener('pushNotificationActionPerformed', (action: ActionPerformed) => {
-        console.log('Push notification action performed:', action);
-        try {
-          // Save when user taps on notification
+      await PushNotifications.addListener(
+        "pushNotificationActionPerformed",
+        (action: ActionPerformed) => {
+          console.log("Push notification action performed:", action);
+
           const notification = action.notification;
           saveNotification({
-            title: notification.title || 'Notification',
-            body: notification.body || '',
+            title: notification.title || "Notification",
+            body: notification.body || "",
             data: notification.data,
           });
+          window.dispatchEvent(new Event("notification-update"));
 
-          window.dispatchEvent(new Event('notification-update'));
-
-          const data = notification.data;
-          let targetPath: string | null = null;
-          
-          if (data?.type === 'bill' && data?.id) {
-            targetPath = `/bills/${data.id}`;
-          } else if (data?.type === 'iou' && data?.id) {
-            targetPath = `/ious/${data.id}`;
-          }
-          
+          const targetPath = getTargetPathFromNotificationData(notification.data);
           if (targetPath) {
-            console.log('Navigating to:', targetPath);
-            // Use React Router navigation instead of window.location
-            // This works properly within the WebView and maintains app state
+            // Always store for later (covers cold start before router/auth)
+            pendingNotificationNavigation = targetPath;
             try {
               navigateRef.current(targetPath);
             } catch (navErr) {
-              // If navigation fails (e.g., app not fully initialized), store for later
-              console.log('Navigation failed, storing for later:', navErr);
-              pendingNotificationNavigation = targetPath;
+              console.log("Navigation not ready, will retry:", navErr);
             }
           }
-        } catch (err) {
-          console.error('Error handling notification action:', err);
-        }
-      });
+        },
+      );
 
-      // Check current permission status (don't request here, it's handled by useAppPermissions)
       const permStatus = await PushNotifications.checkPermissions();
-
-      if (permStatus.receive === 'granted') {
-        // Register with FCM
+      if (permStatus.receive === "granted") {
         await PushNotifications.register();
       } else {
-        console.log('Push notification permission not granted yet');
+        console.log("Push notification permission not granted yet");
       }
     } catch (err) {
-      console.error('Error initializing push notifications:', err);
+      console.error("Error initializing push notifications:", err);
     }
   }, [registerToken]);
 
-  // Check for pending navigation on mount/user change
+  // Initialize ASAP on native (don’t wait for user/profile so we don't miss tap events)
   useEffect(() => {
-    if (user) {
-      const pendingPath = getPendingNotificationNavigation();
-      if (pendingPath) {
-        console.log('Processing pending notification navigation:', pendingPath);
-        // Small delay to ensure app is ready
-        setTimeout(() => navigate(pendingPath), 100);
-      }
-    }
-  }, [user, navigate]);
-
-  useEffect(() => {
-    if (user && profile?.phone_suffix) {
-      initializePushNotifications();
-    }
+    initializePushNotifications();
 
     return () => {
       if (Capacitor.isNativePlatform()) {
         PushNotifications.removeAllListeners();
+        didInitRef.current = false;
       }
     };
-  }, [user, profile, initializePushNotifications]);
+  }, [initializePushNotifications]);
+
+  // If we received a token before auth/profile was ready, retry registration
+  useEffect(() => {
+    if (user && profile?.phone_suffix && latestTokenRef.current) {
+      registerToken(latestTokenRef.current);
+    }
+  }, [user, profile?.phone_suffix, registerToken]);
+
+  // Process pending navigation once user exists
+  useEffect(() => {
+    if (user) {
+      const pendingPath = getPendingNotificationNavigation();
+      if (pendingPath) {
+        console.log("Processing pending notification navigation:", pendingPath);
+        setTimeout(() => navigate(pendingPath), 100);
+      }
+    }
+  }, [user, navigate]);
 
   return { initializePushNotifications };
 }

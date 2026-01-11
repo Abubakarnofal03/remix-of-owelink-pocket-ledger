@@ -88,8 +88,8 @@ async function sendFCMNotification(
         priority: "high",
         notification: {
           sound: "default",
-          // Remove Flutter-specific click_action - Capacitor handles tap automatically
-          // The data payload is enough for pushNotificationActionPerformed to work
+          // Ensure tapping a system notification opens the app on Android
+          click_action: "FCM_PLUGIN_ACTIVITY",
           channel_id: "default",
         },
       },
