@@ -1,10 +1,11 @@
 import { Link } from "react-router-dom";
-import { Settings, LogOut } from "lucide-react";
+import { Settings, LogOut, Bell } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AvatarCustom } from "@/components/ui/avatar-custom";
 import { SyncStatus } from "@/components/ui/SyncStatus";
 import { useAuth } from "@/hooks/useAuth";
 import { useOffline } from "@/hooks/useOffline";
+import { useLocalNotifications } from "@/hooks/useLocalNotifications";
 import { APP_NAME } from "@/lib/constants";
 import {
   DropdownMenu,
@@ -17,6 +18,7 @@ import {
 export function Header() {
   const { profile, signOut } = useAuth();
   const { status, pendingCount, sync } = useOffline();
+  const { unreadCount } = useLocalNotifications();
 
   const handleSyncComplete = () => {
     // Trigger a full sync to update counts
@@ -41,6 +43,18 @@ export function Header() {
             pendingCount={pendingCount} 
             onSyncComplete={handleSyncComplete}
           />
+          
+          {/* Notifications button */}
+          <Button variant="ghost" size="icon" className="relative" asChild>
+            <Link to="/notifications">
+              <Bell className="h-5 w-5" />
+              {unreadCount > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 h-4 min-w-4 px-1 rounded-full bg-destructive text-destructive-foreground text-[10px] font-bold flex items-center justify-center">
+                  {unreadCount > 9 ? "9+" : unreadCount}
+                </span>
+              )}
+            </Link>
+          </Button>
           
           {profile && (
             <DropdownMenu>

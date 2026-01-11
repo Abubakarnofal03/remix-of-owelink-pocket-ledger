@@ -5,8 +5,9 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { MoneyDisplay } from "@/components/ui/MoneyDisplay";
 import { format } from "date-fns";
-import { Wallet, Calendar, Trash2, FolderOpen } from "lucide-react";
+import { Wallet, Calendar, Trash2, FolderOpen, GripVertical } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { hapticMedium } from "@/lib/haptics";
 
 interface ExpenseCardProps {
   expense: Expense;
@@ -15,6 +16,7 @@ interface ExpenseCardProps {
   onDragStart?: (expense: Expense) => void;
   onDragEnd?: () => void;
   isDragging?: boolean;
+  hasBuckets?: boolean;
 }
 
 export function ExpenseCard({
@@ -24,13 +26,22 @@ export function ExpenseCard({
   onDragStart,
   onDragEnd,
   isDragging,
+  hasBuckets = false,
 }: ExpenseCardProps) {
   const [isPressed, setIsPressed] = useState(false);
   const pressTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-  const handlePointerDown = () => {
+  const handlePointerDown = (e: React.PointerEvent) => {
+    // Ignore if clicking on buttons
+    if ((e.target as HTMLElement).closest('button')) {
+      return;
+    }
+    
+    if (!hasBuckets) return;
+    
     pressTimerRef.current = setTimeout(() => {
       setIsPressed(true);
+      hapticMedium();
       onDragStart?.(expense);
     }, 400); // Long press threshold
   };
@@ -40,10 +51,7 @@ export function ExpenseCard({
       clearTimeout(pressTimerRef.current);
       pressTimerRef.current = null;
     }
-    if (isPressed) {
-      setIsPressed(false);
-      onDragEnd?.();
-    }
+    setIsPressed(false);
   };
 
   const handlePointerCancel = () => {
@@ -57,9 +65,10 @@ export function ExpenseCard({
   return (
     <Card
       className={cn(
-        "group transition-all duration-200 touch-manipulation",
+        "group transition-all duration-200 touch-manipulation select-none",
         isDragging && "opacity-50 scale-95",
         bucket && "border-l-4",
+        isPressed && "scale-[0.98] bg-muted/50",
       )}
       style={bucket ? { borderLeftColor: bucket.color } : undefined}
       onPointerDown={handlePointerDown}
@@ -70,6 +79,12 @@ export function ExpenseCard({
       <CardContent className="p-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3 flex-1 min-w-0">
+            {/* Drag handle indicator */}
+            {hasBuckets && (
+              <div className="flex items-center text-muted-foreground/40">
+                <GripVertical className="h-4 w-4" />
+              </div>
+            )}
             <div
               className="h-9 w-9 rounded-full flex items-center justify-center shrink-0"
               style={{ backgroundColor: bucket ? `${bucket.color}20` : undefined }}

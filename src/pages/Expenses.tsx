@@ -165,7 +165,10 @@ export default function Expenses() {
         </div>
 
         {/* Total Summary Card */}
-        <Card className="bg-gradient-to-br from-primary/10 via-primary/5 to-transparent border-primary/20">
+        <Card 
+          className="bg-gradient-to-br from-primary/10 via-primary/5 to-transparent border-primary/20"
+          data-tour="expense-summary"
+        >
           <CardContent className="p-4">
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
@@ -245,14 +248,14 @@ export default function Expenses() {
             </CardContent>
           </Card>
         ) : (
-          <Button onClick={() => setShowForm(true)} className="w-full" size="lg">
+          <Button onClick={() => setShowForm(true)} className="w-full" size="lg" data-tour="add-expense-btn">
             <Plus className="h-5 w-5 mr-2" />
             Add Expense
           </Button>
         )}
 
         {/* Tabs: All Expenses vs Buckets */}
-        <Tabs value={activeTab} onValueChange={setActiveTab}>
+        <Tabs value={activeTab} onValueChange={setActiveTab} data-tour="expense-tabs">
           <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="all">All Expenses</TabsTrigger>
             <TabsTrigger value="buckets">Buckets ({buckets.length})</TabsTrigger>
@@ -272,7 +275,7 @@ export default function Expenses() {
             ) : (
               <>
                 <p className="text-xs text-muted-foreground px-1">
-                  {buckets.length > 0 && "Long press to drag expenses into buckets"}
+                  {buckets.length > 0 && "Long press to organize expenses into buckets"}
                 </p>
                 {filteredExpenses.map((expense) => (
                   <ExpenseCard
@@ -283,6 +286,7 @@ export default function Expenses() {
                     onDragStart={handleDragStart}
                     onDragEnd={() => setDraggingExpense(null)}
                     isDragging={draggingExpense?.id === expense.id}
+                    hasBuckets={buckets.length > 0}
                   />
                 ))}
               </>
