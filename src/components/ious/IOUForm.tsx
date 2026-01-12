@@ -24,7 +24,6 @@ import {
   X,
   Loader2,
   Phone,
-  DollarSign,
   FileText,
   Smartphone,
   Bell,
@@ -57,7 +56,6 @@ export function IOUForm() {
   const [showAddContact, setShowAddContact] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const [showDeviceContacts, setShowDeviceContacts] = useState(false);
   const [reminderEnabled, setReminderEnabled] = useState(false);
   const [reminderInterval, setReminderInterval] = useState<string>("3");
 
@@ -95,19 +93,10 @@ export function IOUForm() {
     return filtered;
   }, [deviceContacts, contacts, searchQuery]);
 
-  // Fetch device contacts when showing
-  const handleShowDeviceContacts = async () => {
-    if (deviceContacts.length === 0) {
-      await fetchDeviceContacts();
-    }
-    setShowDeviceContacts(true);
-  };
-
   // Select debtor from app contact
   const selectDebtor = (contact: Contact) => {
     setSelectedDebtor({ phone_number: contact.phone_number, nickname: contact.nickname });
     setSearchQuery("");
-    setShowDeviceContacts(false);
     if (errors.debtor) setErrors((prev) => ({ ...prev, debtor: "" }));
   };
 
@@ -115,7 +104,6 @@ export function IOUForm() {
   const selectDebtorFromDevice = (deviceContact: DeviceContact) => {
     setSelectedDebtor({ phone_number: deviceContact.phone_number, nickname: deviceContact.name });
     setSearchQuery("");
-    setShowDeviceContacts(false);
     if (errors.debtor) setErrors((prev) => ({ ...prev, debtor: "" }));
   };
 
@@ -231,86 +219,100 @@ export function IOUForm() {
           </div>
         ) : (
           <>
-            {/* Device Contacts List */}
-            {showDeviceContacts && filteredDeviceContacts.length > 0 && (
-              <div className="border border-border rounded-lg overflow-hidden max-h-48 overflow-y-auto">
-                <div className="px-3 py-2 bg-muted/50 border-b border-border flex items-center justify-between">
-                  <span className="text-xs font-medium text-muted-foreground">Phone Contacts</span>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="h-6 px-2 text-xs"
-                    onClick={() => setShowDeviceContacts(false)}
-                  >
-                    <X className="h-3 w-3" />
-                  </Button>
-                </div>
-                {filteredDeviceContacts.map((deviceContact) => (
-                  <button
-                    key={deviceContact.id}
-                    type="button"
-                    className="w-full px-3 py-2 flex items-center gap-3 hover:bg-accent transition-colors text-left border-b border-border last:border-b-0"
-                    onClick={() => selectDebtorFromDevice(deviceContact)}
-                  >
-                    <AvatarCustom
-                      name={deviceContact.name || deviceContact.phone_number}
-                      size="sm"
-                    />
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium text-sm truncate">
-                        {deviceContact.name || deviceContact.phone_number}
-                      </p>
-                      {deviceContact.name && (
-                        <p className="text-xs text-muted-foreground truncate">
-                          {deviceContact.phone_number}
-                        </p>
-                      )}
-                    </div>
-                  </button>
-                ))}
-              </div>
-            )}
+            {/* Hint about phone contacts */}
+            <div className="flex items-center gap-2 px-3 py-2 bg-primary/5 rounded-lg border border-primary/20">
+              <Smartphone className="h-4 w-4 text-primary flex-shrink-0" />
+              <p className="text-xs text-muted-foreground">
+                Start typing to search your <span className="font-medium text-foreground">phone contacts</span> and app contacts
+              </p>
+            </div>
 
             <div className="relative">
               <Input
-                placeholder="Search contacts by name or phone..."
+                placeholder="Type a name or phone number..."
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  // Auto-fetch device contacts when user starts typing
+                  if (e.target.value && deviceContacts.length === 0) {
+                    fetchDeviceContacts();
+                  }
+                }}
                 icon={<Search className="h-4 w-4" />}
                 error={!!errors.debtor}
               />
 
-              {/* Contact dropdown */}
-              {searchQuery && filteredContacts.length > 0 && (
-                <div className="absolute z-10 mt-1 w-full bg-popover border border-border rounded-lg shadow-lg max-h-48 overflow-y-auto">
-                  {filteredContacts.map((contact) => (
-                    <button
-                      key={contact.id}
-                      type="button"
-                      className="w-full px-3 py-2 flex items-center gap-3 hover:bg-accent transition-colors text-left"
-                      onClick={() => selectDebtor(contact)}
-                    >
-                      <AvatarCustom
-                        name={contact.nickname || contact.phone_number}
-                        size="sm"
-                      />
-                      <div className="flex-1 min-w-0">
-                        <p className="font-medium text-sm truncate">
-                          {contact.nickname || contact.phone_number}
-                        </p>
-                        {contact.nickname && (
-                          <p className="text-xs text-muted-foreground truncate">
-                            {contact.phone_number}
-                          </p>
-                        )}
+              {/* Combined contact dropdown - app contacts + device contacts */}
+              {searchQuery && (filteredContacts.length > 0 || filteredDeviceContacts.length > 0) && (
+                <div className="absolute z-10 mt-1 w-full bg-popover border border-border rounded-lg shadow-lg max-h-64 overflow-y-auto">
+                  {/* App contacts */}
+                  {filteredContacts.length > 0 && (
+                    <>
+                      <div className="px-3 py-1.5 bg-muted/50 border-b border-border">
+                        <span className="text-xs font-medium text-muted-foreground">App Contacts</span>
                       </div>
-                    </button>
-                  ))}
+                      {filteredContacts.map((contact) => (
+                        <button
+                          key={contact.id}
+                          type="button"
+                          className="w-full px-3 py-2 flex items-center gap-3 hover:bg-accent transition-colors text-left border-b border-border last:border-b-0"
+                          onClick={() => selectDebtor(contact)}
+                        >
+                          <AvatarCustom
+                            name={contact.nickname || contact.phone_number}
+                            size="sm"
+                          />
+                          <div className="flex-1 min-w-0">
+                            <p className="font-medium text-sm truncate">
+                              {contact.nickname || contact.phone_number}
+                            </p>
+                            {contact.nickname && (
+                              <p className="text-xs text-muted-foreground truncate">
+                                {contact.phone_number}
+                              </p>
+                            )}
+                          </div>
+                        </button>
+                      ))}
+                    </>
+                  )}
+
+                  {/* Device contacts */}
+                  {filteredDeviceContacts.length > 0 && (
+                    <>
+                      <div className="px-3 py-1.5 bg-muted/50 border-b border-border flex items-center gap-2">
+                        <Smartphone className="h-3 w-3 text-muted-foreground" />
+                        <span className="text-xs font-medium text-muted-foreground">Phone Contacts</span>
+                      </div>
+                      {filteredDeviceContacts.map((deviceContact) => (
+                        <button
+                          key={deviceContact.id}
+                          type="button"
+                          className="w-full px-3 py-2 flex items-center gap-3 hover:bg-accent transition-colors text-left border-b border-border last:border-b-0"
+                          onClick={() => selectDebtorFromDevice(deviceContact)}
+                        >
+                          <AvatarCustom
+                            name={deviceContact.name || deviceContact.phone_number}
+                            size="sm"
+                          />
+                          <div className="flex-1 min-w-0">
+                            <p className="font-medium text-sm truncate">
+                              {deviceContact.name || deviceContact.phone_number}
+                            </p>
+                            {deviceContact.name && (
+                              <p className="text-xs text-muted-foreground truncate">
+                                {deviceContact.phone_number}
+                              </p>
+                            )}
+                          </div>
+                        </button>
+                      ))}
+                    </>
+                  )}
                 </div>
               )}
 
-              {searchQuery && filteredContacts.length === 0 && !contactsLoading && (
+              {searchQuery && filteredContacts.length === 0 && filteredDeviceContacts.length === 0 && !contactsLoading && (
                 <div className="absolute z-10 mt-1 w-full bg-popover border border-border rounded-lg shadow-lg p-3">
                   <p className="text-sm text-muted-foreground text-center mb-2">
                     No contacts found
@@ -335,33 +337,16 @@ export function IOUForm() {
           <p className="text-sm text-destructive">{errors.debtor}</p>
         )}
 
-        <div className="flex gap-2">
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            onClick={handleShowDeviceContacts}
-            className="text-primary"
-            disabled={deviceContactsLoading || !!selectedDebtor}
-          >
-            {deviceContactsLoading ? (
-              <Loader2 className="h-4 w-4 mr-1 animate-spin" />
-            ) : (
-              <Smartphone className="h-4 w-4 mr-1" />
-            )}
-            From Phone
-          </Button>
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            onClick={() => setShowAddContact(true)}
-            className="text-primary"
-          >
-            <Plus className="h-4 w-4 mr-1" />
-            New Contact
-          </Button>
-        </div>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={() => setShowAddContact(true)}
+          className="text-primary"
+        >
+          <Plus className="h-4 w-4 mr-1" />
+          Add New Contact
+        </Button>
       </div>
 
       {/* Amount */}
