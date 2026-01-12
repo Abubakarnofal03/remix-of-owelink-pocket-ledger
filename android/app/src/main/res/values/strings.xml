@@ -4,4 +4,12 @@
     <string name="title_activity_main">OweLink</string>
     <string name="package_name">app.lovable.c4b29d3de8d347a9bddd8699314dcb44</string>
     <string name="custom_url_scheme">app.lovable.c4b29d3de8d347a9bddd8699314dcb44</string>
+    
+    <!-- App Shortcuts -->
+    <string name="shortcut_bill_short">New Bill</string>
+    <string name="shortcut_bill_long">Create a new bill</string>
+    <string name="shortcut_iou_short">New IOU</string>
+    <string name="shortcut_iou_long">Create a new IOU</string>
+    <string name="shortcut_expense_short">Add Expense</string>
+    <string name="shortcut_expense_long">Track a new expense</string>
 </resources>

@@ -117,7 +117,11 @@ export function useBills() {
       // Always return local data immediately - never block on server
       try {
         const localBills = await fetchBillsOfflineFirst(user.id);
-        return localBills.map(localBillToBill);
+        const mappedBills = localBills.map(localBillToBill);
+        // Sort by created_at descending (newest first)
+        return mappedBills.sort((a, b) => 
+          new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        );
       } catch (localError) {
         console.warn("Local DB not available:", localError);
         return [];
