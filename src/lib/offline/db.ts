@@ -105,6 +105,9 @@ export interface LocalBill {
   last_reminder_sent_at?: string | null;
   synced_at?: number;
   is_local?: boolean;
+  // Creator info (for participant/debtor view)
+  creator_username?: string | null;
+  creator_phone_number?: string | null;
 }
 
 export interface LocalBillParticipant {

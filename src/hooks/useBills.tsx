@@ -85,6 +85,11 @@ function localBillToBill(local: LocalBill & { participants?: LocalBillParticipan
     reminder_interval_days: local.reminder_interval_days,
     last_reminder_sent_at: local.last_reminder_sent_at,
     is_local: local.is_local,
+    // Include creator info for participant view
+    creator: local.creator_username ? {
+      username: local.creator_username,
+      phone_number: local.creator_phone_number || '',
+    } : undefined,
     participants: local.participants?.map((p) => ({
       id: p.id,
       bill_id: p.bill_id,

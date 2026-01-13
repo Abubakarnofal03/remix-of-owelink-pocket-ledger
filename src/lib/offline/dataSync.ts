@@ -1,7 +1,7 @@
 import { supabase } from '@/integrations/supabase/client';
 import { offlineDb, LocalBill, LocalBillParticipant, LocalIOU, LocalContact, LocalPayment, LocalNotification, LocalPaymentRequest, LocalIOUPaymentRequest } from './db';
 
-// Fetch and store bills from server
+// Fetch and store bills from server (with creator profile info for participants)
 export async function syncBillsFromServer(userId: string): Promise<void> {
   try {
     const { data, error } = await supabase
@@ -18,22 +18,45 @@ export async function syncBillsFromServer(userId: string): Promise<void> {
     if (data) {
       const now = Date.now();
       
-      // Store bills
-      const bills: LocalBill[] = data.map(bill => ({
-        id: bill.id,
-        creator_id: bill.creator_id,
-        title: bill.title,
-        description: bill.description,
-        total_amount: bill.total_amount,
-        currency: bill.currency,
-        status: bill.status,
-        due_date: bill.due_date,
-        created_at: bill.created_at,
-        updated_at: bill.updated_at,
-        deleted_at: bill.deleted_at,
-        synced_at: now,
-        is_local: false,
-      }));
+      // Collect unique creator IDs
+      const creatorIds = [...new Set(data.map(bill => bill.creator_id))];
+      
+      // Fetch creator profiles in batch
+      const { data: profilesData } = await supabase
+        .from('profiles')
+        .select('user_id, username, phone_number')
+        .in('user_id', creatorIds);
+      
+      // Create a map for quick lookup
+      const profileMap = new Map<string, { username: string; phone_number: string }>();
+      profilesData?.forEach(p => {
+        profileMap.set(p.user_id, { username: p.username, phone_number: p.phone_number });
+      });
+      
+      // Store bills with creator info
+      const bills: LocalBill[] = data.map(bill => {
+        const creatorProfile = profileMap.get(bill.creator_id);
+        return {
+          id: bill.id,
+          creator_id: bill.creator_id,
+          title: bill.title,
+          description: bill.description,
+          total_amount: bill.total_amount,
+          currency: bill.currency,
+          status: bill.status,
+          due_date: bill.due_date,
+          created_at: bill.created_at,
+          updated_at: bill.updated_at,
+          deleted_at: bill.deleted_at,
+          reminder_enabled: bill.reminder_enabled,
+          reminder_interval_days: bill.reminder_interval_days,
+          synced_at: now,
+          is_local: false,
+          // Creator info from profile lookup
+          creator_username: creatorProfile?.username || null,
+          creator_phone_number: creatorProfile?.phone_number || null,
+        };
+      });
 
       // Store participants
       const participants: LocalBillParticipant[] = data.flatMap(bill =>

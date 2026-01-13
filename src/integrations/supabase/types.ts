@@ -44,6 +44,44 @@ export type Database = {
         }
         Relationships: []
       }
+      bill_notices: {
+        Row: {
+          author_phone_suffix: string
+          bill_id: string
+          color: string
+          created_at: string
+          id: string
+          message: string
+          updated_at: string
+        }
+        Insert: {
+          author_phone_suffix: string
+          bill_id: string
+          color?: string
+          created_at?: string
+          id?: string
+          message: string
+          updated_at?: string
+        }
+        Update: {
+          author_phone_suffix?: string
+          bill_id?: string
+          color?: string
+          created_at?: string
+          id?: string
+          message?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bill_notices_bill_id_fkey"
+            columns: ["bill_id"]
+            isOneToOne: false
+            referencedRelation: "bills"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       bill_participants: {
         Row: {
           amount_owed: number
