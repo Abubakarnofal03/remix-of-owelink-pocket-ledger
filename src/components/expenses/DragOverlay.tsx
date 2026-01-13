@@ -125,7 +125,7 @@ export function DragOverlay({
         </div>
 
         {/* Cancel button */}
-        <div className="pt-4 pb-2">
+        <div className="pt-4 pb-20">
           <button
             className="w-full py-4 rounded-xl border-2 border-muted-foreground/30 text-muted-foreground font-medium transition-colors hover:border-foreground hover:text-foreground active:bg-muted"
             onClick={handleCancel}
