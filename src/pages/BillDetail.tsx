@@ -57,6 +57,7 @@ import {
   MessageCircle,
   Send,
   FileCheck,
+  Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
@@ -108,6 +109,8 @@ export default function BillDetail() {
   const [newParticipantPhone, setNewParticipantPhone] = useState("");
   const [newParticipantAmount, setNewParticipantAmount] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
+  const [splitEqualWithNew, setSplitEqualWithNew] = useState(false);
+  const [isAddingParticipant, setIsAddingParticipant] = useState(false);
 
   // Filter contacts for add participant dialog
   const filteredContacts = useMemo(() => {
@@ -421,49 +424,85 @@ export default function BillDetail() {
   };
 
   const handleAddParticipant = async () => {
-    if (!newParticipantPhone || !newParticipantAmount) return;
-
-    const amount = parseFloat(newParticipantAmount);
-    if (isNaN(amount) || amount <= 0) {
-      toast.error("Please enter a valid amount");
+    if (!newParticipantPhone) {
+      toast.error("Please enter a phone number");
       return;
     }
 
+    // Prevent duplicate submissions
+    if (isAddingParticipant) return;
+    setIsAddingParticipant(true);
+
     try {
+      let amount: number;
+      let updatedParticipants = bill.participants || [];
+
+      if (splitEqualWithNew) {
+        // Redistribute bill total equally among all participants including new one
+        const participantCount = (bill.participants?.length || 0) + 1;
+        amount = Math.round((bill.total_amount / participantCount) * 100) / 100;
+
+        // Update existing participants with new equal amounts
+        for (const p of bill.participants || []) {
+          await updateBillParticipantOfflineFirst(p.id, { amount_owed: amount });
+        }
+
+        // Update local state with redistributed amounts
+        updatedParticipants = (bill.participants || []).map(p => ({
+          ...p,
+          amount_owed: amount,
+        }));
+      } else {
+        amount = parseFloat(newParticipantAmount);
+        if (isNaN(amount) || amount <= 0) {
+          toast.error("Please enter a valid amount");
+          setIsAddingParticipant(false);
+          return;
+        }
+      }
+
       // Create participant offline-first
       const newParticipant = await createBillParticipantOfflineFirst(bill.id, {
         phone_number: newParticipantPhone,
         amount_owed: amount,
       });
 
-      // Update bill total offline-first
-      const newTotal = bill.total_amount + amount;
+      // Calculate new total: if splitting equal, total stays same; otherwise add new amount
+      const newTotal = splitEqualWithNew ? bill.total_amount : bill.total_amount + amount;
 
       // If bill was paid, revert to pending since we added a new unpaid participant
       const newStatus = bill.status === 'paid' ? 'pending' : bill.status;
-      await updateBillOfflineFirst(bill.id, {
-        total_amount: newTotal,
-        status: newStatus,
-      });
+      
+      if (!splitEqualWithNew) {
+        await updateBillOfflineFirst(bill.id, {
+          total_amount: newTotal,
+          status: newStatus,
+        });
+      } else if (newStatus !== bill.status) {
+        await updateBillOfflineFirst(bill.id, { status: newStatus });
+      }
 
       // Update UI immediately
       updateBillLocally(prev => ({
         ...prev,
         total_amount: newTotal,
         status: newStatus,
-        participants: [...(prev.participants || []), newParticipant as any],
+        participants: [...updatedParticipants, newParticipant as any],
       }));
 
-      toast.success("Participant added");
+      toast.success(splitEqualWithNew ? "Participant added & amounts redistributed" : "Participant added");
       setShowAddParticipantDialog(false);
       setNewParticipantPhone("");
       setNewParticipantAmount("");
       setSearchQuery("");
+      setSplitEqualWithNew(false);
 
       sync(); // Trigger sync in background
     } catch (error) {
       console.error("Error adding participant:", error);
       toast.error("Failed to add participant");
+    } finally {
+      setIsAddingParticipant(false);
     }
   };
 
@@ -1148,20 +1187,52 @@ Never lose track of debts again. Split bills, send reminders & get paid faster.
                 placeholder="Enter phone number"
               />
             </div>
-            <div>
-              <label className="text-sm font-medium">Amount Owed</label>
-              <Input
-                type="number"
-                value={newParticipantAmount}
-                onChange={(e) => setNewParticipantAmount(e.target.value)}
-                placeholder="Enter amount"
+
+            {/* Split Equal Toggle */}
+            <div className="flex items-center justify-between p-3 rounded-lg bg-primary/5 border border-primary/20">
+              <div className="space-y-0.5">
+                <Label className="text-sm font-medium">Split equally with everyone</Label>
+                <p className="text-xs text-muted-foreground">
+                  Redistribute total ({bill.currency} {bill.total_amount.toFixed(2)}) among all participants
+                </p>
+              </div>
+              <Switch
+                checked={splitEqualWithNew}
+                onCheckedChange={setSplitEqualWithNew}
               />
             </div>
+
+            {!splitEqualWithNew && (
+              <div>
+                <label className="text-sm font-medium">Amount Owed</label>
+                <Input
+                  type="number"
+                  value={newParticipantAmount}
+                  onChange={(e) => setNewParticipantAmount(e.target.value)}
+                  placeholder="Enter amount"
+                />
+              </div>
+            )}
+
+            {splitEqualWithNew && (
+              <div className="p-3 bg-muted rounded-lg">
+                <p className="text-sm text-muted-foreground">
+                  Each person will owe:{' '}
+                  <span className="font-medium text-foreground">
+                    {bill.currency} {(bill.total_amount / ((bill.participants?.length || 0) + 1)).toFixed(2)}
+                  </span>
+                </p>
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowAddParticipantDialog(false)}>Cancel</Button>
-            <Button onClick={handleAddParticipant}>
-              <Plus className="h-4 w-4 mr-1" />
+            <Button onClick={handleAddParticipant} disabled={isAddingParticipant}>
+              {isAddingParticipant ? (
+                <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+              ) : (
+                <Plus className="h-4 w-4 mr-1" />
+              )}
               Add Participant
             </Button>
           </DialogFooter>
