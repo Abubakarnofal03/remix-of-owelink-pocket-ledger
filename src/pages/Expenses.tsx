@@ -341,6 +341,7 @@ export default function Expenses() {
         open={!!selectedBucket}
         onOpenChange={(open) => !open && setSelectedBucket(null)}
         onDeleteExpense={setDeleteId}
+        onCreateExpense={createExpense}
       />
 
       {/* Create bucket dialog */}

@@ -14,6 +14,7 @@ import {
   IOUInsertOffline,
 } from "@/lib/offline/offlineDataLayer";
 import { syncIOUsFromServer } from "@/lib/offline/dataSync";
+import { withTimeout } from "@/lib/offline/requestWithTimeout";
 
 export interface IOU {
   id: string;
@@ -188,26 +189,30 @@ export function useIOUs() {
 
   const updateIOUMutation = useMutation({
     mutationFn: async ({ id, updates }: { id: string; updates: Partial<IOUInsert> }) => {
-      // Update locally first
+      // Update locally first - this always succeeds
       const localIOU = await updateIOUOfflineFirst(id, updates);
       if (!localIOU) throw new Error("IOU not found");
 
-      // If online and not local-only, sync to server
+      // If online and not local-only, attempt server sync with timeout
       if (offline.isOnline && !id.startsWith("local-")) {
         try {
-          const { data, error } = await supabase
-            .from("ious")
-            .update({
-              debtor_phone_number: updates.debtor_phone_number,
-              amount: updates.amount,
-              description: updates.description,
-              due_date: updates.due_date,
-              reminder_enabled: updates.reminder_enabled,
-              reminder_interval_days: updates.reminder_interval_days,
-            })
-            .eq("id", id)
-            .select()
-            .single();
+          const serverUpdateFn = async () => {
+            return await supabase
+              .from("ious")
+              .update({
+                debtor_phone_number: updates.debtor_phone_number,
+                amount: updates.amount,
+                description: updates.description,
+                due_date: updates.due_date,
+                reminder_enabled: updates.reminder_enabled,
+                reminder_interval_days: updates.reminder_interval_days,
+              })
+              .eq("id", id)
+              .select()
+              .single();
+          };
+
+          const { data, error } = await withTimeout(serverUpdateFn(), 5000);
 
           if (error) throw error;
 
@@ -223,7 +228,8 @@ export function useIOUs() {
 
           return localIOUToIOU({ ...data, is_local: false });
         } catch (e) {
-          console.warn("Failed to sync update to server:", e);
+          console.warn("Server sync timed out or failed, using local data:", e);
+          // Queue for later sync if not already queued
         }
       }
 
@@ -233,7 +239,7 @@ export function useIOUs() {
       queryClient.setQueryData<IOU[]>(iousQueryKey, (old = []) =>
         old.map((i) => (i.id === data.id ? { ...i, ...data } : i))
       );
-      toast.success(data.is_local ? "IOU updated locally" : "IOU updated");
+      toast.success(data.is_local ? "Saved locally, will sync when online" : "IOU updated");
     },
     onError: (error: Error) => {
       console.error("Error updating IOU:", error);
@@ -243,23 +249,28 @@ export function useIOUs() {
 
   const deleteIOUMutation = useMutation({
     mutationFn: async (id: string) => {
-      // Delete locally first
+      // Delete locally first - this always succeeds
       await deleteIOUOfflineFirst(id);
 
-      // If online and not local-only, sync to server
+      // If online and not local-only, attempt server sync with timeout
       if (offline.isOnline && !id.startsWith("local-")) {
         try {
-          const { error } = await supabase
-            .from("ious")
-            .update({ deleted_at: new Date().toISOString() })
-            .eq("id", id);
+          const serverDeleteFn = async () => {
+            return await supabase
+              .from("ious")
+              .update({ deleted_at: new Date().toISOString() })
+              .eq("id", id);
+          };
+
+          const { error } = await withTimeout(serverDeleteFn(), 5000);
 
           if (error) throw error;
 
           // Clear sync queue
           await offlineDb.syncQueue.where("entity_id").equals(id).delete();
         } catch (e) {
-          console.warn("Failed to sync delete to server:", e);
+          console.warn("Server sync timed out or failed:", e);
+          // Already queued for sync by deleteIOUOfflineFirst
         }
       }
 
