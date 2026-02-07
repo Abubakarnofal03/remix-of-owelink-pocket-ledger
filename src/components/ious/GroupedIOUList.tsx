@@ -1,14 +1,14 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { IOU } from "@/hooks/useIOUs";
 import { IOUCard } from "./IOUCard";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AvatarCustom } from "@/components/ui/avatar-custom";
 import { MoneyDisplay } from "@/components/ui/MoneyDisplay";
 import { Button } from "@/components/ui/button";
-import { MessageCircle, ChevronDown, ChevronUp } from "lucide-react";
+import { MessageCircle, ChevronDown, ChevronUp, Plus, Phone } from "lucide-react";
 import { useContacts } from "@/hooks/useContacts";
 import { formatPhoneForWhatsApp } from "@/lib/phoneUtils";
-import { useState } from "react";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { cn } from "@/lib/utils";
 
@@ -30,6 +30,7 @@ interface PersonGroup {
 
 export function GroupedIOUList({ ious, loading, isCreditor = true }: GroupedIOUListProps) {
   const { contacts } = useContacts();
+  const navigate = useNavigate();
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
 
   // Get contact name from phone number
@@ -124,7 +125,7 @@ export function GroupedIOUList({ ious, loading, isCreditor = true }: GroupedIOUL
 
     message += `📊 *Total Pending: ${group.currency} ${totalRemaining.toLocaleString()}*\n\n`;
     message += `Please settle at your earliest convenience. Thank you! 🙏\n\n`;
-    message += `— Sent via Hisaab Kitaab (https://play.google.com/store/apps/details?id=app.lovable.c4b29d3de8d347a9bddd8699314dcb44)`;
+    message += `---\n📱 *Tired of tracking who owes you?*\nDownload OweLink - your smart money tracker!\nNever lose track of debts again.\n🔗 Get OweLink now!`;
 
     return message;
   };
@@ -172,35 +173,58 @@ export function GroupedIOUList({ ious, loading, isCreditor = true }: GroupedIOUL
 
         return (
           <div key={group.phone} className="rounded-2xl overflow-hidden border-2 border-primary/20 bg-card shadow-lg">
-            {/* Group Header - More prominent */}
+            {/* Group Header - More prominent with person details */}
             <div className="p-4 bg-gradient-to-r from-primary/15 via-primary/10 to-primary/5 border-b-2 border-primary/20">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <div className="ring-2 ring-primary/30 rounded-full">
                     <AvatarCustom name={group.name} size="lg" />
                   </div>
-                  <div>
-                    <h3 className="font-bold text-lg text-foreground">{group.name}</h3>
-                    <p className="text-sm text-muted-foreground font-medium">
-                      {group.ious.length} IOU{group.ious.length !== 1 ? 's' : ''}
+                  <div className="flex-1 min-w-0">
+                    <h3 className="font-bold text-lg text-foreground truncate">{group.name}</h3>
+                    <p className="text-xs text-muted-foreground flex items-center gap-1">
+                      <Phone className="h-3 w-3" />
+                      {group.phone}
+                    </p>
+                    <p className="text-xs text-muted-foreground font-medium">
+                      {group.ious.length} IOU{group.ious.length !== 1 ? 's' : ''} • {group.pendingIOUs.length} pending
                     </p>
                   </div>
                 </div>
 
-                {/* WhatsApp button - only show for creditor with pending IOUs */}
-                {isCreditor && hasPending && (
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      openWhatsApp(group);
-                    }}
-                    className="h-10 w-10 rounded-full text-green-600 border-green-300 hover:bg-green-50 dark:border-green-700 dark:hover:bg-green-950"
-                  >
-                    <MessageCircle className="h-5 w-5" />
-                  </Button>
-                )}
+                <div className="flex items-center gap-2">
+                  {/* Add IOU button - only show for creditor */}
+                  {isCreditor && (
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        // Navigate to new IOU with pre-filled debtor
+                        navigate(`/ious/new?phone=${encodeURIComponent(group.phone)}&name=${encodeURIComponent(group.name)}`);
+                      }}
+                      className="h-10 w-10 rounded-full border-primary/30 hover:bg-primary/10"
+                      title={`Add another IOU for ${group.name}`}
+                    >
+                      <Plus className="h-5 w-5 text-primary" />
+                    </Button>
+                  )}
+                  
+                  {/* WhatsApp button - only show for creditor with pending IOUs */}
+                  {isCreditor && hasPending && (
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openWhatsApp(group);
+                      }}
+                      className="h-10 w-10 rounded-full text-emerald-600 border-emerald-300 hover:bg-emerald-50 dark:border-emerald-700 dark:hover:bg-emerald-950"
+                    >
+                      <MessageCircle className="h-5 w-5" />
+                    </Button>
+                  )}
+                </div>
               </div>
 
               {/* Totals - Responsive layout */}

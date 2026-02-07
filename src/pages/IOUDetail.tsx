@@ -76,7 +76,9 @@ export default function IOUDetail() {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showPaymentDialog, setShowPaymentDialog] = useState(false);
   const [showPaymentRequestDialog, setShowPaymentRequestDialog] = useState(false);
+  const [showEditPaymentDialog, setShowEditPaymentDialog] = useState(false);
   const [paymentAmount, setPaymentAmount] = useState("");
+  const [editPaymentAmount, setEditPaymentAmount] = useState("");
   const [editForm, setEditForm] = useState({
     description: "",
     amount: "",
@@ -333,6 +335,47 @@ Never lose track of debts again. Split bills, send reminders & get paid faster.
     }
   };
 
+  // Handle editing the paid amount directly
+  const handleEditPayment = async () => {
+    const newAmountPaid = parseFloat(editPaymentAmount);
+    if (isNaN(newAmountPaid) || newAmountPaid < 0) {
+      toast.error("Please enter a valid amount");
+      return;
+    }
+
+    if (newAmountPaid > iou.amount) {
+      toast.error("Paid amount cannot exceed total amount");
+      return;
+    }
+
+    try {
+      const newStatus = newAmountPaid >= iou.amount ? "paid" : newAmountPaid > 0 ? "partial" : "pending";
+
+      await updateIOUOfflineFirst(iou.id, {
+        amount_paid: newAmountPaid,
+        status: newStatus,
+      });
+
+      updateIOULocally(prev => ({
+        ...prev,
+        amount_paid: newAmountPaid,
+        status: newStatus,
+      }));
+
+      sync();
+      toast.success("Payment updated");
+      setShowEditPaymentDialog(false);
+    } catch (error) {
+      console.error("Error updating payment:", error);
+      toast.error("Failed to update payment");
+    }
+  };
+
+  const openEditPaymentDialog = () => {
+    setEditPaymentAmount(iou.amount_paid.toString());
+    setShowEditPaymentDialog(true);
+  };
+
   const openEditDialog = () => {
     setEditForm({
       description: iou.description || "",
@@ -438,8 +481,15 @@ Never lose track of debts again. Split bills, send reminders & get paid faster.
           </div>
 
           <div className="grid grid-cols-2 gap-4 mb-4">
-            <div>
-              <p className="text-xs text-muted-foreground">Paid</p>
+            <div 
+              className={isCreditor ? "cursor-pointer hover:bg-muted/50 rounded-lg p-2 -m-2 transition-colors" : ""}
+              onClick={isCreditor ? openEditPaymentDialog : undefined}
+              title={isCreditor ? "Click to edit paid amount" : undefined}
+            >
+              <p className="text-xs text-muted-foreground flex items-center gap-1">
+                Paid
+                {isCreditor && <Edit className="h-3 w-3 text-muted-foreground" />}
+              </p>
               <MoneyDisplay amount={iou.amount_paid} currency={iou.currency} className="text-emerald-600" />
             </div>
             <div>
@@ -704,6 +754,38 @@ Never lose track of debts again. Split bills, send reminders & get paid faster.
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
+
+        {/* Edit Payment Dialog - for creditors */}
+        <Dialog open={showEditPaymentDialog} onOpenChange={setShowEditPaymentDialog}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Edit Payment Amount</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Amount Paid</label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  max={iou.amount}
+                  value={editPaymentAmount}
+                  onChange={(e) => setEditPaymentAmount(e.target.value)}
+                  placeholder="0.00"
+                />
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Total IOU: {iou.currency} {iou.amount.toFixed(2)}
+              </p>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowEditPaymentDialog(false)}>
+                Cancel
+              </Button>
+              <Button onClick={handleEditPayment}>Update Payment</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         {/* Payment Request Dialog - for debtors */}
         <IOUPaymentRequestDialog

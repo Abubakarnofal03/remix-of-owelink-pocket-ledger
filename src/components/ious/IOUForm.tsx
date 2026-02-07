@@ -1,5 +1,5 @@
-import { useState, useMemo, useRef } from "react";
-import { useNavigate } from "react-router-dom";
+import { useState, useMemo, useRef, useEffect } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useContacts, Contact } from "@/hooks/useContacts";
 import { useDeviceContacts, DeviceContact } from "@/hooks/useDeviceContacts";
 import { useIOUs, IOUInsert } from "@/hooks/useIOUs";
@@ -40,12 +40,17 @@ const SUBMIT_TIMEOUT_MS = 2000;
 
 export function IOUForm() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { currency } = useAuth();
   const { contacts, addContact, loading: contactsLoading } = useContacts();
   const { deviceContacts, fetchDeviceContacts, loading: deviceContactsLoading } = useDeviceContacts();
   const { createIOU } = useIOUs();
 
   const currencySymbol = getCurrencySymbol(currency);
+
+  // Check for pre-filled debtor from URL params
+  const prefilledPhone = searchParams.get('phone');
+  const prefilledName = searchParams.get('name');
 
   // Form state
   const [description, setDescription] = useState("");
@@ -61,6 +66,16 @@ export function IOUForm() {
 
   // Prevent double-submit
   const submitLockRef = useRef(false);
+
+  // Pre-fill debtor if URL params are provided
+  useEffect(() => {
+    if (prefilledPhone && !selectedDebtor) {
+      setSelectedDebtor({
+        phone_number: prefilledPhone,
+        nickname: prefilledName || null,
+      });
+    }
+  }, [prefilledPhone, prefilledName]);
 
   const total = parseFloat(amount) || 0;
 

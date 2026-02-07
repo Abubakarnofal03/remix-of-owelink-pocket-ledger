@@ -158,6 +158,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     );
 
     // THEN check for existing session with timeout for slow networks
+    // Proactively refresh the session token to prevent expiration logouts
+    const refreshSession = async () => {
+      try {
+        const { data, error } = await supabase.auth.refreshSession();
+        if (data?.session) {
+          console.log('[Auth] Session refreshed successfully');
+          cacheSession(data.session);
+        } else if (error) {
+          console.warn('[Auth] Session refresh failed:', error.message);
+        }
+      } catch (e) {
+        console.warn('[Auth] Error refreshing session:', e);
+      }
+    };
+
+    // Refresh session periodically when online (every 10 minutes)
+    const refreshInterval = setInterval(() => {
+      if (navigator.onLine) {
+        refreshSession();
+      }
+    }, 10 * 60 * 1000);
+
     const sessionTimeout = setTimeout(() => {
       // If still loading after 2 seconds, check for cached data
       const cached = loadCachedProfile();
@@ -230,6 +252,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => {
       subscription.unsubscribe();
       clearTimeout(sessionTimeout);
+      clearInterval(refreshInterval);
     };
   }, []);
 
