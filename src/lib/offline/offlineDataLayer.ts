@@ -83,8 +83,9 @@ export async function createBillOfflineFirst(
     created_at: now,
     updated_at: now,
     deleted_at: null,
-    reminder_enabled: bill.reminder_enabled,
-    reminder_interval_days: bill.reminder_interval_days,
+    // Explicitly default to false if undefined
+    reminder_enabled: bill.reminder_enabled === true,
+    reminder_interval_days: bill.reminder_enabled ? (bill.reminder_interval_days || 3) : null,
     is_local: true,
   };
 
@@ -121,7 +122,8 @@ export async function createBillOfflineFirst(
       currency: localBill.currency,
       due_date: localBill.due_date,
       status: localBill.status,
-      reminder_enabled: localBill.reminder_enabled,
+      // Ensure reminder settings are explicitly passed
+      reminder_enabled: localBill.reminder_enabled || false,
       reminder_interval_days: localBill.reminder_interval_days,
       _participants: bill.participants,
       _local_bill_id: localBillId,
@@ -397,8 +399,9 @@ export async function createIOUOfflineFirst(
     created_at: now,
     updated_at: now,
     deleted_at: null,
-    reminder_enabled: iou.reminder_enabled,
-    reminder_interval_days: iou.reminder_interval_days,
+    // Explicitly default to false if undefined
+    reminder_enabled: iou.reminder_enabled === true,
+    reminder_interval_days: iou.reminder_enabled ? (iou.reminder_interval_days || 3) : null,
     is_local: true,
   };
 
@@ -416,7 +419,8 @@ export async function createIOUOfflineFirst(
       description: localIOU.description,
       due_date: localIOU.due_date,
       status: "pending",
-      reminder_enabled: localIOU.reminder_enabled,
+      // Ensure reminder settings are explicitly passed
+      reminder_enabled: localIOU.reminder_enabled || false,
       reminder_interval_days: localIOU.reminder_interval_days,
     });
   } catch (e) {

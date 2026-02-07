@@ -17,6 +17,7 @@ import {
   FileText,
   DollarSign,
   Minus,
+  Wallet,
 } from "lucide-react";
 
 export default function Index() {
@@ -140,13 +141,13 @@ export default function Index() {
           {/* Quick Actions */}
           <div className="space-y-3 stagger-4 opacity-0 animate-slide-up" data-tour="quick-actions">
             <h2 className="font-semibold text-foreground">Quick Actions</h2>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-3 gap-3">
               <Link to="/bills/new">
                 <Button variant="secondary" className="w-full h-auto py-4 flex-col gap-2">
                   <div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center">
                     <Receipt className="h-5 w-5 text-primary" />
                   </div>
-                  <span className="text-sm font-medium">Split a Bill</span>
+                  <span className="text-xs font-medium">Split Bill</span>
                 </Button>
               </Link>
               <Link to="/ious/new">
@@ -154,7 +155,15 @@ export default function Index() {
                   <div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center">
                     <FileText className="h-5 w-5 text-primary" />
                   </div>
-                  <span className="text-sm font-medium">Create IOU</span>
+                  <span className="text-xs font-medium">Create IOU</span>
+                </Button>
+              </Link>
+              <Link to="/expenses">
+                <Button variant="secondary" className="w-full h-auto py-4 flex-col gap-2">
+                  <div className="h-10 w-10 rounded-xl bg-emerald-500/10 flex items-center justify-center">
+                    <Wallet className="h-5 w-5 text-emerald-600" />
+                  </div>
+                  <span className="text-xs font-medium">Add Expense</span>
                 </Button>
               </Link>
             </div>
