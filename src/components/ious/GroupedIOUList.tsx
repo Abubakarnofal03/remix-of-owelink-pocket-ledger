@@ -16,6 +16,7 @@ interface GroupedIOUListProps {
   ious: IOU[];
   loading?: boolean;
   isCreditor?: boolean; // true = "owed to me", false = "I owe"
+  contactsLoading?: boolean;
 }
 
 interface PersonGroup {
@@ -28,7 +29,7 @@ interface PersonGroup {
   pendingIOUs: IOU[];
 }
 
-export function GroupedIOUList({ ious, loading, isCreditor = true }: GroupedIOUListProps) {
+export function GroupedIOUList({ ious, loading, isCreditor = true, contactsLoading = false }: GroupedIOUListProps) {
   const { contacts } = useContacts();
   const navigate = useNavigate();
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
@@ -181,10 +182,12 @@ export function GroupedIOUList({ ious, loading, isCreditor = true }: GroupedIOUL
                     <AvatarCustom name={group.name} size="lg" />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <h3 className="font-bold text-lg text-foreground truncate">{group.name}</h3>
+                    <h3 className="font-bold text-lg text-foreground truncate">
+                      {contactsLoading ? <Skeleton className="h-5 w-28 inline-block" /> : group.name}
+                    </h3>
                     <p className="text-xs text-muted-foreground flex items-center gap-1">
                       <Phone className="h-3 w-3" />
-                      {group.phone}
+                      {contactsLoading ? <Skeleton className="h-3 w-20 inline-block" /> : group.phone}
                     </p>
                     <p className="text-xs text-muted-foreground font-medium">
                       {group.ious.length} record{group.ious.length !== 1 ? 's' : ''} • {group.pendingIOUs.length} pending

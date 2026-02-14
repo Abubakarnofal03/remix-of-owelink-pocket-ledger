@@ -32,6 +32,7 @@ import {
   Smartphone,
   Bell,
 } from "lucide-react";
+import { MiniCalculator } from "@/components/ui/MiniCalculator";
 import {
   Select,
   SelectContent,
@@ -357,20 +358,24 @@ export function BillForm() {
       {/* Total Amount */}
       <div className="space-y-2">
         <Label htmlFor="total">Total Amount</Label>
-        <Input
-          id="total"
-          type="number"
-          step="0.01"
-          min="0"
-          placeholder="0.00"
-          value={totalAmount}
-          onChange={(e) => {
-            setTotalAmount(e.target.value);
-            if (errors.total) setErrors((prev) => ({ ...prev, total: "" }));
-          }}
-          icon={<span className="text-sm font-medium text-muted-foreground">{currencySymbol}</span>}
-          error={!!errors.total}
-        />
+        <div className="flex gap-2">
+          <Input
+            id="total"
+            type="number"
+            step="0.01"
+            min="0"
+            placeholder="0.00"
+            value={totalAmount}
+            onChange={(e) => {
+              setTotalAmount(e.target.value);
+              if (errors.total) setErrors((prev) => ({ ...prev, total: "" }));
+            }}
+            icon={<span className="text-sm font-medium text-muted-foreground">{currencySymbol}</span>}
+            error={!!errors.total}
+            className="flex-1"
+          />
+          <MiniCalculator onInsert={(val) => setTotalAmount(val.toString())} />
+        </div>
         {errors.total && (
           <p className="text-sm text-destructive">{errors.total}</p>
         )}
