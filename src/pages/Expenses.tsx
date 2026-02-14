@@ -23,7 +23,9 @@ import {
   Receipt,
   Wallet,
   FolderPlus,
+  Download,
 } from "lucide-react";
+import { exportExpensesPDF } from "@/lib/pdfExport";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -158,10 +160,21 @@ export default function Expenses() {
         {/* Header */}
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-bold">Expenses</h1>
-          <Button variant="outline" size="sm" onClick={() => setShowCreateBucket(true)}>
-            <FolderPlus className="h-4 w-4 mr-1" />
-            Bucket
-          </Button>
+          <div className="flex gap-2">
+            {filteredExpenses.length > 0 && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => exportExpensesPDF(filteredExpenses, buckets, currency, filterLabels[filter])}
+              >
+                <Download className="h-4 w-4" />
+              </Button>
+            )}
+            <Button variant="outline" size="sm" onClick={() => setShowCreateBucket(true)}>
+              <FolderPlus className="h-4 w-4 mr-1" />
+              Bucket
+            </Button>
+          </div>
         </div>
 
         {/* Total Summary Card */}
