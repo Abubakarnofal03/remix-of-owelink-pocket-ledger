@@ -28,6 +28,7 @@ import {
   Smartphone,
   Bell,
 } from "lucide-react";
+import { MiniCalculator } from "@/components/ui/MiniCalculator";
 import {
   Select,
   SelectContent,
@@ -367,20 +368,24 @@ export function IOUForm() {
       {/* Amount */}
       <div className="space-y-2">
         <Label htmlFor="amount">Amount</Label>
-        <Input
-          id="amount"
-          type="number"
-          step="0.01"
-          min="0"
-          placeholder="0.00"
-          value={amount}
-          onChange={(e) => {
-            setAmount(e.target.value);
-            if (errors.amount) setErrors((prev) => ({ ...prev, amount: "" }));
-          }}
-          icon={<span className="text-sm font-medium text-muted-foreground">{currencySymbol}</span>}
-          error={!!errors.amount}
-        />
+        <div className="flex gap-2">
+          <Input
+            id="amount"
+            type="number"
+            step="0.01"
+            min="0"
+            placeholder="0.00"
+            value={amount}
+            onChange={(e) => {
+              setAmount(e.target.value);
+              if (errors.amount) setErrors((prev) => ({ ...prev, amount: "" }));
+            }}
+            icon={<span className="text-sm font-medium text-muted-foreground">{currencySymbol}</span>}
+            error={!!errors.amount}
+            className="flex-1"
+          />
+          <MiniCalculator onInsert={(val) => setAmount(val.toString())} />
+        </div>
         {errors.amount && (
           <p className="text-sm text-destructive">{errors.amount}</p>
         )}

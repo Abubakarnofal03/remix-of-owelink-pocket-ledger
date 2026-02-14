@@ -25,6 +25,7 @@ import {
   FolderPlus,
   Download,
 } from "lucide-react";
+import { MiniCalculator } from "@/components/ui/MiniCalculator";
 import { exportExpensesPDF } from "@/lib/pdfExport";
 import {
   AlertDialog,
@@ -241,6 +242,7 @@ export default function Expenses() {
                       autoFocus
                     />
                   </div>
+                  <MiniCalculator onInsert={(val) => setAmount(val.toString())} />
                 </div>
                 <Textarea
                   placeholder="What did you spend on? (optional)"
