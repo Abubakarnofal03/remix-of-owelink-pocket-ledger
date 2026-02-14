@@ -103,34 +103,78 @@ export function exportExpensesPDF(
     margin: { left: 14, right: 14 },
   });
 
-  // Summary by bucket
+  // Detailed breakdown by bucket
   if (buckets.length > 0) {
     y = doc.lastAutoTable.finalY + 10;
     doc.setFontSize(11);
     doc.setFont("helvetica", "bold");
-    doc.text("Summary by Bucket", 14, y);
-    y += 4;
+    doc.setTextColor(...COLORS.dark);
+    doc.text("Breakdown by Bucket", 14, y);
+    y += 2;
 
-    const bucketSummary = buckets.map(b => {
-      const bucketExpenses = expenses.filter(e => e.bucket_id === b.id);
+    // Each bucket with its expenses listed
+    buckets.forEach((bucket) => {
+      const bucketExpenses = expenses.filter(e => e.bucket_id === bucket.id);
+      if (bucketExpenses.length === 0) return;
+
       const bucketTotal = bucketExpenses.reduce((s, e) => s + e.amount, 0);
-      return [b.name, bucketExpenses.length.toString(), fmt(bucketTotal, currency)];
+
+      y = doc.lastAutoTable.finalY + 8;
+      if (y > 255) { doc.addPage(); y = 20; }
+
+      doc.setFontSize(10);
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(...COLORS.primary);
+      doc.text(`${bucket.name}  —  ${bucketExpenses.length} expense(s)  |  Total: ${fmt(bucketTotal, currency)}`, 14, y);
+      y += 4;
+
+      autoTable(doc, {
+        startY: y,
+        head: [["#", "Date", "Description", "Amount"]],
+        body: bucketExpenses.map((e, i) => [
+          i + 1,
+          format(new Date(e.created_at), "MMM d, yyyy"),
+          e.description || "—",
+          fmt(e.amount, e.currency),
+        ]),
+        headStyles: { fillColor: [75, 85, 99], textColor: COLORS.white, fontStyle: "bold", fontSize: 8 },
+        bodyStyles: { fontSize: 8 },
+        alternateRowStyles: { fillColor: [245, 247, 250] },
+        columnStyles: { 3: { halign: "right", fontStyle: "bold" } },
+        margin: { left: 20, right: 14 },
+      });
     });
 
+    // Uncategorized expenses
     const uncategorized = expenses.filter(e => !e.bucket_id);
     if (uncategorized.length > 0) {
-      bucketSummary.push(["Uncategorized", uncategorized.length.toString(), fmt(uncategorized.reduce((s, e) => s + e.amount, 0), currency)]);
-    }
+      const uncatTotal = uncategorized.reduce((s, e) => s + e.amount, 0);
 
-    autoTable(doc, {
-      startY: y,
-      head: [["Bucket", "Count", "Total"]],
-      body: bucketSummary,
-      headStyles: { fillColor: COLORS.primary, textColor: COLORS.white, fontStyle: "bold", fontSize: 9 },
-      bodyStyles: { fontSize: 8 },
-      columnStyles: { 2: { halign: "right", fontStyle: "bold" } },
-      margin: { left: 14, right: 14 },
-    });
+      y = doc.lastAutoTable.finalY + 8;
+      if (y > 255) { doc.addPage(); y = 20; }
+
+      doc.setFontSize(10);
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(...COLORS.muted);
+      doc.text(`Uncategorized  —  ${uncategorized.length} expense(s)  |  Total: ${fmt(uncatTotal, currency)}`, 14, y);
+      y += 4;
+
+      autoTable(doc, {
+        startY: y,
+        head: [["#", "Date", "Description", "Amount"]],
+        body: uncategorized.map((e, i) => [
+          i + 1,
+          format(new Date(e.created_at), "MMM d, yyyy"),
+          e.description || "—",
+          fmt(e.amount, e.currency),
+        ]),
+        headStyles: { fillColor: [107, 114, 128], textColor: COLORS.white, fontStyle: "bold", fontSize: 8 },
+        bodyStyles: { fontSize: 8 },
+        alternateRowStyles: { fillColor: [245, 247, 250] },
+        columnStyles: { 3: { halign: "right", fontStyle: "bold" } },
+        margin: { left: 20, right: 14 },
+      });
+    }
   }
 
   addFooter(doc);
