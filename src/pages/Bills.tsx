@@ -7,7 +7,8 @@ import { BillList } from "@/components/bills/BillList";
 import { useBills } from "@/hooks/useBills";
 import { useContacts } from "@/hooks/useContacts";
 import { PullToRefresh } from "@/components/ui/PullToRefresh";
-import { Receipt, Plus, Crown, Users, Search, Filter } from "lucide-react";
+import { Receipt, Plus, Crown, Users, Search, Filter, Download } from "lucide-react";
+import { exportBillsPDF } from "@/lib/pdfExport";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -109,12 +110,23 @@ export default function Bills() {
         <div className="animate-fade-in">
           <div className="flex items-center justify-between mb-4">
             <h1 className="font-display text-2xl font-bold text-foreground">Bills</h1>
-            <Link to="/bills/new">
-              <Button size="sm" data-tour="new-bill-btn">
-                <Plus className="h-4 w-4 mr-1" />
-                New Bill
-              </Button>
-            </Link>
+            <div className="flex gap-2">
+              {filteredBills.length > 0 && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => exportBillsPDF(filteredBills, getContactName)}
+                >
+                  <Download className="h-4 w-4" />
+                </Button>
+              )}
+              <Link to="/bills/new">
+                <Button size="sm" data-tour="new-bill-btn">
+                  <Plus className="h-4 w-4 mr-1" />
+                  New Bill
+                </Button>
+              </Link>
+            </div>
           </div>
 
           {/* Search */}

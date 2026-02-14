@@ -14,7 +14,9 @@ import {
   Receipt,
   FileText,
   DollarSign,
+  Download,
 } from "lucide-react";
+import { exportContactDetailPDF } from "@/lib/pdfExport";
 import { useContactTimeline, TimelineItem } from "@/hooks/useContactTimeline";
 import { useCurrency } from "@/hooks/useCurrency";
 
@@ -90,6 +92,13 @@ export default function ContactDetail() {
             </h1>
             <p className="text-sm text-muted-foreground">{contact.phone_number}</p>
           </div>
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={() => exportContactDetailPDF(contact, timeline, totalOwedToYou, totalYouOwe, netBalance, currency)}
+          >
+            <Download className="h-4 w-4" />
+          </Button>
         </div>
 
         {/* Balance Summary */}

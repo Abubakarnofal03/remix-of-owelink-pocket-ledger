@@ -11,7 +11,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PullToRefresh } from "@/components/ui/PullToRefresh";
-import { FileText, Plus, ArrowDownLeft, ArrowUpRight, Search, Filter } from "lucide-react";
+import { FileText, Plus, ArrowDownLeft, ArrowUpRight, Search, Filter, Download } from "lucide-react";
+import { exportOwesPDF } from "@/lib/pdfExport";
 import {
   Select,
   SelectContent,
@@ -87,10 +88,21 @@ export default function IOUs() {
           {/* Header */}
           <div className="flex items-center justify-between">
             <h1 className="font-display text-2xl font-bold text-foreground">Owes</h1>
-            <Button size="sm" onClick={() => navigate("/ious/new")} data-tour="new-owe-btn">
-              <Plus className="h-4 w-4 mr-1" />
-              New Owe
-            </Button>
+            <div className="flex gap-2">
+              {(owedToMe.length > 0 || iOwe.length > 0) && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => exportOwesPDF(owedToMe, iOwe, getContactName)}
+                >
+                  <Download className="h-4 w-4" />
+                </Button>
+              )}
+              <Button size="sm" onClick={() => navigate("/ious/new")} data-tour="new-owe-btn">
+                <Plus className="h-4 w-4 mr-1" />
+                New Owe
+              </Button>
+            </div>
           </div>
 
           {/* Search */}

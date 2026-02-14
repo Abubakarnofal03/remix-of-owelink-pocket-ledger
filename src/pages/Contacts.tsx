@@ -21,7 +21,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Users, Plus, Search, Smartphone } from "lucide-react";
+import { Users, Plus, Search, Smartphone, Download } from "lucide-react";
+import { exportContactsPDF } from "@/lib/pdfExport";
 
 export default function Contacts() {
   const { user, loading: authLoading } = useAuth();
@@ -63,6 +64,11 @@ export default function Contacts() {
           <div className="flex items-center justify-between mb-4">
             <h1 className="font-display text-2xl font-bold text-foreground">Contacts</h1>
             <div className="flex gap-2">
+              {contacts.length > 0 && (
+                <Button variant="outline" size="sm" onClick={() => exportContactsPDF(contacts)}>
+                  <Download className="h-4 w-4" />
+                </Button>
+              )}
               <Button size="sm" onClick={() => setShowAddDialog(true)} data-tour="add-contact-btn">
                 <Plus className="h-4 w-4 mr-1" />
                 Add
