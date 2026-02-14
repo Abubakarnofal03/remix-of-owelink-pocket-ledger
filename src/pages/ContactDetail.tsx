@@ -95,7 +95,7 @@ export default function ContactDetail() {
           <Button
             variant="outline"
             size="icon"
-            onClick={() => exportContactDetailPDF(contact, timeline, totalOwedToYou, totalYouOwe, netBalance, currency)}
+            onClick={async () => { await exportContactDetailPDF(contact, timeline, totalOwedToYou, totalYouOwe, netBalance, currency); }}
           >
             <Download className="h-4 w-4" />
           </Button>
