@@ -20,12 +20,13 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
-import { ArrowLeft, User, Phone, Bell, Moon, Shield, LogOut, Coins, Database, ChevronDown, Vibrate } from "lucide-react";
+import { ArrowLeft, User, Phone, Bell, Moon, Shield, LogOut, Coins, Database, ChevronDown, Vibrate, Fingerprint } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { CURRENCIES, getCurrencySymbol } from "@/lib/currencies";
 import { hapticSuccess } from "@/lib/haptics";
 import { OfflineDiagnostics } from "@/components/settings/OfflineDiagnostics";
+import { useBiometric } from "@/hooks/useBiometric";
 
 export default function Settings() {
   const { user, profile, loading: authLoading, signOut, currency, updateSettings } = useAuth();
@@ -34,6 +35,8 @@ export default function Settings() {
   const [username, setUsername] = useState(profile?.username || "");
   const [selectedCurrency, setSelectedCurrency] = useState(currency);
   const [saving, setSaving] = useState(false);
+  const { isAvailable, isEnabled, enableBiometric, disableBiometric } = useBiometric();
+  const [biometricLoading, setBiometricLoading] = useState(false);
 
   useEffect(() => {
     if (profile?.username) {
@@ -235,6 +238,39 @@ export default function Settings() {
             <Shield className="h-4 w-4" />
             Security
           </h3>
+
+          {isAvailable && (
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <Fingerprint className="h-5 w-5 text-muted-foreground" />
+                <div>
+                  <p className="text-sm font-medium">Biometric Login</p>
+                  <p className="text-xs text-muted-foreground">
+                    Sign in with fingerprint or face
+                  </p>
+                </div>
+              </div>
+              <Switch
+                checked={isEnabled}
+                disabled={biometricLoading}
+                onCheckedChange={async (checked) => {
+                  setBiometricLoading(true);
+                  try {
+                    if (checked) {
+                      // Need credentials to enable -- prompt user
+                      toast.info("Please sign out and sign back in to enable biometric login, or it will be offered on your next login.");
+                    } else {
+                      await disableBiometric();
+                      hapticSuccess();
+                      toast.success("Biometric login disabled");
+                    }
+                  } finally {
+                    setBiometricLoading(false);
+                  }
+                }}
+              />
+            </div>
+          )}
 
           <Button variant="outline" className="w-full justify-start" disabled>
             Change Password
