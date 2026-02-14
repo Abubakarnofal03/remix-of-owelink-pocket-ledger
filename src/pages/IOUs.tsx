@@ -86,15 +86,15 @@ export default function IOUs() {
         <div className="animate-fade-in space-y-4">
           {/* Header */}
           <div className="flex items-center justify-between">
-            <h1 className="font-display text-2xl font-bold text-foreground">IOUs</h1>
-            <Button size="sm" onClick={() => navigate("/ious/new")} data-tour="new-iou-btn">
+            <h1 className="font-display text-2xl font-bold text-foreground">Owes</h1>
+            <Button size="sm" onClick={() => navigate("/ious/new")} data-tour="new-owe-btn">
               <Plus className="h-4 w-4 mr-1" />
-              New IOU
+              New Owe
             </Button>
           </div>
 
           {/* Search */}
-          <div data-tour="iou-search">
+          <div data-tour="owe-search">
             <Input
               placeholder="Search by name, phone, description..."
               value={searchQuery}
@@ -105,7 +105,7 @@ export default function IOUs() {
 
           {/* Tabs */}
           {hasAnyIOUs && (
-            <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "owed" | "owe")} data-tour="iou-tabs">
+            <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "owed" | "owe")} data-tour="owe-tabs">
               <TabsList className="w-full">
                 <TabsTrigger value="owed" className="flex-1 gap-2">
                   <ArrowDownLeft className="h-4 w-4" />
@@ -143,7 +143,7 @@ export default function IOUs() {
             ) : (
               <EmptyState
                 icon={searchQuery ? Search : activeTab === "owed" ? ArrowDownLeft : ArrowUpRight}
-                title={searchQuery ? "No IOUs found" : activeTab === "owed" ? "No one owes you" : "You don't owe anyone"}
+                title={searchQuery ? "No records found" : activeTab === "owed" ? "No one owes you" : "You don't owe anyone"}
                 description={
                   searchQuery
                     ? "Try a different search term."
@@ -156,9 +156,9 @@ export default function IOUs() {
           ) : (
             <EmptyState
               icon={FileText}
-              title="No IOUs yet"
+              title="No records yet"
               description="Track simple debts - who owes you or who you owe."
-              action={{ label: "Create IOU", onClick: () => navigate("/ious/new") }}
+              action={{ label: "Add New", onClick: () => navigate("/ious/new") }}
             />
           )}
         </div>

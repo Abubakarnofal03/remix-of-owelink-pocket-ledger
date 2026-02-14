@@ -391,7 +391,7 @@ export function IOUForm() {
         <Label htmlFor="description">Description (optional)</Label>
         <Textarea
           id="description"
-          placeholder="What's this IOU for?"
+          placeholder="What's this for?"
           value={description}
           onChange={(e) => setDescription(e.target.value)}
           rows={2}
@@ -476,7 +476,7 @@ export function IOUForm() {
             Creating...
           </>
         ) : (
-          "Create IOU"
+          "Create"
         )}
       </Button>
 

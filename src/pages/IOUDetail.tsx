@@ -394,7 +394,7 @@ Never lose track of debts again. Split bills, send reminders & get paid faster.
             <ArrowLeft className="h-5 w-5" />
           </Button>
           <div className="flex-1">
-            <h1 className="font-display text-xl font-bold text-foreground">IOU Details</h1>
+            <h1 className="font-display text-xl font-bold text-foreground">Owe Details</h1>
           </div>
           {isCreditor && (
             <div className="flex gap-2">
@@ -675,7 +675,7 @@ Never lose track of debts again. Split bills, send reminders & get paid faster.
         <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Edit IOU</DialogTitle>
+              <DialogTitle>Edit Owe</DialogTitle>
             </DialogHeader>
             <div className="space-y-4">
               <div className="space-y-2">
@@ -747,9 +747,9 @@ Never lose track of debts again. Split bills, send reminders & get paid faster.
         <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>Archive IOU?</AlertDialogTitle>
+              <AlertDialogTitle>Archive this record?</AlertDialogTitle>
               <AlertDialogDescription>
-                This will archive this IOU. It will be hidden from your view but the debtor can still see it.
+                This will archive this record. It will be hidden from your view but the debtor can still see it.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
@@ -781,7 +781,7 @@ Never lose track of debts again. Split bills, send reminders & get paid faster.
                 />
               </div>
               <p className="text-sm text-muted-foreground">
-                Total IOU: {iou.currency} {iou.amount.toFixed(2)}
+                Total: {iou.currency} {iou.amount.toFixed(2)}
               </p>
             </div>
             <DialogFooter>

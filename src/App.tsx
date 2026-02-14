@@ -11,6 +11,8 @@ import { OfflineProvider } from "@/hooks/useOffline";
 import { supabase } from "@/integrations/supabase/client";
 import { offlineDb } from "@/lib/offline/db";
 import { useCapacitor } from "@/hooks/useCapacitor";
+import { useOnboarding } from "@/hooks/useOnboarding";
+import { TourOverlay } from "@/components/ui/TourOverlay";
 import { usePushNotifications } from "@/hooks/usePushNotifications";
 import { useBackButton } from "@/hooks/useBackButton";
 import { useAppPermissions } from "@/hooks/useAppPermissions";
@@ -81,11 +83,30 @@ function CapacitorInitializer() {
   return null;
 }
 
+// Tour renderer - renders the overlay globally
+function TourRenderer() {
+  const { isActive, currentStep, currentStepIndex, totalSteps, nextStep, prevStep, completeOnboarding } = useOnboarding();
+  
+  if (!isActive || !currentStep) return null;
+  
+  return (
+    <TourOverlay
+      step={currentStep}
+      stepIndex={currentStepIndex}
+      totalSteps={totalSteps}
+      onNext={nextStep}
+      onPrev={prevStep}
+      onSkip={completeOnboarding}
+    />
+  );
+}
+
 // Wrapper component that uses router hooks (must be inside BrowserRouter)
 function AppRoutes() {
   return (
     <>
       <CapacitorInitializer />
+      <TourRenderer />
       <Routes>
         <Route path="/" element={<Index />} />
         <Route path="/auth" element={<Auth />} />

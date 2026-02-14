@@ -111,7 +111,7 @@ export function GroupedIOUList({ ious, loading, isCreditor = true }: GroupedIOUL
 
     group.pendingIOUs.forEach((iou, index) => {
       const remaining = iou.amount - iou.amount_paid;
-      message += `${index + 1}. ${iou.description || 'IOU'}\n`;
+      message += `${index + 1}. ${iou.description || 'Owe'}\n`;
       message += `   Amount: ${group.currency} ${iou.amount.toLocaleString()}\n`;
       if (iou.amount_paid > 0) {
         message += `   Paid: ${group.currency} ${iou.amount_paid.toLocaleString()}\n`;
@@ -187,7 +187,7 @@ export function GroupedIOUList({ ious, loading, isCreditor = true }: GroupedIOUL
                       {group.phone}
                     </p>
                     <p className="text-xs text-muted-foreground font-medium">
-                      {group.ious.length} IOU{group.ious.length !== 1 ? 's' : ''} • {group.pendingIOUs.length} pending
+                      {group.ious.length} record{group.ious.length !== 1 ? 's' : ''} • {group.pendingIOUs.length} pending
                     </p>
                   </div>
                 </div>
