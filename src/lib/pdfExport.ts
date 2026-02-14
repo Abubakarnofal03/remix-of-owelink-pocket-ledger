@@ -2,6 +2,7 @@ import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { format } from "date-fns";
 import { getCurrencySymbol } from "./currencies";
+import { savePDF } from "./pdfSave";
 
 // Extend jsPDF type for autotable
 interface jsPDFWithAutoTable extends jsPDF {
@@ -68,7 +69,7 @@ function fmt(amount: number, currency: string): string {
 }
 
 // ─── Expenses Export ──────────────────────────────────────────
-export function exportExpensesPDF(
+export async function exportExpensesPDF(
   expenses: Array<{
     amount: number;
     description: string | null;
@@ -183,11 +184,11 @@ export function exportExpensesPDF(
   }
 
   addFooter(doc);
-  doc.save(`owelink-expenses-${format(new Date(), "yyyy-MM-dd")}.pdf`);
+  await savePDF(doc, `owelink-expenses-${format(new Date(), "yyyy-MM-dd")}.pdf`);
 }
 
 // ─── Bills Export ──────────────────────────────────────────────
-export function exportBillsPDF(
+export async function exportBillsPDF(
   bills: Array<{
     title: string;
     description: string | null;
@@ -273,11 +274,11 @@ export function exportBillsPDF(
   });
 
   addFooter(doc);
-  doc.save(`owelink-bills-${format(new Date(), "yyyy-MM-dd")}.pdf`);
+  await savePDF(doc, `owelink-bills-${format(new Date(), "yyyy-MM-dd")}.pdf`);
 }
 
 // ─── Owes (IOUs) Export ───────────────────────────────────────
-export function exportOwesPDF(
+export async function exportOwesPDF(
   owedToMe: Array<{
     debtor_phone_number: string;
     amount: number;
@@ -401,11 +402,11 @@ export function exportOwesPDF(
   }
 
   addFooter(doc);
-  doc.save(`owelink-owes-${format(new Date(), "yyyy-MM-dd")}.pdf`);
+  await savePDF(doc, `owelink-owes-${format(new Date(), "yyyy-MM-dd")}.pdf`);
 }
 
 // ─── Contacts Export ──────────────────────────────────────────
-export function exportContactsPDF(
+export async function exportContactsPDF(
   contacts: Array<{
     nickname: string | null;
     phone_number: string;
@@ -433,11 +434,11 @@ export function exportContactsPDF(
   });
 
   addFooter(doc);
-  doc.save(`owelink-contacts-${format(new Date(), "yyyy-MM-dd")}.pdf`);
+  await savePDF(doc, `owelink-contacts-${format(new Date(), "yyyy-MM-dd")}.pdf`);
 }
 
 // ─── Contact Detail Export ────────────────────────────────────
-export function exportContactDetailPDF(
+export async function exportContactDetailPDF(
   contact: { nickname: string | null; phone_number: string },
   timeline: Array<{
     title: string;
@@ -518,5 +519,5 @@ export function exportContactDetailPDF(
   }
 
   addFooter(doc);
-  doc.save(`owelink-contact-${name.replace(/\s+/g, "-").toLowerCase()}-${format(new Date(), "yyyy-MM-dd")}.pdf`);
+  await savePDF(doc, `owelink-contact-${name.replace(/\s+/g, "-").toLowerCase()}-${format(new Date(), "yyyy-MM-dd")}.pdf`);
 }
