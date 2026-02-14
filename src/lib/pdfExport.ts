@@ -110,7 +110,9 @@ export function exportExpensesPDF(
     doc.setFont("helvetica", "bold");
     doc.setTextColor(...COLORS.dark);
     doc.text("Breakdown by Bucket", 14, y);
-    y += 2;
+    y += 6;
+
+    let isFirstBucket = true;
 
     // Each bucket with its expenses listed
     buckets.forEach((bucket) => {
@@ -119,7 +121,10 @@ export function exportExpensesPDF(
 
       const bucketTotal = bucketExpenses.reduce((s, e) => s + e.amount, 0);
 
-      y = doc.lastAutoTable.finalY + 8;
+      if (!isFirstBucket) {
+        y = doc.lastAutoTable.finalY + 8;
+      }
+      isFirstBucket = false;
       if (y > 255) { doc.addPage(); y = 20; }
 
       doc.setFontSize(10);
