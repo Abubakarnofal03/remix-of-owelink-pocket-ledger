@@ -50,7 +50,7 @@ export default function Expenses() {
   const [amount, setAmount] = useState("");
   const [description, setDescription] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [filter, setFilter] = useState<FilterPeriod>("month");
+  const [filter, setFilter] = useState<FilterPeriod>("all");
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [deleteBucketId, setDeleteBucketId] = useState<string | null>(null);
   const [showCreateBucket, setShowCreateBucket] = useState(false);
