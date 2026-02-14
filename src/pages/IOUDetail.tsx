@@ -481,19 +481,25 @@ Never lose track of debts again. Split bills, send reminders & get paid faster.
           </div>
 
           <div className="grid grid-cols-2 gap-4 mb-4">
-            <div 
-              className={isCreditor ? "cursor-pointer hover:bg-muted/50 rounded-lg p-2 -m-2 transition-colors" : ""}
-              onClick={isCreditor ? openEditPaymentDialog : undefined}
-              title={isCreditor ? "Click to edit paid amount" : undefined}
-            >
-              <p className="text-xs text-muted-foreground flex items-center gap-1">
-                Paid
-                {isCreditor && <Edit className="h-3 w-3 text-muted-foreground" />}
-              </p>
-              <MoneyDisplay amount={iou.amount_paid} currency={iou.currency} className="text-emerald-600" />
+            <div>
+              <p className="text-xs text-muted-foreground mb-1">Paid</p>
+              <div className="flex items-center gap-2">
+                <MoneyDisplay amount={iou.amount_paid} currency={iou.currency} className="text-emerald-600" />
+                {isCreditor && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-7 px-2 text-xs gap-1"
+                    onClick={openEditPaymentDialog}
+                  >
+                    <Edit className="h-3 w-3" />
+                    Edit
+                  </Button>
+                )}
+              </div>
             </div>
             <div>
-              <p className="text-xs text-muted-foreground">Remaining</p>
+              <p className="text-xs text-muted-foreground mb-1">Remaining</p>
               <MoneyDisplay amount={remaining} currency={iou.currency} className="text-rose-600" />
             </div>
           </div>
