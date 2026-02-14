@@ -1,88 +1,51 @@
 
 
-# Persistent Login & Biometric Authentication
+## Issue 1: Contact Names Not Showing on Owes Page
 
-## Problem
-The app randomly logs users out, especially when online. The current session caching in localStorage has an expiry check that sometimes clears valid sessions. We need bulletproof offline login persistence and biometric unlock for quick re-entry.
+**Problem**: When navigating back to the Owes list after creating an IOU, and every time the page loads, phone numbers flash first before contact names appear. This happens because `useContacts()` loads asynchronously (local IndexedDB + device contacts), while the IOU list renders immediately from cached data. The `GroupedIOUList` component calls `getContactName()` which depends on `contacts` array -- if contacts haven't loaded yet, it falls back to showing the raw phone number.
 
-## Solution Overview
+**Solution**: Cache a contact name lookup map that resolves instantly, and ensure the grouped list doesn't "flash" phone numbers while contacts load.
 
-### Part 1: Rock-Solid Offline Login Persistence
+1. **Pre-cache contact names in GroupedIOUList**: Instead of depending on the async `useContacts()` hook for every render, build a stable name map from contacts and memoize it. Show skeleton/placeholder for the group header while contacts are still loading rather than showing phone numbers.
 
-**Root cause of random logouts:** The `loadCachedSession` function expires cached sessions after ~1 hour buffer from `expires_at`. When the app opens online, `supabase.auth.getSession()` can fail or return null on flaky connections, and the cached session may have been cleared due to the expiry check. This creates a logout loop.
+2. **Pass contacts loading state**: The `GroupedIOUList` already receives `loading` but only for IOUs. Add awareness of contacts loading state so it can show a proper loading skeleton instead of phone numbers.
 
-**Fix:**
-- Store a persistent `logged_in` flag in localStorage that is ONLY removed on explicit sign out
-- Extend the cached session expiry buffer significantly (from 1 hour to 30 days) -- the session is just for offline UI access, not for actual API auth
-- When `getSession()` returns null but `logged_in` flag exists, always trust cached data instead of logging the user out
-- On explicit `signOut()`, clear the flag, cached session, and cached profile
-- Never auto-clear session cache on expiry -- only on explicit logout
+3. **Stabilize contact resolution in IOUs page**: In `src/pages/IOUs.tsx`, the `getContactName` helper depends on `contacts` which changes as contacts load. Ensure the `GroupedIOUList` waits for contacts to be ready before rendering names, or shows a loading state.
 
-### Part 2: Biometric Authentication (Fingerprint / Face ID)
+**Technical changes**:
+- `src/pages/IOUs.tsx`: Pass `contactsLoading` from `useContacts()` to `GroupedIOUList`
+- `src/components/ious/GroupedIOUList.tsx`: Accept `contactsLoading` prop; show skeleton placeholders for names while contacts are loading instead of raw phone numbers
 
-**Plugin:** `capacitor-native-biometric` -- lightweight, well-maintained, supports both Android (fingerprint/face) and iOS (Touch ID/Face ID).
+---
 
-**Flow:**
-1. After successful phone+password login, offer to enable biometric login via a prompt
-2. If enabled, securely store credentials using the plugin's native credential storage (Android Keystore / iOS Keychain)
-3. On next app open, if biometric is enabled, show a biometric prompt instead of the login page
-4. If biometric succeeds, retrieve stored credentials and auto-sign in (online) or load cached session (offline)
-5. If biometric fails or is cancelled, fall back to normal phone+password login
-6. Settings page gets a toggle to enable/disable biometric login
+## Issue 2: Mini Calculator for Bills, Owes, and Expenses
 
-## Technical Details
+**What**: A small calculator widget accessible via a button click in all three creation forms (Bills, Owes, Expenses). It opens as a popover/dialog, lets the user do basic arithmetic, and inserts the result into the amount field.
 
-### Files to Create
-- **`src/hooks/useBiometric.tsx`** -- Hook wrapping `capacitor-native-biometric` plugin for checking availability, authenticating, and storing/retrieving credentials
+**Design**:
+- A reusable `MiniCalculator` component rendered as a popover/sheet
+- Supports basic operations: +, -, x, / and =
+- Displays a running expression and result
+- Has an "Insert" button that sends the calculated value back to the amount field
+- Triggered by a calculator icon button next to each amount input
 
-### Files to Modify
+**Technical changes**:
 
-- **`src/hooks/useAuth.tsx`**
-  - Add `logged_in` flag to localStorage on successful sign in/sign up
-  - Remove expiry check from `loadCachedSession` (only clear on explicit logout)
-  - In the `getSession` flow: if server returns null but `logged_in` flag exists, trust cached data
-  - On `signOut()`: clear `logged_in` flag, biometric credentials, all caches
-  - Add `biometricSignIn()` method to context that retrieves stored credentials and calls `signIn()`
+1. **New component `src/components/ui/MiniCalculator.tsx`**:
+   - Calculator UI with number pad (0-9), operators (+, -, x, /), decimal point, clear, backspace, and equals
+   - Wrapped in a `Popover` (or `Drawer` on mobile) for inline use
+   - Accepts an `onInsert(value: number)` callback
+   - Shows expression string and computed result in real-time
 
-- **`src/pages/Auth.tsx`**
-  - On mount, check if biometric is enabled and available
-  - If yes, auto-trigger biometric prompt before showing login form
-  - Show a "Use Biometric" button as fallback if user dismissed the auto-prompt
-  - After successful password login, show a prompt: "Enable fingerprint/face login for faster access?"
+2. **Integrate into `src/components/ious/IOUForm.tsx`**:
+   - Add calculator button next to the amount input
+   - On insert, set the amount state
 
-- **`src/pages/Settings.tsx`**
-  - Add a "Biometric Login" toggle under the Security section
-  - Toggle enables/disables biometric, stores/clears credentials accordingly
+3. **Integrate into `src/components/bills/BillForm.tsx`**:
+   - Add calculator button next to the total amount input
+   - On insert, set the amount state
 
-- **`src/App.tsx`**
-  - No changes needed (auth state flows through existing AuthProvider)
-
-### New Dependency
-- `capacitor-native-biometric` -- provides `NativeBiometric.isAvailable()`, `NativeBiometric.verifyIdentity()`, `NativeBiometric.setCredentials()`, `NativeBiometric.getCredentials()`, `NativeBiometric.deleteCredentials()`
-
-### Biometric Credential Storage
-The plugin uses Android Keystore / iOS Keychain to securely store the user's phone number and password. These are encrypted at the OS level and only accessible after biometric verification.
-
-### User Flow
-
-```text
-App Opens
-    |
-    v
-Is "logged_in" flag set?
-    |
-   No --> Show Auth page (normal login)
-    |
-   Yes --> Is biometric enabled?
-              |
-             No --> Load cached session, go to dashboard
-              |
-             Yes --> Show biometric prompt
-                        |
-                     Success --> Retrieve credentials, auto-login, dashboard
-                        |
-                     Fail --> Show Auth page with phone+password form
-```
-
-After running `npx cap sync`, biometric will work on physical devices with fingerprint sensors or Face ID.
+4. **Integrate into `src/pages/Expenses.tsx`**:
+   - Add calculator button next to the expense amount input
+   - On insert, set the amount state
 
