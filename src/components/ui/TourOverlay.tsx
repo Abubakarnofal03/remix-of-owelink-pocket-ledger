@@ -63,14 +63,11 @@ export function TourOverlay({
     };
     setHighlightRect(highlight);
 
-    // Measure popover
     const vw = window.innerWidth;
     const vh = window.innerHeight;
     const margin = 12;
     const popoverW = Math.min(300, vw - margin * 2);
     const gap = 12;
-
-    // Measure actual popover height (fallback estimate)
     const popoverH = popoverRef.current?.offsetHeight || 180;
 
     const pos = step.position || "bottom";
@@ -81,7 +78,6 @@ export function TourOverlay({
       vw - popoverW - margin
     ));
 
-    // Auto-decide: prefer requested position, but flip if no space
     const spaceBelow = vh - (highlight.top + highlight.height + gap);
     const spaceAbove = highlight.top - gap;
 
@@ -98,13 +94,11 @@ export function TourOverlay({
       style.top = highlight.top - popoverH - gap;
       style.left = centerX;
     } else {
-      // Not enough space above or below — place at bottom of viewport
       style.bottom = margin;
       style.left = centerX;
     }
 
     setPopoverStyle(style);
-
     el.scrollIntoView({ behavior: "smooth", block: "center" });
   }, [step]);
 
@@ -117,7 +111,6 @@ export function TourOverlay({
     };
   }, [updatePosition]);
 
-  // Re-measure once popover renders to get accurate height
   useEffect(() => {
     if (popoverRef.current) {
       const timer = setTimeout(updatePosition, 300);
@@ -128,53 +121,68 @@ export function TourOverlay({
   const isClickStep = step.action === "click" && step.nextOnClick;
   const progress = ((stepIndex + 1) / totalSteps) * 100;
 
+  // Build 4 overlay regions around the highlight hole so clicks pass through to the actual element
+  const overlayColor = "rgba(0,0,0,0.7)";
+  const vw = "100vw";
+  const vh = "100vh";
+
   return (
     <div className="fixed inset-0 z-[9999]" style={{ pointerEvents: "none" }}>
-      {/* Overlay with hole */}
-      <svg
-        className="absolute inset-0 w-full h-full"
-        style={{ pointerEvents: "auto" }}
-        onClick={(e) => {
-          if (highlightRect) {
-            const x = e.clientX;
-            const y = e.clientY;
-            if (
-              x >= highlightRect.left &&
-              x <= highlightRect.left + highlightRect.width &&
-              y >= highlightRect.top &&
-              y <= highlightRect.top + highlightRect.height
-            ) {
-              return;
-            }
-          }
-          e.preventDefault();
-          e.stopPropagation();
-        }}
-      >
-        <defs>
-          <mask id="tour-mask">
-            <rect x="0" y="0" width="100%" height="100%" fill="white" />
-            {highlightRect && (
-              <rect
-                x={highlightRect.left}
-                y={highlightRect.top}
-                width={highlightRect.width}
-                height={highlightRect.height}
-                rx="10"
-                fill="black"
-              />
-            )}
-          </mask>
-        </defs>
-        <rect
-          x="0"
-          y="0"
-          width="100%"
-          height="100%"
-          fill="rgba(0,0,0,0.7)"
-          mask="url(#tour-mask)"
+      {highlightRect ? (
+        <>
+          {/* Top region */}
+          <div
+            style={{
+              position: "absolute", top: 0, left: 0, right: 0,
+              height: Math.max(0, highlightRect.top),
+              background: overlayColor,
+              pointerEvents: "auto",
+            }}
+          />
+          {/* Bottom region */}
+          <div
+            style={{
+              position: "absolute", bottom: 0, left: 0, right: 0,
+              top: highlightRect.top + highlightRect.height,
+              background: overlayColor,
+              pointerEvents: "auto",
+            }}
+          />
+          {/* Left region */}
+          <div
+            style={{
+              position: "absolute",
+              top: highlightRect.top,
+              left: 0,
+              width: Math.max(0, highlightRect.left),
+              height: highlightRect.height,
+              background: overlayColor,
+              pointerEvents: "auto",
+            }}
+          />
+          {/* Right region */}
+          <div
+            style={{
+              position: "absolute",
+              top: highlightRect.top,
+              left: highlightRect.left + highlightRect.width,
+              right: 0,
+              height: highlightRect.height,
+              background: overlayColor,
+              pointerEvents: "auto",
+            }}
+          />
+        </>
+      ) : (
+        /* No highlight - full overlay */
+        <div
+          style={{
+            position: "absolute", inset: 0,
+            background: overlayColor,
+            pointerEvents: "auto",
+          }}
         />
-      </svg>
+      )}
 
       {/* Highlight border glow */}
       {highlightRect && (
@@ -186,22 +194,6 @@ export function TourOverlay({
             width: highlightRect.width,
             height: highlightRect.height,
             pointerEvents: "none",
-          }}
-        />
-      )}
-
-      {/* Make highlighted element clickable */}
-      {highlightRect && (
-        <div
-          className="absolute"
-          style={{
-            top: highlightRect.top,
-            left: highlightRect.left,
-            width: highlightRect.width,
-            height: highlightRect.height,
-            pointerEvents: "auto",
-            zIndex: 10000,
-            cursor: isClickStep ? "pointer" : "default",
           }}
         />
       )}
