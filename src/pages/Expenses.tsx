@@ -165,7 +165,7 @@ export default function Expenses() {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => exportExpensesPDF(filteredExpenses, buckets, currency, filterLabels[filter])}
+                onClick={async () => { await exportExpensesPDF(filteredExpenses, buckets, currency, filterLabels[filter]); }}
               >
                 <Download className="h-4 w-4" />
               </Button>
