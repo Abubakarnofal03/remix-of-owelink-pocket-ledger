@@ -6,7 +6,7 @@ import { hapticLight } from "@/lib/haptics";
 const navItems = [
   { path: "/", icon: Home, label: "Home", tourId: "nav-home" },
   { path: "/bills", icon: Receipt, label: "Bills", tourId: "nav-bills" },
-  { path: "/ious", icon: FileText, label: "IOUs", tourId: "nav-ious" },
+  { path: "/ious", icon: FileText, label: "Owes", tourId: "nav-owes" },
   { path: "/expenses", icon: Wallet, label: "Expenses", tourId: "nav-expenses" },
   { path: "/contacts", icon: Users, label: "Contacts", tourId: "nav-contacts" },
 ];

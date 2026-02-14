@@ -1,247 +1,175 @@
-import { useEffect, useState, useCallback } from "react";
-import { driver, DriveStep } from "driver.js";
-import "driver.js/dist/driver.css";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
 const ONBOARDING_COMPLETED_KEY = "onboarding_completed";
 const ONBOARDING_TRIGGERED_KEY = "onboarding_triggered";
+const ONBOARDING_STEP_KEY = "onboarding_step";
 
-// Welcome step (shown first)
-const welcomeStep: DriveStep = {
-  popover: {
-    title: "Welcome to Owey! 👋",
-    description: "Let's take a quick tour to help you get started. We'll show you how to track money with friends in just a few taps!",
-    side: "over",
-    align: "center",
-  },
-};
+export interface TourStep {
+  id: string;
+  page: string; // route to navigate to
+  target?: string; // data-tour selector
+  title: string;
+  description: string;
+  action: "click" | "observe" | "navigate"; // click = wait for user click, observe = just show info, navigate = auto-navigate
+  nextOnClick?: boolean; // advance when user clicks the target element
+  position?: "top" | "bottom" | "left" | "right" | "center";
+}
 
-// Define tour steps for each page
-const homeSteps: DriveStep[] = [
-  welcomeStep,
+const tourSteps: TourStep[] = [
+  // Welcome
   {
-    element: '[data-tour="balance-overview"]',
-    popover: {
-      title: "Your Balance at a Glance 💰",
-      description: "See how much others owe you and what you owe them. Green means you're owed money!",
-      side: "bottom",
-      align: "center",
-    },
+    id: "welcome",
+    page: "/",
+    title: "Welcome to OweLink! 👋",
+    description: "Let's take a quick tour of the app. We'll walk you through every feature step by step. You can skip anytime!",
+    action: "observe",
+    position: "center",
+  },
+  // Home - Balance Overview
+  {
+    id: "home-balance",
+    page: "/",
+    target: '[data-tour="balance-overview"]',
+    title: "Your Balance at a Glance 💰",
+    description: "This shows how much others owe you and what you owe them. Green = money coming in, Red = money going out.",
+    action: "observe",
+    position: "bottom",
+  },
+  // Home - Quick Actions
+  {
+    id: "home-actions",
+    page: "/",
+    target: '[data-tour="quick-actions"]',
+    title: "Quick Actions ⚡",
+    description: "Create bills, track owes, or log expenses in 2 taps from here.",
+    action: "observe",
+    position: "top",
+  },
+  // Navigate to Bills
+  {
+    id: "nav-bills",
+    page: "/",
+    target: '[data-tour="nav-bills"]',
+    title: "Let's explore Bills! 📋",
+    description: "Tap the Bills tab to see how you can split expenses with friends.",
+    action: "click",
+    nextOnClick: true,
+    position: "top",
+  },
+  // Bills Page
+  {
+    id: "bills-intro",
+    page: "/bills",
+    title: "Bills = Group Expenses 📋",
+    description: "Perfect for splitting dinner, trips, or shared subscriptions. Everyone sees what they owe!",
+    action: "observe",
+    position: "center",
   },
   {
-    element: '[data-tour="quick-actions"]',
-    popover: {
-      title: "Create in 2 Taps! ⚡",
-      description: "Bills are for splitting with groups (dinner, trips). IOUs are for simple 1-on-1 debts ('I'll pay you back').",
-      side: "top",
-      align: "center",
-    },
+    id: "bills-new",
+    page: "/bills",
+    target: '[data-tour="new-bill-btn"]',
+    title: "Create a Bill ➕",
+    description: "This button creates a new bill. Add a title, total amount, and participants — the app splits it for you!",
+    action: "observe",
+    position: "bottom",
+  },
+  // Navigate to Owes
+  {
+    id: "nav-owes",
+    page: "/bills",
+    target: '[data-tour="nav-owes"]',
+    title: "Now let's check Owes! 📝",
+    description: "Tap the Owes tab to track simple 1-on-1 debts.",
+    action: "click",
+    nextOnClick: true,
+    position: "top",
+  },
+  // Owes Page
+  {
+    id: "owes-intro",
+    page: "/ious",
+    title: "Owes = Simple Debts 📝",
+    description: "For quick 'you owe me' or 'I owe you' situations. Track who owes you and what you owe — all in one place.",
+    action: "observe",
+    position: "center",
   },
   {
-    element: '[data-tour="nav-bills"]',
-    popover: {
-      title: "Bills = Group Expenses 📋",
-      description: "Split dinner, trips, or any shared cost. Just add participants and let the app calculate who owes what!",
-      side: "top",
-      align: "center",
-    },
+    id: "owes-new",
+    page: "/ious",
+    target: '[data-tour="new-owe-btn"]',
+    title: "Track a new Owe ➕",
+    description: "Tap here when someone says 'I'll pay you back'. Add who, how much, and when it's due. You can send them reminders too!",
+    action: "observe",
+    position: "bottom",
   },
   {
-    element: '[data-tour="nav-ious"]',
-    popover: {
-      title: "IOUs = Simple Debts 📝",
-      description: "For quick 'you owe me' situations. Track who owes you and what you owe others - all in one place.",
-      side: "top",
-      align: "center",
-    },
+    id: "owes-tabs",
+    page: "/ious",
+    target: '[data-tour="owe-tabs"]',
+    title: "Money In vs Money Out 💵",
+    description: "'Owed to me' = money others should pay you. 'I owe' = your debts to settle.",
+    action: "observe",
+    position: "bottom",
+  },
+  // Navigate to Expenses
+  {
+    id: "nav-expenses",
+    page: "/ious",
+    target: '[data-tour="nav-expenses"]',
+    title: "Let's check Expenses! 💸",
+    description: "Tap the Expenses tab to track your daily spending.",
+    action: "click",
+    nextOnClick: true,
+    position: "top",
+  },
+  // Expenses Page
+  {
+    id: "expenses-intro",
+    page: "/expenses",
+    title: "Expense Tracker 💸",
+    description: "Log your daily spending and see where your money goes. Organize them into 'buckets' like Groceries, Trip, or Rent!",
+    action: "observe",
+    position: "center",
   },
   {
-    element: '[data-tour="nav-expenses"]',
-    popover: {
-      title: "Track Your Spending 💸",
-      description: "Log daily expenses and organize them into 'buckets' like 'Trip' or 'Groceries' to see where your money goes.",
-      side: "top",
-      align: "center",
-    },
+    id: "expenses-add",
+    page: "/expenses",
+    target: '[data-tour="add-expense-btn"]',
+    title: "Log an Expense ➕",
+    description: "Tap this to quickly add a new expense. It's fast — just amount and a note!",
+    action: "observe",
+    position: "bottom",
   },
+  // Navigate to Contacts
   {
-    element: '[data-tour="nav-contacts"]',
-    popover: {
-      title: "Your Contacts 👥",
-      description: "Access phone contacts or add custom ones. Give nicknames to make finding people easier!",
-      side: "top",
-      align: "center",
-    },
+    id: "nav-contacts",
+    page: "/expenses",
+    target: '[data-tour="nav-contacts"]',
+    title: "Finally, Contacts! 👥",
+    description: "Tap Contacts to manage your people.",
+    action: "click",
+    nextOnClick: true,
+    position: "top",
   },
+  // Contacts Page
   {
-    popover: {
-      title: "You're All Set! 🎉",
-      description: "Start by creating your first Bill or IOU. Tap the + button on the home screen to begin. We'll send you reminders so nothing gets forgotten!",
-      side: "over",
-      align: "center",
-    },
+    id: "contacts-intro",
+    page: "/contacts",
+    title: "Your Contacts 👥",
+    description: "Your phone contacts sync here automatically. You can also add custom contacts and give them nicknames for easy finding!",
+    action: "observe",
+    position: "center",
   },
-];
-
-const billsPageSteps: DriveStep[] = [
+  // Finish
   {
-    popover: {
-      title: "Bills: Split Expenses Easily 📋",
-      description: "Perfect for group expenses - dinners, trips, shared subscriptions. Let's see how it works!",
-    },
-  },
-  {
-    element: '[data-tour="new-bill-btn"]',
-    popover: {
-      title: "Create Your First Bill ➕",
-      description: "Tap here to split an expense. Add a title (like 'Dinner at Mario's'), the total amount, and who's involved.",
-      side: "bottom",
-      align: "end",
-    },
-  },
-  {
-    element: '[data-tour="bills-tabs"]',
-    popover: {
-      title: "Your Bills 🔍",
-      description: "'Created' = bills you made. 'Shared' = bills others added you to.",
-      side: "bottom",
-      align: "center",
-    },
-  },
-  {
-    element: '[data-tour="status-filter"]',
-    popover: {
-      title: "Quick Filters ✅",
-      description: "See only unpaid bills, paid bills, or all of them.",
-      side: "bottom",
-      align: "center",
-    },
-  },
-];
-
-const iousPageSteps: DriveStep[] = [
-  {
-    popover: {
-      title: "IOUs: Track Simple Debts 📝",
-      description: "When someone owes you (or you owe them), log it here. We'll group everything by person!",
-    },
-  },
-  {
-    element: '[data-tour="new-iou-btn"]',
-    popover: {
-      title: "Record a Debt ➕",
-      description: "Tap here when someone says 'I'll pay you back'. Add who, how much, and optionally when it's due.",
-      side: "bottom",
-      align: "end",
-    },
-  },
-  {
-    element: '[data-tour="iou-tabs"]',
-    popover: {
-      title: "Money In vs Money Out 💵",
-      description: "'Owed to me' = money coming your way. 'I owe' = your debts to settle.",
-      side: "bottom",
-      align: "center",
-    },
-  },
-  {
-    element: '[data-tour="iou-search"]',
-    popover: {
-      title: "Find Anyone Fast 🔎",
-      description: "Search by name or phone number to find IOUs quickly.",
-      side: "bottom",
-      align: "center",
-    },
-  },
-];
-
-const expensesPageSteps: DriveStep[] = [
-  {
-    popover: {
-      title: "Expense Tracker 💸",
-      description: "Log your daily spending and see where your money goes. Organize expenses into 'buckets' for better insights!",
-    },
-  },
-  {
-    element: '[data-tour="add-expense-btn"]',
-    popover: {
-      title: "Log an Expense ➕",
-      description: "Tap here to add a new expense. Quick and simple!",
-      side: "bottom",
-      align: "center",
-    },
-  },
-  {
-    element: '[data-tour="expense-summary"]',
-    popover: {
-      title: "Spending Summary 📊",
-      description: "See your total spending for today, this week, or this month.",
-      side: "bottom",
-      align: "center",
-    },
-  },
-  {
-    element: '[data-tour="expense-tabs"]',
-    popover: {
-      title: "Expenses & Buckets 📁",
-      description: "View all expenses or organize them into buckets. Long-press any expense to move it to a bucket!",
-      side: "bottom",
-      align: "center",
-    },
-  },
-];
-
-const contactsPageSteps: DriveStep[] = [
-  {
-    popover: {
-      title: "Contacts 👥",
-      description: "Your contacts are stored locally for privacy. Access phone contacts or add custom ones.",
-    },
-  },
-  {
-    element: '[data-tour="add-contact-btn"]',
-    popover: {
-      title: "Add Someone New ➕",
-      description: "Add a contact manually if they're not in your phone.",
-      side: "bottom",
-      align: "end",
-    },
-  },
-  {
-    element: '[data-tour="contact-search"]',
-    popover: {
-      title: "Quick Search 🔎",
-      description: "Find contacts by name or phone number.",
-      side: "bottom",
-      align: "center",
-    },
-  },
-];
-
-const settingsPageSteps: DriveStep[] = [
-  {
-    popover: {
-      title: "Settings ⚙️",
-      description: "Customize your app experience here!",
-    },
-  },
-  {
-    element: '[data-tour="theme-toggle"]',
-    popover: {
-      title: "Light or Dark? 🌓",
-      description: "Switch between light and dark mode.",
-      side: "bottom",
-      align: "center",
-    },
-  },
-  {
-    element: '[data-tour="currency-setting"]',
-    popover: {
-      title: "Your Currency 💱",
-      description: "Set your default currency for all transactions.",
-      side: "bottom",
-      align: "center",
-    },
+    id: "finish",
+    page: "/contacts",
+    title: "You're All Set! 🎉",
+    description: "Go back to Home and create your first bill or owe. We'll send reminders so nothing gets forgotten. Enjoy OweLink!",
+    action: "observe",
+    position: "center",
   },
 ];
 
@@ -250,132 +178,140 @@ export function useOnboarding() {
     return localStorage.getItem(ONBOARDING_COMPLETED_KEY) === "true";
   });
   const [isActive, setIsActive] = useState(false);
+  const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const location = useLocation();
   const navigate = useNavigate();
+  const clickHandlerRef = useRef<(() => void) | null>(null);
 
-  // Mark onboarding as completed
+  const currentStep = isActive ? tourSteps[currentStepIndex] : null;
+
+  // Complete onboarding
   const completeOnboarding = useCallback(() => {
     localStorage.setItem(ONBOARDING_COMPLETED_KEY, "true");
     localStorage.removeItem(ONBOARDING_TRIGGERED_KEY);
+    localStorage.removeItem(ONBOARDING_STEP_KEY);
     setIsCompleted(true);
     setIsActive(false);
+    setCurrentStepIndex(0);
+    // Clean up any click handlers
+    if (clickHandlerRef.current) {
+      clickHandlerRef.current();
+      clickHandlerRef.current = null;
+    }
   }, []);
 
-  // Reset onboarding (for testing or restart)
   const resetOnboarding = useCallback(() => {
     localStorage.removeItem(ONBOARDING_COMPLETED_KEY);
     localStorage.removeItem(ONBOARDING_TRIGGERED_KEY);
+    localStorage.removeItem(ONBOARDING_STEP_KEY);
     setIsCompleted(false);
+    setCurrentStepIndex(0);
   }, []);
 
-  // Trigger onboarding for new signup
   const triggerOnboarding = useCallback(() => {
     localStorage.setItem(ONBOARDING_TRIGGERED_KEY, "true");
     setIsCompleted(false);
   }, []);
 
-  // Check if onboarding was triggered
   const wasTriggered = useCallback(() => {
     return localStorage.getItem(ONBOARDING_TRIGGERED_KEY) === "true";
   }, []);
 
-  // Start the full tour
+  // Go to next step
+  const nextStep = useCallback(() => {
+    const next = currentStepIndex + 1;
+    if (next >= tourSteps.length) {
+      completeOnboarding();
+      navigate("/");
+    } else {
+      setCurrentStepIndex(next);
+      localStorage.setItem(ONBOARDING_STEP_KEY, String(next));
+      // Navigate if needed
+      const nextStepData = tourSteps[next];
+      if (nextStepData.page !== location.pathname) {
+        navigate(nextStepData.page);
+      }
+    }
+  }, [currentStepIndex, completeOnboarding, navigate, location.pathname]);
+
+  // Go to previous step
+  const prevStep = useCallback(() => {
+    if (currentStepIndex > 0) {
+      const prev = currentStepIndex - 1;
+      setCurrentStepIndex(prev);
+      localStorage.setItem(ONBOARDING_STEP_KEY, String(prev));
+      const prevStepData = tourSteps[prev];
+      if (prevStepData.page !== location.pathname) {
+        navigate(prevStepData.page);
+      }
+    }
+  }, [currentStepIndex, navigate, location.pathname]);
+
+  // Start full tour
   const startFullTour = useCallback(() => {
+    setCurrentStepIndex(0);
+    setIsActive(true);
+    localStorage.setItem(ONBOARDING_STEP_KEY, "0");
     if (location.pathname !== "/") {
       navigate("/");
-      // Wait for navigation to complete
-      setTimeout(() => startFullTour(), 100);
-      return;
     }
+  }, [location.pathname, navigate]);
 
-    setIsActive(true);
-
-    const driverObj = driver({
-      showProgress: true,
-      animate: true,
-      allowClose: true,
-      overlayClickBehavior: "close",
-      stagePadding: 8,
-      popoverClass: "tour-popover",
-      progressText: "{{current}} of {{total}}",
-      nextBtnText: "Next →",
-      prevBtnText: "← Back",
-      doneBtnText: "Got it! ✓",
-      steps: homeSteps,
-      onDestroyed: () => {
-        completeOnboarding();
-      },
-    });
-
-    // Small delay to ensure DOM is ready
-    setTimeout(() => {
-      driverObj.drive();
-    }, 500);
-  }, [location.pathname, navigate, completeOnboarding]);
-
-  // Start page-specific tour
-  const startPageTour = useCallback((page: "bills" | "ious" | "expenses" | "contacts" | "settings") => {
-    let steps: DriveStep[];
-    switch (page) {
-      case "bills":
-        steps = billsPageSteps;
-        break;
-      case "ious":
-        steps = iousPageSteps;
-        break;
-      case "expenses":
-        steps = expensesPageSteps;
-        break;
-      case "contacts":
-        steps = contactsPageSteps;
-        break;
-      case "settings":
-        steps = settingsPageSteps;
-        break;
-      default:
-        return;
-    }
-
-    setIsActive(true);
-
-    const driverObj = driver({
-      showProgress: true,
-      animate: true,
-      allowClose: true,
-      overlayClickBehavior: "close",
-      stagePadding: 8,
-      popoverClass: "tour-popover",
-      progressText: "{{current}} of {{total}}",
-      nextBtnText: "Next →",
-      prevBtnText: "← Back",
-      doneBtnText: "Got it! ✓",
-      steps,
-      onDestroyed: () => {
-        setIsActive(false);
-      },
-    });
-
-    setTimeout(() => {
-      driverObj.drive();
-    }, 300);
-  }, []);
-
-  // Auto-start onboarding for new users
+  // Listen for clicks on target elements (for "click" action steps)
   useEffect(() => {
-    if (wasTriggered() && !isCompleted && location.pathname === "/") {
-      // Small delay to let the page render
+    if (!isActive || !currentStep?.nextOnClick || !currentStep.target) return;
+
+    const handleClick = () => {
+      // Small delay to let the navigation happen
+      setTimeout(() => nextStep(), 300);
+    };
+
+    // Wait for element to be in DOM
+    const checkInterval = setInterval(() => {
+      const el = document.querySelector(currentStep.target!);
+      if (el) {
+        clearInterval(checkInterval);
+        el.addEventListener("click", handleClick, { once: true });
+        clickHandlerRef.current = () => {
+          el.removeEventListener("click", handleClick);
+        };
+      }
+    }, 100);
+
+    return () => {
+      clearInterval(checkInterval);
+      if (clickHandlerRef.current) {
+        clickHandlerRef.current();
+        clickHandlerRef.current = null;
+      }
+    };
+  }, [isActive, currentStepIndex, currentStep, nextStep]);
+
+  // Auto-start for new users
+  useEffect(() => {
+    if (wasTriggered() && !isCompleted && location.pathname === "/" && !isActive) {
       const timer = setTimeout(() => {
         startFullTour();
       }, 1000);
       return () => clearTimeout(timer);
     }
-  }, [wasTriggered, isCompleted, location.pathname, startFullTour]);
+  }, [wasTriggered, isCompleted, location.pathname, isActive, startFullTour]);
+
+  // Page-specific tour (kept for settings replay)
+  const startPageTour = useCallback((_page: string) => {
+    startFullTour();
+  }, [startFullTour]);
 
   return {
     isCompleted,
     isActive,
+    currentStep,
+    currentStepIndex,
+    totalSteps: tourSteps.length,
     startFullTour,
     startPageTour,
+    nextStep,
+    prevStep,
     completeOnboarding,
     resetOnboarding,
     triggerOnboarding,

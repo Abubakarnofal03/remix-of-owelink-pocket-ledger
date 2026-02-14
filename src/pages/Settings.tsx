@@ -20,7 +20,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
-import { ArrowLeft, User, Phone, Bell, Moon, Shield, LogOut, Coins, Database, ChevronDown, Vibrate, Fingerprint } from "lucide-react";
+import { ArrowLeft, User, Phone, Bell, Moon, Shield, LogOut, Coins, Database, ChevronDown, Vibrate, Fingerprint, GraduationCap } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { CURRENCIES, getCurrencySymbol } from "@/lib/currencies";
@@ -169,7 +169,7 @@ export default function Settings() {
               </SelectContent>
             </Select>
             <p className="text-xs text-muted-foreground">
-              This currency will be used as default for new bills and IOUs
+              This currency will be used as default for new bills and owes
             </p>
           </div>
         </div>
@@ -292,6 +292,22 @@ export default function Settings() {
             </CollapsibleContent>
           </div>
         </Collapsible>
+
+        {/* Replay Tutorial */}
+        <div className="card-elevated p-4">
+          <Button
+            variant="outline"
+            className="w-full justify-start gap-2"
+            onClick={() => {
+              localStorage.removeItem("onboarding_completed");
+              localStorage.setItem("onboarding_triggered", "true");
+              navigate("/");
+            }}
+          >
+            <GraduationCap className="h-4 w-4" />
+            Replay App Tutorial
+          </Button>
+        </div>
 
         {/* Sign Out */}
         <Button

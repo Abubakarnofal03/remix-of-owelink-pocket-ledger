@@ -20,7 +20,7 @@ export default function NewIOU() {
           <Button variant="ghost" size="icon" onClick={() => navigate("/ious")}>
             <ArrowLeft className="h-5 w-5" />
           </Button>
-          <h1 className="font-display text-xl font-bold text-foreground">New IOU</h1>
+          <h1 className="font-display text-xl font-bold text-foreground">New Owe</h1>
         </div>
 
         <IOUForm />

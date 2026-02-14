@@ -6,7 +6,6 @@ import { Button } from "@/components/ui/button";
 import { useBalances } from "@/hooks/useBalances";
 import { useCurrency } from "@/hooks/useCurrency";
 import { PullToRefresh } from "@/components/ui/PullToRefresh";
-import { useOnboarding } from "@/hooks/useOnboarding";
 import { format } from "date-fns";
 import {
   ArrowUpRight,
@@ -25,8 +24,6 @@ export default function Index() {
   const { owedToYou, youOwe, netBalance, recentActivity, loading: balancesLoading, refetch } = useBalances();
   const { currency } = useCurrency();
   
-  // Initialize onboarding - this hook will auto-start the tour for new users
-  useOnboarding();
 
   if (loading) {
     return (
@@ -155,7 +152,7 @@ export default function Index() {
                   <div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center">
                     <FileText className="h-5 w-5 text-primary" />
                   </div>
-                  <span className="text-xs font-medium">Create IOU</span>
+                  <span className="text-xs font-medium">Track Owe</span>
                 </Button>
               </Link>
               <Link to="/expenses">
@@ -179,7 +176,7 @@ export default function Index() {
                 </div>
                 <p className="text-muted-foreground text-sm">No activity yet</p>
                 <p className="text-muted-foreground text-xs mt-1">
-                  Create your first bill or IOU to get started
+                  Create your first bill or owe to get started
                 </p>
               </div>
             ) : (
