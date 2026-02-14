@@ -65,7 +65,7 @@ export default function Contacts() {
             <h1 className="font-display text-2xl font-bold text-foreground">Contacts</h1>
             <div className="flex gap-2">
               {contacts.length > 0 && (
-                <Button variant="outline" size="sm" onClick={() => exportContactsPDF(contacts)}>
+                <Button variant="outline" size="sm" onClick={async () => { await exportContactsPDF(contacts); }}>
                   <Download className="h-4 w-4" />
                 </Button>
               )}

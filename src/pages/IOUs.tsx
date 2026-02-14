@@ -93,7 +93,7 @@ export default function IOUs() {
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => exportOwesPDF(owedToMe, iOwe, getContactName)}
+                  onClick={async () => { await exportOwesPDF(owedToMe, iOwe, getContactName); }}
                 >
                   <Download className="h-4 w-4" />
                 </Button>

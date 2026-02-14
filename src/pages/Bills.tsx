@@ -115,7 +115,7 @@ export default function Bills() {
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => exportBillsPDF(filteredBills, getContactName)}
+                  onClick={async () => { await exportBillsPDF(filteredBills, getContactName); }}
                 >
                   <Download className="h-4 w-4" />
                 </Button>
