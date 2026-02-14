@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { Eye, EyeOff, Phone, User, Lock, Coins } from "lucide-react";
+import { Eye, EyeOff, Phone, User, Lock, Coins, Fingerprint } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -12,7 +12,18 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { useAuth } from "@/hooks/useAuth";
+import { useBiometric } from "@/hooks/useBiometric";
 import { useToast } from "@/hooks/use-toast";
 import { APP_NAME } from "@/lib/constants";
 import { CURRENCIES, DEFAULT_CURRENCY } from "@/lib/currencies";
@@ -35,6 +46,9 @@ export default function Auth() {
   const [isSignUp, setIsSignUp] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [biometricAttempted, setBiometricAttempted] = useState(false);
+  const [showBiometricPrompt, setShowBiometricPrompt] = useState(false);
+  const [pendingCredentials, setPendingCredentials] = useState<{ phone: string; password: string } | null>(null);
   const [formData, setFormData] = useState({
     username: "",
     countryCode: "+1",
@@ -45,6 +59,7 @@ export default function Auth() {
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   const { signUp, signIn } = useAuth();
+  const { isAvailable, isEnabled, authenticate, getCredentials, enableBiometric } = useBiometric();
   const { toast } = useToast();
   const navigate = useNavigate();
 
@@ -52,7 +67,41 @@ export default function Auth() {
     document.title = `${isSignUp ? "Sign up" : "Sign in"} | ${APP_NAME}`;
   }, [isSignUp]);
 
-  // Normalize phone number to E.164 format
+  // Auto-trigger biometric on mount if enabled
+  useEffect(() => {
+    if (isEnabled && isAvailable && !biometricAttempted) {
+      setBiometricAttempted(true);
+      handleBiometricLogin();
+    }
+  }, [isEnabled, isAvailable]);
+
+  const handleBiometricLogin = useCallback(async () => {
+    setLoading(true);
+    try {
+      const verified = await authenticate('Sign in to OweLink');
+      if (!verified) {
+        setLoading(false);
+        return;
+      }
+      const creds = await getCredentials();
+      if (!creds) {
+        toast({ title: "Biometric error", description: "Could not retrieve saved credentials", variant: "destructive" });
+        setLoading(false);
+        return;
+      }
+      const { error } = await signIn(creds.phone, creds.password);
+      if (error) {
+        toast({ title: "Sign in failed", description: error.message, variant: "destructive" });
+      } else {
+        navigate("/");
+      }
+    } catch (e) {
+      console.warn('[Auth] Biometric login error:', e);
+    } finally {
+      setLoading(false);
+    }
+  }, [authenticate, getCredentials, signIn, navigate, toast]);
+
   const fullPhoneNumber = useMemo(() => {
     return normalizeToE164(formData.phoneNumber, formData.countryCode);
   }, [formData.countryCode, formData.phoneNumber]);
@@ -81,21 +130,20 @@ export default function Auth() {
           return;
         }
 
-        const { error } = await signUp(
-          "",
-          formData.password,
-          formData.username,
-          fullPhoneNumber,
-          formData.currency
-        );
+        const { error } = await signUp("", formData.password, formData.username, fullPhoneNumber, formData.currency);
 
         if (error) {
           toast({ title: "Sign up failed", description: error.message, variant: "destructive" });
         } else {
-          toast({ title: "Welcome to Owelink!", description: "Your account has been created." });
-          // Trigger onboarding for new users
-          localStorage.setItem("onboarding_triggered", "true");
-          navigate("/");
+          toast({ title: "Welcome to OweLink!", description: "Your account has been created." });
+          // Offer biometric after signup
+          if (isAvailable) {
+            setPendingCredentials({ phone: fullPhoneNumber, password: formData.password });
+            setShowBiometricPrompt(true);
+          } else {
+            localStorage.setItem("onboarding_triggered", "true");
+            navigate("/");
+          }
         }
       } else {
         const result = signInSchema.safeParse(formData);
@@ -114,18 +162,40 @@ export default function Auth() {
         if (error) {
           toast({ title: "Sign in failed", description: error.message, variant: "destructive" });
         } else {
-          navigate("/");
+          // Offer biometric if available and not yet enabled
+          if (isAvailable && !isEnabled) {
+            setPendingCredentials({ phone: fullPhoneNumber, password: formData.password });
+            setShowBiometricPrompt(true);
+          } else {
+            navigate("/");
+          }
         }
       }
     } catch (err) {
-      toast({
-        title: "Error",
-        description: "Something went wrong. Please try again.",
-        variant: "destructive",
-      });
+      toast({ title: "Error", description: "Something went wrong. Please try again.", variant: "destructive" });
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleEnableBiometric = async () => {
+    if (pendingCredentials) {
+      const success = await enableBiometric(pendingCredentials.phone, pendingCredentials.password);
+      if (success) {
+        toast({ title: "Biometric enabled", description: "You can now sign in with fingerprint or face" });
+      }
+    }
+    setShowBiometricPrompt(false);
+    setPendingCredentials(null);
+    if (isSignUp) localStorage.setItem("onboarding_triggered", "true");
+    navigate("/");
+  };
+
+  const handleSkipBiometric = () => {
+    setShowBiometricPrompt(false);
+    setPendingCredentials(null);
+    if (isSignUp) localStorage.setItem("onboarding_triggered", "true");
+    navigate("/");
   };
 
   return (
@@ -138,6 +208,18 @@ export default function Auth() {
           <h1 className="font-display text-3xl font-bold text-foreground">{APP_NAME}</h1>
           <p className="text-muted-foreground mt-2">Track who owes whom, effortlessly.</p>
         </div>
+
+        {/* Biometric button when available but user dismissed auto-prompt */}
+        {isEnabled && isAvailable && biometricAttempted && !loading && (
+          <Button
+            variant="outline"
+            className="w-full mb-4 gap-2"
+            onClick={handleBiometricLogin}
+          >
+            <Fingerprint className="h-5 w-5" />
+            Sign in with Biometric
+          </Button>
+        )}
 
         <div className="card-elevated p-6">
           <div className="flex gap-2 mb-6">
@@ -206,7 +288,6 @@ export default function Auth() {
                     setErrors((prev) => ({ ...prev, phoneNumber: "" }));
                   }}
                 />
-
                 <Input
                   id="phoneNumber"
                   name="phoneNumber"
@@ -253,6 +334,25 @@ export default function Auth() {
           </form>
         </div>
       </div>
+
+      {/* Biometric enable prompt after login/signup */}
+      <AlertDialog open={showBiometricPrompt} onOpenChange={setShowBiometricPrompt}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <Fingerprint className="h-5 w-5 text-primary" />
+              Enable Biometric Login?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Use your fingerprint or face to sign in faster next time. Your credentials will be securely stored on this device.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={handleSkipBiometric}>Maybe Later</AlertDialogCancel>
+            <AlertDialogAction onClick={handleEnableBiometric}>Enable</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

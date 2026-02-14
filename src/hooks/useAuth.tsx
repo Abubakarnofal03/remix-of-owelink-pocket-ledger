@@ -7,6 +7,7 @@ import { DEFAULT_CURRENCY } from "@/lib/currencies";
 
 const PROFILE_STORAGE_KEY = "cached_profile";
 const SESSION_STORAGE_KEY = "cached_session";
+const LOGGED_IN_FLAG = "logged_in";
 
 interface AuthContextType {
   user: User | null;
@@ -70,25 +71,32 @@ const cacheSession = (session: Session | null) => {
   }
 };
 
-// Load cached session from localStorage
+// Load cached session -- NEVER auto-expire; only cleared on explicit logout
 const loadCachedSession = (): { user: User; session: Partial<Session> } | null => {
   try {
     const cached = localStorage.getItem(SESSION_STORAGE_KEY);
     if (cached) {
       const parsed = JSON.parse(cached);
-      // Check if session hasn't expired (with 1 hour buffer)
-      if (parsed.expires_at && parsed.expires_at * 1000 > Date.now() - 3600000) {
-        console.log('[Auth] Using cached session');
-        return { user: parsed.user, session: parsed };
-      } else {
-        console.log('[Auth] Cached session expired');
-        localStorage.removeItem(SESSION_STORAGE_KEY);
-      }
+      console.log('[Auth] Using cached session');
+      return { user: parsed.user, session: parsed };
     }
   } catch (e) {
     console.warn('[Auth] Failed to load cached session:', e);
   }
   return null;
+};
+
+// Check if user has explicitly logged in before
+const isLoggedInFlag = (): boolean => {
+  return localStorage.getItem(LOGGED_IN_FLAG) === 'true';
+};
+
+const setLoggedInFlag = () => {
+  localStorage.setItem(LOGGED_IN_FLAG, 'true');
+};
+
+const clearLoggedInFlag = () => {
+  localStorage.removeItem(LOGGED_IN_FLAG);
 };
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -112,7 +120,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         cacheProfile(data as Profile);
       } else if (error) {
         console.warn('[Auth] Failed to fetch profile from server:', error.message);
-        // Fallback to cached profile if server fetch fails (offline)
         const cached = loadCachedProfile();
         if (cached && cached.user_id === userId) {
           setProfile(cached);
@@ -120,7 +127,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     } catch (e) {
       console.warn('[Auth] Error fetching profile:', e);
-      // Fallback to cached profile
       const cached = loadCachedProfile();
       if (cached && cached.user_id === userId) {
         setProfile(cached);
@@ -135,30 +141,39 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setSession(session);
         setUser(session?.user ?? null);
 
-        // Defer profile fetch to avoid deadlock
         if (session?.user) {
-          // First try to load cached profile immediately for UI
+          // Mark as logged in
+          setLoggedInFlag();
+          cacheSession(session);
+
           const cached = loadCachedProfile();
           if (cached && cached.user_id === session.user.id) {
             setProfile(cached);
           }
-          // Then fetch from server to update
           setTimeout(() => {
             fetchProfile(session.user.id);
           }, 0);
-        } else {
-          setProfile(null);
-        }
-
-        if (event === "SIGNED_OUT") {
+        } else if (event === "SIGNED_OUT") {
+          // Only clear state on EXPLICIT sign out
           setProfile(null);
           cacheProfile(null);
+          cacheSession(null);
+          clearLoggedInFlag();
+        } else if (isLoggedInFlag()) {
+          // Server returned null session but user was logged in -- trust cache
+          console.log('[Auth] Server session null but logged_in flag set -- trusting cache');
+          const cachedSession = loadCachedSession();
+          if (cachedSession) {
+            setUser(cachedSession.user);
+            setSession(cachedSession.session as Session);
+            const cachedProfile = loadCachedProfile();
+            if (cachedProfile) setProfile(cachedProfile);
+          }
         }
       }
     );
 
-    // THEN check for existing session with timeout for slow networks
-    // Proactively refresh the session token to prevent expiration logouts
+    // Refresh session periodically when online (every 10 minutes)
     const refreshSession = async () => {
       try {
         const { data, error } = await supabase.auth.refreshSession();
@@ -173,23 +188,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     };
 
-    // Refresh session periodically when online (every 10 minutes)
     const refreshInterval = setInterval(() => {
-      if (navigator.onLine) {
+      if (navigator.onLine && isLoggedInFlag()) {
         refreshSession();
       }
     }, 10 * 60 * 1000);
 
+    // Timeout fallback for slow/offline connections
     const sessionTimeout = setTimeout(() => {
-      // If still loading after 2 seconds, check for cached data
-      const cached = loadCachedProfile();
-      const cachedSession = loadCachedSession();
-      if ((cached || cachedSession) && loading) {
+      if (loading && isLoggedInFlag()) {
         console.log('[Auth] Session check taking too long, using cached data');
+        const cachedSession = loadCachedSession();
         if (cachedSession) {
           setUser(cachedSession.user);
           setSession(cachedSession.session as Session);
         }
+        const cached = loadCachedProfile();
         if (cached) {
           setProfile(cached);
         }
@@ -202,27 +216,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setSession(session);
       setUser(session?.user ?? null);
       if (session) {
+        setLoggedInFlag();
         cacheSession(session);
       }
       if (session?.user) {
-        // Load cached profile immediately for UI
         const cached = loadCachedProfile();
         if (cached && cached.user_id === session.user.id) {
           setProfile(cached);
-          setLoading(false); // Don't wait for server
+          setLoading(false);
         }
-        // Then fetch from server with timeout
         const fetchWithTimeout = async () => {
           const timeoutPromise = new Promise<void>((resolve) => setTimeout(resolve, 3000));
           await Promise.race([fetchProfile(session.user.id), timeoutPromise]);
           setLoading(false);
         };
         fetchWithTimeout();
-      } else {
-        // No session from server - try cached session for offline access
+      } else if (isLoggedInFlag()) {
+        // Server returned no session but user previously logged in -- trust cache
+        console.log('[Auth] No server session but logged_in flag set -- using cached data');
         const cachedSession = loadCachedSession();
         if (cachedSession) {
-          console.log('[Auth] Using cached session for offline access');
           setUser(cachedSession.user);
           setSession(cachedSession.session as Session);
           const cached = loadCachedProfile();
@@ -231,20 +244,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           }
         }
         setLoading(false);
+      } else {
+        setLoading(false);
       }
     }).catch((e) => {
       console.warn('[Auth] Session check failed:', e);
       clearTimeout(sessionTimeout);
-      // Try to use cached session and profile for offline access
-      const cachedSession = loadCachedSession();
-      if (cachedSession) {
-        console.log('[Auth] Network error - using cached session');
-        setUser(cachedSession.user);
-        setSession(cachedSession.session as Session);
-      }
-      const cached = loadCachedProfile();
-      if (cached) {
-        setProfile(cached);
+      if (isLoggedInFlag()) {
+        const cachedSession = loadCachedSession();
+        if (cachedSession) {
+          console.log('[Auth] Network error - using cached session');
+          setUser(cachedSession.user);
+          setSession(cachedSession.session as Session);
+        }
+        const cached = loadCachedProfile();
+        if (cached) {
+          setProfile(cached);
+        }
       }
       setLoading(false);
     });
@@ -258,10 +274,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signUp = async (email: string, password: string, username: string, phoneNumber: string, userCurrency: string = DEFAULT_CURRENCY) => {
     const redirectUrl = `${window.location.origin}/`;
-    
-    // Normalize phone number to E.164 format
     const normalizedPhone = normalizeToE164(phoneNumber);
-    // Generate email from digits for consistent auth
     const authEmail = phoneToEmail(normalizedPhone);
 
     const { error } = await supabase.auth.signUp({
@@ -276,6 +289,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         },
       },
     });
+
+    if (!error) {
+      setLoggedInFlag();
+    }
 
     return { error: error as Error | null };
   };
@@ -301,16 +318,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return { error: new Error(friendly) };
     }
 
+    setLoggedInFlag();
     return { error: null };
   };
 
   const signOut = async () => {
+    // Clear everything on explicit sign out
+    clearLoggedInFlag();
+    cacheProfile(null);
+    cacheSession(null);
+    // Clear biometric flag (credentials cleared separately by Settings/Auth)
+    localStorage.removeItem('biometric_enabled');
+    
     await supabase.auth.signOut();
     setUser(null);
     setSession(null);
     setProfile(null);
-    cacheProfile(null);
-    cacheSession(null);
   };
 
   const refreshProfile = async () => {
