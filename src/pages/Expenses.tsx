@@ -27,6 +27,7 @@ import {
 } from "lucide-react";
 import { MiniCalculator } from "@/components/ui/MiniCalculator";
 import { exportExpensesPDF } from "@/lib/pdfExport";
+import { FirstVisitTip } from "@/components/ui/FirstVisitTip";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -158,6 +159,11 @@ export default function Expenses() {
   return (
     <AppLayout>
       <div className="space-y-4 pb-20">
+        <FirstVisitTip
+          storageKey="expenses"
+          message="Keep track of where your money goes. Add daily expenses, organize them into buckets, and see your spending trends over time."
+        />
+
         {/* Header */}
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-bold">Expenses</h1>
@@ -285,7 +291,7 @@ export default function Expenses() {
               <EmptyState
                 icon={Receipt}
                 title={filter === "all" ? "No expenses yet" : `No expenses ${filterLabels[filter].toLowerCase()}`}
-                description="Tap the button above to add your first expense"
+                description={filter === "all" ? "Keep track of where your money goes. Tap the button above to get started." : "Tap the button above to add your first expense"}
               />
             ) : (
               <>

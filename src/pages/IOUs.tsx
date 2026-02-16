@@ -13,6 +13,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PullToRefresh } from "@/components/ui/PullToRefresh";
 import { FileText, Plus, ArrowDownLeft, ArrowUpRight, Search, Filter, Download } from "lucide-react";
 import { exportOwesPDF } from "@/lib/pdfExport";
+import { FirstVisitTip } from "@/components/ui/FirstVisitTip";
 import {
   Select,
   SelectContent,
@@ -85,6 +86,11 @@ export default function IOUs() {
     <AppLayout>
       <PullToRefresh onRefresh={handleRefresh}>
         <div className="animate-fade-in space-y-4">
+          <FirstVisitTip
+            storageKey="owes"
+            message="Track simple debts — who owes you or who you owe. Lent money to a friend? Log it here so you don't forget. View per-person history in Contacts."
+          />
+
           {/* Header */}
           <div className="flex items-center justify-between">
             <h1 className="font-display text-2xl font-bold text-foreground">Owes</h1>
@@ -169,7 +175,7 @@ export default function IOUs() {
             <EmptyState
               icon={FileText}
               title="No records yet"
-              description="Track simple debts - who owes you or who you owe."
+              description="Lent money to a friend? Track it here so you don't forget."
               action={{ label: "Add New", onClick: () => navigate("/ious/new") }}
             />
           )}
