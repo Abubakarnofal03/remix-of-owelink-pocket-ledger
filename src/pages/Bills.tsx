@@ -111,8 +111,12 @@ export default function Bills() {
         <div className="animate-fade-in">
           <FirstVisitTip
             storageKey="bills"
-            message="Bills let you split expenses with friends. Add a bill, pick participants, and the app calculates who owes what. View per-person history in Contacts."
+            message="Bills let you split expenses with friends. Add a bill, pick participants, and the app calculates who owes what."
           />
+
+          <p className="text-xs text-muted-foreground mb-3 italic">
+            💡 To view individual transaction history, go to <span className="font-medium text-foreground">Contacts</span> and tap on a contact.
+          </p>
 
           <div className="flex items-center justify-between mb-4">
             <h1 className="font-display text-2xl font-bold text-foreground">Bills</h1>

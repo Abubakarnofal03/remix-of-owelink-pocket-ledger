@@ -88,8 +88,12 @@ export default function IOUs() {
         <div className="animate-fade-in space-y-4">
           <FirstVisitTip
             storageKey="owes"
-            message="Track simple debts — who owes you or who you owe. Lent money to a friend? Log it here so you don't forget. View per-person history in Contacts."
+            message="Track simple debts — who owes you or who you owe. Lent money to a friend? Log it here so you don't forget."
           />
+
+          <p className="text-xs text-muted-foreground italic">
+            💡 To view individual transaction history, go to <span className="font-medium text-foreground">Contacts</span> and tap on a contact.
+          </p>
 
           {/* Header */}
           <div className="flex items-center justify-between">
