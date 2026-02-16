@@ -9,6 +9,7 @@ import { useContacts } from "@/hooks/useContacts";
 import { PullToRefresh } from "@/components/ui/PullToRefresh";
 import { Receipt, Plus, Crown, Users, Search, Filter, Download } from "lucide-react";
 import { exportBillsPDF } from "@/lib/pdfExport";
+import { FirstVisitTip } from "@/components/ui/FirstVisitTip";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -108,6 +109,11 @@ export default function Bills() {
     <AppLayout>
       <PullToRefresh onRefresh={handleRefresh}>
         <div className="animate-fade-in">
+          <FirstVisitTip
+            storageKey="bills"
+            message="Bills let you split expenses with friends. Add a bill, pick participants, and the app calculates who owes what. View per-person history in Contacts."
+          />
+
           <div className="flex items-center justify-between mb-4">
             <h1 className="font-display text-2xl font-bold text-foreground">Bills</h1>
             <div className="flex gap-2">
@@ -182,7 +188,7 @@ export default function Bills() {
               description={searchQuery 
                 ? "Try a different search term."
                 : filter === "all" 
-                ? "Split expenses with friends and keep track of who owes what."
+                ? "Split a dinner bill? A trip? Tap + to get started."
                 : filter === "created"
                 ? "Create a bill to split expenses with others."
                 : "You'll see bills here when someone adds you as a participant."

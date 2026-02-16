@@ -140,27 +140,30 @@ export default function Index() {
             <h2 className="font-semibold text-foreground">Quick Actions</h2>
             <div className="grid grid-cols-3 gap-3">
               <Link to="/bills/new">
-                <Button variant="secondary" className="w-full h-auto py-4 flex-col gap-2">
+                <Button variant="secondary" className="w-full h-auto py-4 flex-col gap-1.5">
                   <div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center">
                     <Receipt className="h-5 w-5 text-primary" />
                   </div>
                   <span className="text-xs font-medium">Split Bill</span>
+                  <span className="text-[10px] text-muted-foreground leading-tight">Share expenses</span>
                 </Button>
               </Link>
               <Link to="/ious/new">
-                <Button variant="secondary" className="w-full h-auto py-4 flex-col gap-2">
+                <Button variant="secondary" className="w-full h-auto py-4 flex-col gap-1.5">
                   <div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center">
                     <FileText className="h-5 w-5 text-primary" />
                   </div>
                   <span className="text-xs font-medium">Track Owe</span>
+                  <span className="text-[10px] text-muted-foreground leading-tight">Someone owes you?</span>
                 </Button>
               </Link>
               <Link to="/expenses">
-                <Button variant="secondary" className="w-full h-auto py-4 flex-col gap-2">
+                <Button variant="secondary" className="w-full h-auto py-4 flex-col gap-1.5">
                   <div className="h-10 w-10 rounded-xl bg-emerald-500/10 flex items-center justify-center">
                     <Wallet className="h-5 w-5 text-emerald-600" />
                   </div>
                   <span className="text-xs font-medium">Add Expense</span>
+                  <span className="text-[10px] text-muted-foreground leading-tight">Log your spending</span>
                 </Button>
               </Link>
             </div>

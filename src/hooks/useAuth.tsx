@@ -99,11 +99,25 @@ const clearLoggedInFlag = () => {
   localStorage.removeItem(LOGGED_IN_FLAG);
 };
 
+// Synchronously hydrate from cache so user is NEVER null for a logged-in user
+const getInitialAuthState = () => {
+  if (!isLoggedInFlag()) return { user: null, session: null, profile: null };
+  const cachedSession = loadCachedSession();
+  const cachedProfile = loadCachedProfile();
+  return {
+    user: cachedSession?.user ?? null,
+    session: (cachedSession?.session as Session) ?? null,
+    profile: cachedProfile,
+  };
+};
+
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
-  const [session, setSession] = useState<Session | null>(null);
-  const [profile, setProfile] = useState<Profile | null>(null);
-  const [loading, setLoading] = useState(true);
+  const initial = getInitialAuthState();
+  const [user, setUser] = useState<User | null>(initial.user);
+  const [session, setSession] = useState<Session | null>(initial.session);
+  const [profile, setProfile] = useState<Profile | null>(initial.profile);
+  // If we have cached state, skip loading entirely -- user sees app immediately
+  const [loading, setLoading] = useState(!initial.user);
 
   const currency = (profile?.settings as any)?.currency || DEFAULT_CURRENCY;
 
@@ -137,21 +151,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     // Set up auth state listener FIRST
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (event, session) => {
-        setSession(session);
-        setUser(session?.user ?? null);
-
-        if (session?.user) {
-          // Mark as logged in
+      (event, currentSession) => {
+        if (currentSession?.user) {
+          // Valid session -- update everything
+          setSession(currentSession);
+          setUser(currentSession.user);
           setLoggedInFlag();
-          cacheSession(session);
+          cacheSession(currentSession);
 
           const cached = loadCachedProfile();
-          if (cached && cached.user_id === session.user.id) {
+          if (cached && cached.user_id === currentSession.user.id) {
             setProfile(cached);
           }
           setTimeout(() => {
-            fetchProfile(session.user.id);
+            fetchProfile(currentSession.user.id);
           }, 0);
         } else if (event === "SIGNED_OUT") {
           // Only clear state on EXPLICIT sign out
@@ -160,16 +173,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           cacheSession(null);
           clearLoggedInFlag();
         } else if (isLoggedInFlag()) {
-          // Server returned null session but user was logged in -- trust cache
-          console.log('[Auth] Server session null but logged_in flag set -- trusting cache');
-          const cachedSession = loadCachedSession();
-          if (cachedSession) {
-            setUser(cachedSession.user);
-            setSession(cachedSession.session as Session);
-            const cachedProfile = loadCachedProfile();
-            if (cachedProfile) setProfile(cachedProfile);
-          }
+          // Session is null but user was logged in -- DO NOT set user to null
+          // Just silently keep existing cached state; no state changes needed
+          console.log('[Auth] Session null but logged_in flag set -- keeping cached state (no flash)');
         }
+        // If not logged in and no session, do nothing (initial state is already null)
       }
     );
 
