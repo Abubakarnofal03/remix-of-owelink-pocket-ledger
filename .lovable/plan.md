@@ -1,51 +1,56 @@
+## Plan: Bulletproof Offline Auth + Better User-Friendliness
 
+### Part 1: Fix the Logout Issue (Once and For All)
 
-## Issue 1: Contact Names Not Showing on Owes Page
+**Root Cause**: There's a race condition in the auth state listener. When `onAuthStateChange` fires with a null session (common on slow networks, app resume, or token expiry), the code immediately sets `user = null` on line 142. This triggers `Index.tsx` to redirect to `/auth` BEFORE the cached session restoration on line 162-171 can kick in.
 
-**Problem**: When navigating back to the Owes list after creating an IOU, and every time the page loads, phone numbers flash first before contact names appear. This happens because `useContacts()` loads asynchronously (local IndexedDB + device contacts), while the IOU list renders immediately from cached data. The `GroupedIOUList` component calls `getContactName()` which depends on `contacts` array -- if contacts haven't loaded yet, it falls back to showing the raw phone number.
+**Fix Strategy -- "Never set user to null unless explicitly signed out"**:
 
-**Solution**: Cache a contact name lookup map that resolves instantly, and ensure the grouped list doesn't "flash" phone numbers while contacts load.
-
-1. **Pre-cache contact names in GroupedIOUList**: Instead of depending on the async `useContacts()` hook for every render, build a stable name map from contacts and memoize it. Show skeleton/placeholder for the group header while contacts are still loading rather than showing phone numbers.
-
-2. **Pass contacts loading state**: The `GroupedIOUList` already receives `loading` but only for IOUs. Add awareness of contacts loading state so it can show a proper loading skeleton instead of phone numbers.
-
-3. **Stabilize contact resolution in IOUs page**: In `src/pages/IOUs.tsx`, the `getContactName` helper depends on `contacts` which changes as contacts load. Ensure the `GroupedIOUList` waits for contacts to be ready before rendering names, or shows a loading state.
-
-**Technical changes**:
-- `src/pages/IOUs.tsx`: Pass `contactsLoading` from `useContacts()` to `GroupedIOUList`
-- `src/components/ious/GroupedIOUList.tsx`: Accept `contactsLoading` prop; show skeleton placeholders for names while contacts are loading instead of raw phone numbers
-
----
-
-## Issue 2: Mini Calculator for Bills, Owes, and Expenses
-
-**What**: A small calculator widget accessible via a button click in all three creation forms (Bills, Owes, Expenses). It opens as a popover/dialog, lets the user do basic arithmetic, and inserts the result into the amount field.
-
-**Design**:
-- A reusable `MiniCalculator` component rendered as a popover/sheet
-- Supports basic operations: +, -, x, / and =
-- Displays a running expression and result
-- Has an "Insert" button that sends the calculated value back to the amount field
-- Triggered by a calculator icon button next to each amount input
+1. **Initialize user/session from cache on mount** (before any async calls):
+  - On component mount, if `logged_in` flag exists, immediately hydrate `user`, `session`, and `profile` from localStorage cache
+  - This means `user` is never `null` for a logged-in user, even before Supabase responds
+2. **Guard onAuthStateChange against false nulls**:
+  - Only set `user = null` when `event === "SIGNED_OUT"` (explicit logout)
+  - For all other events where session is null but `logged_in` flag exists, silently restore from cache without the brief null flash
+  - Remove the pattern of "set null first, then restore" -- instead, skip the null entirely
+3. **Guard getSession() similarly**:
+  - If getSession returns null but `logged_in` flag is set, keep the cached state without flashing null
 
 **Technical changes**:
 
-1. **New component `src/components/ui/MiniCalculator.tsx`**:
-   - Calculator UI with number pad (0-9), operators (+, -, x, /), decimal point, clear, backspace, and equals
-   - Wrapped in a `Popover` (or `Drawer` on mobile) for inline use
-   - Accepts an `onInsert(value: number)` callback
-   - Shows expression string and computed result in real-time
+- `src/hooks/useAuth.tsx`: 
+  - Initialize `useState` for user/session/profile from cache (synchronous, on first render)
+  - In `onAuthStateChange`, do NOT set user/session to null unless event is `SIGNED_OUT`
+  - Set `loading = false` immediately if cache is available on mount
+  - In `getSession()` handler, same guard
 
-2. **Integrate into `src/components/ious/IOUForm.tsx`**:
-   - Add calculator button next to the amount input
-   - On insert, set the amount state
+### Part 2: Improve User-Friendliness for New/Non-Technical Users
 
-3. **Integrate into `src/components/bills/BillForm.tsx`**:
-   - Add calculator button next to the total amount input
-   - On insert, set the amount state
+**Problem**: A new user (especially aged 30-50) opening the app doesn't immediately understand what each feature does or how to start using it. The existing tutorial helps but the app itself could be more self-explanatory.
 
-4. **Integrate into `src/pages/Expenses.tsx`**:
-   - Add calculator button next to the expense amount input
-   - On insert, set the amount state
+**Improvements**:
 
+1. **Better Empty States with Action Guidance**:
+  - When a user has no bills, instead of just "No bills yet", show a friendly illustration-style message like:
+    - "Split a dinner bill? A trip? Tap + to get started"
+  - Same for Owes: "Lent money to a friend? Track it here so you don't forget"
+  - Same for Expenses: "Keep track of where your money goes"
+  - Each empty state includes a prominent action button
+2. **Contextual Tooltips on First Visit to Each Page**:
+  - Add a small dismissible "tip" banner at the top of Bills, Owes, and Expenses pages that appears only on first visit
+  - Example for Bills: "Bills let you split expenses with friends. Add a bill, pick participants, and the app calculates who owes what."
+  - Stored in localStorage per page so it only shows once
+3. **Friendlier Labels and Descriptions on Home Page**:
+  - Add small helper text under each Quick Action button explaining what it does
+  - "Split Bill" -> subtitle "Share expenses with friends"
+  - "Track Owe" -> subtitle "Someone owes you?"  
+  - "Add Expense" -> subtitle "Log your spending"
+  - Add a small message on Owes and Bills section on top "to see individual history of person go to contacts->click on contact", just sophisticate this message.
+
+**Technical changes**:
+
+- `src/pages/Index.tsx`: Add subtitle text under Quick Action buttons
+- `src/pages/Bills.tsx`: Enhanced empty state with friendly copy and action button; add first-visit tip banner
+- `src/pages/IOUs.tsx`: Same treatment
+- `src/pages/Expenses.tsx`: Same treatment  
+- `src/components/ui/FirstVisitTip.tsx` (new): Reusable dismissible tip banner component that shows once per page
