@@ -2,6 +2,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { Navigate, Link } from "react-router-dom";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { MoneyDisplay } from "@/components/ui/MoneyDisplay";
+import { ExportReportDialog } from "@/components/reports/ExportReportDialog";
 import { Button } from "@/components/ui/button";
 import { useBalances } from "@/hooks/useBalances";
 import { useCurrency } from "@/hooks/useCurrency";
@@ -62,6 +63,7 @@ export default function Index() {
               </h1>
               <p className="text-muted-foreground text-sm">Here's your balance overview</p>
             </div>
+            <ExportReportDialog />
           </div>
 
           {/* Balance Cards */}
