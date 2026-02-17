@@ -143,6 +143,7 @@ export interface LocalIOU {
   reminder_enabled?: boolean;
   reminder_interval_days?: number | null;
   last_reminder_sent_at?: string | null;
+  direction?: string; // 'owed_to_me' | 'i_owe'
   synced_at?: number;
   is_local?: boolean;
   // Creditor info (for debtor view)

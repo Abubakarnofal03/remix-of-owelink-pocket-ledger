@@ -444,6 +444,7 @@ export type Database = {
           debtor_user_id: string | null
           deleted_at: string | null
           description: string | null
+          direction: string
           due_date: string | null
           id: string
           last_reminder_sent_at: string | null
@@ -463,6 +464,7 @@ export type Database = {
           debtor_user_id?: string | null
           deleted_at?: string | null
           description?: string | null
+          direction?: string
           due_date?: string | null
           id?: string
           last_reminder_sent_at?: string | null
@@ -482,6 +484,7 @@ export type Database = {
           debtor_user_id?: string | null
           deleted_at?: string | null
           description?: string | null
+          direction?: string
           due_date?: string | null
           id?: string
           last_reminder_sent_at?: string | null
