@@ -140,29 +140,29 @@ export default function Index() {
             <h2 className="font-semibold text-foreground">Quick Actions</h2>
             <div className="grid grid-cols-3 gap-3">
               <Link to="/bills/new">
-                <Button variant="secondary" className="w-full h-auto py-4 flex-col gap-1.5">
-                  <div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center">
-                    <Receipt className="h-5 w-5 text-primary" />
+                <Button variant="ghost" className="w-full h-auto py-5 flex-col gap-2 rounded-2xl border-2 border-primary/20 bg-gradient-to-b from-primary/10 to-primary/5 hover:from-primary/20 hover:to-primary/10 hover:border-primary/40 shadow-[0_0_12px_hsl(var(--primary)/0.1)] hover:shadow-[0_0_20px_hsl(var(--primary)/0.2)] transition-all duration-300">
+                  <div className="h-12 w-12 rounded-2xl bg-primary/20 flex items-center justify-center ring-2 ring-primary/30">
+                    <Receipt className="h-6 w-6 text-primary" />
                   </div>
-                  <span className="text-xs font-medium">Split Bill</span>
+                  <span className="text-sm font-semibold text-foreground">Split Bill</span>
                   <span className="text-[10px] text-muted-foreground leading-tight">Share expenses</span>
                 </Button>
               </Link>
               <Link to="/ious/new">
-                <Button variant="secondary" className="w-full h-auto py-4 flex-col gap-1.5">
-                  <div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center">
-                    <FileText className="h-5 w-5 text-primary" />
+                <Button variant="ghost" className="w-full h-auto py-5 flex-col gap-2 rounded-2xl border-2 border-blue-500/20 bg-gradient-to-b from-blue-500/10 to-blue-500/5 hover:from-blue-500/20 hover:to-blue-500/10 hover:border-blue-500/40 shadow-[0_0_12px_hsl(200_98%_39%/0.1)] hover:shadow-[0_0_20px_hsl(200_98%_39%/0.2)] transition-all duration-300">
+                  <div className="h-12 w-12 rounded-2xl bg-blue-500/20 flex items-center justify-center ring-2 ring-blue-500/30">
+                    <FileText className="h-6 w-6 text-blue-500" />
                   </div>
-                  <span className="text-xs font-medium">Track Owe</span>
+                  <span className="text-sm font-semibold text-foreground">Track Owe</span>
                   <span className="text-[10px] text-muted-foreground leading-tight">Someone owes you?</span>
                 </Button>
               </Link>
               <Link to="/expenses">
-                <Button variant="secondary" className="w-full h-auto py-4 flex-col gap-1.5">
-                  <div className="h-10 w-10 rounded-xl bg-emerald-500/10 flex items-center justify-center">
-                    <Wallet className="h-5 w-5 text-emerald-600" />
+                <Button variant="ghost" className="w-full h-auto py-5 flex-col gap-2 rounded-2xl border-2 border-amber-500/20 bg-gradient-to-b from-amber-500/10 to-amber-500/5 hover:from-amber-500/20 hover:to-amber-500/10 hover:border-amber-500/40 shadow-[0_0_12px_hsl(38_92%_50%/0.1)] hover:shadow-[0_0_20px_hsl(38_92%_50%/0.2)] transition-all duration-300">
+                  <div className="h-12 w-12 rounded-2xl bg-amber-500/20 flex items-center justify-center ring-2 ring-amber-500/30">
+                    <Wallet className="h-6 w-6 text-amber-500" />
                   </div>
-                  <span className="text-xs font-medium">Add Expense</span>
+                  <span className="text-sm font-semibold text-foreground">Add Expense</span>
                   <span className="text-[10px] text-muted-foreground leading-tight">Log your spending</span>
                 </Button>
               </Link>
