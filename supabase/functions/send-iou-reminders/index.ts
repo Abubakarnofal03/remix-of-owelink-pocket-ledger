@@ -153,11 +153,13 @@ const handler = async (req: Request): Promise<Response> => {
         debtor_phone_number,
         debtor_phone_suffix,
         reminder_interval_days,
-        last_reminder_sent_at
+        last_reminder_sent_at,
+        direction
       `)
       .eq("reminder_enabled", true)
       .is("deleted_at", null)
-      .neq("status", "paid");
+      .neq("status", "paid")
+      .or("direction.is.null,direction.eq.owed_to_me");
 
     if (iousError) {
       console.error("[send-iou-reminders] Error fetching IOUs:", iousError);

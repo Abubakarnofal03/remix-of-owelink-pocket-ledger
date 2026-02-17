@@ -16,7 +16,8 @@ export function IOUCard({ iou }: IOUCardProps) {
   const { contacts } = useContacts();
   const { user } = useAuth();
   
-  const isCreditor = iou.creditor_id === user?.id;
+  const direction = iou.direction || 'owed_to_me';
+  const isCreator = iou.creditor_id === user?.id;
   const isArchived = iou.deleted_at !== null;
   const progress = iou.amount > 0 ? (iou.amount_paid / iou.amount) * 100 : 0;
   const remaining = iou.amount - iou.amount_paid;
@@ -26,10 +27,19 @@ export function IOUCard({ iou }: IOUCardProps) {
     return contact?.nickname || phone;
   };
 
-  // For creditors, show debtor name. For debtors, show creditor name.
-  const displayName = isCreditor 
+  // Determine display based on direction
+  // For 'owed_to_me': creator is creditor, other person is debtor -> other person "owes you"
+  // For 'i_owe': creator is debtor, other person is creditor -> you "owe" the other person
+  const isOwedToMe = isCreator
+    ? direction === 'owed_to_me'
+    : direction === 'i_owe'; // If I'm the other person in an 'i_owe', someone owes me
+
+  // The "other person" is always stored in debtor_phone_number
+  const otherPersonName = isCreator
     ? getContactName(iou.debtor_phone_number)
     : (iou.creditor_username || getContactName(iou.creditor_phone_number || '') || 'Unknown');
+  
+  const displayName = otherPersonName;
 
   return (
     <Link to={`/ious/${iou.id}`} className="block">
@@ -46,7 +56,7 @@ export function IOUCard({ iou }: IOUCardProps) {
                     Archived
                   </span>
                 )}
-                {isCreditor ? (
+                {isOwedToMe ? (
                   <span className="flex items-center gap-0.5 text-[10px] text-emerald-600 bg-emerald-50 dark:bg-emerald-950/50 px-1.5 py-0.5 rounded-full">
                     <ArrowDownLeft className="h-2.5 w-2.5" />
                     owes you
@@ -73,7 +83,7 @@ export function IOUCard({ iou }: IOUCardProps) {
               amount={remaining} 
               currency={iou.currency} 
               size="md" 
-              className={isCreditor ? "text-emerald-600" : "text-rose-600"}
+              className={isOwedToMe ? "text-emerald-600" : "text-rose-600"}
             />
           </div>
           <div className="text-right">

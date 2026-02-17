@@ -1,0 +1,1 @@
+ALTER TABLE public.ious ADD COLUMN direction text NOT NULL DEFAULT 'owed_to_me';

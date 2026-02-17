@@ -345,6 +345,7 @@ export interface IOUInsertOffline {
   due_date?: string;
   reminder_enabled?: boolean;
   reminder_interval_days?: number;
+  direction?: string; // 'owed_to_me' | 'i_owe'
 }
 
 export async function fetchIOUsOfflineFirst(
@@ -402,6 +403,7 @@ export async function createIOUOfflineFirst(
     // Explicitly default to false if undefined
     reminder_enabled: iou.reminder_enabled === true,
     reminder_interval_days: iou.reminder_enabled ? (iou.reminder_interval_days || 3) : null,
+    direction: iou.direction || 'owed_to_me',
     is_local: true,
   };
 
@@ -422,6 +424,7 @@ export async function createIOUOfflineFirst(
       // Ensure reminder settings are explicitly passed
       reminder_enabled: localIOU.reminder_enabled || false,
       reminder_interval_days: localIOU.reminder_interval_days,
+      direction: localIOU.direction || 'owed_to_me',
     });
   } catch (e) {
     console.error('[Offline] Failed to save IOU locally:', e);

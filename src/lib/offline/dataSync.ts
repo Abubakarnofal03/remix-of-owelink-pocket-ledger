@@ -140,6 +140,7 @@ export async function syncIOUsFromServer(userId: string, phoneSuffix: string | n
           created_at: iou.created_at,
           updated_at: iou.updated_at,
           deleted_at: iou.deleted_at,
+          direction: (iou as any).direction || 'owed_to_me',
           synced_at: now,
           is_local: false,
           // Creditor info from profile lookup

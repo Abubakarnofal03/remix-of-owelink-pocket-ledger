@@ -11,6 +11,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Switch } from "@/components/ui/switch";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AddContactDialog } from "@/components/contacts/AddContactDialog";
 import { AvatarCustom } from "@/components/ui/avatar-custom";
 import { cn } from "@/lib/utils";
@@ -27,6 +28,8 @@ import {
   FileText,
   Smartphone,
   Bell,
+  ArrowDownLeft,
+  ArrowUpRight,
 } from "lucide-react";
 import { MiniCalculator } from "@/components/ui/MiniCalculator";
 import {
@@ -54,6 +57,7 @@ export function IOUForm() {
   const prefilledName = searchParams.get('name');
 
   // Form state
+  const [direction, setDirection] = useState<'owed_to_me' | 'i_owe'>('owed_to_me');
   const [description, setDescription] = useState("");
   const [amount, setAmount] = useState("");
   const [dueDate, setDueDate] = useState<Date | undefined>();
@@ -141,7 +145,7 @@ export function IOUForm() {
     const newErrors: Record<string, string> = {};
 
     if (!selectedDebtor) {
-      newErrors.debtor = "Select who owes you";
+      newErrors.debtor = direction === 'owed_to_me' ? "Select who owes you" : "Select who you owe";
     }
 
     if (!amount || total <= 0) {
@@ -171,8 +175,9 @@ export function IOUForm() {
         currency,
         description: description.trim() || undefined,
         due_date: dueDate?.toISOString(),
-        reminder_enabled: reminderEnabled,
-        reminder_interval_days: reminderEnabled ? parseInt(reminderInterval) : undefined,
+        reminder_enabled: direction === 'owed_to_me' ? reminderEnabled : false,
+        reminder_interval_days: direction === 'owed_to_me' && reminderEnabled ? parseInt(reminderInterval) : undefined,
+        direction,
       };
 
       // Race the createIOU call with a timeout to ensure UI never hangs
@@ -200,10 +205,24 @@ export function IOUForm() {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
+      {/* Direction Toggle */}
+      <Tabs value={direction} onValueChange={(v) => setDirection(v as 'owed_to_me' | 'i_owe')} className="w-full">
+        <TabsList className="grid w-full grid-cols-2 h-12">
+          <TabsTrigger value="owed_to_me" className="flex items-center gap-2 text-sm font-medium">
+            <ArrowDownLeft className="h-4 w-4" />
+            They owe me
+          </TabsTrigger>
+          <TabsTrigger value="i_owe" className="flex items-center gap-2 text-sm font-medium">
+            <ArrowUpRight className="h-4 w-4" />
+            I owe them
+          </TabsTrigger>
+        </TabsList>
+      </Tabs>
+
       {/* Debtor Selection */}
       <div className="space-y-3">
         <Label className="flex items-center gap-2">
-          Who owes you?
+          {direction === 'owed_to_me' ? 'Who owes you?' : 'Who do you owe?'}
         </Label>
 
         {selectedDebtor ? (
@@ -433,45 +452,47 @@ export function IOUForm() {
         </Popover>
       </div>
 
-      {/* Automatic Reminders */}
-      <div className="space-y-3">
-        <div className="flex items-center justify-between p-4 bg-muted/50 rounded-lg border border-border">
-          <div className="flex items-center gap-3">
-            <div className="h-9 w-9 rounded-full bg-amber-500/10 flex items-center justify-center">
-              <Bell className="h-4 w-4 text-amber-500" />
+      {/* Automatic Reminders - only for "They owe me" */}
+      {direction === 'owed_to_me' && (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between p-4 bg-muted/50 rounded-lg border border-border">
+            <div className="flex items-center gap-3">
+              <div className="h-9 w-9 rounded-full bg-amber-500/10 flex items-center justify-center">
+                <Bell className="h-4 w-4 text-amber-500" />
+              </div>
+              <div>
+                <p className="font-medium text-sm">Automatic reminders</p>
+                <p className="text-xs text-muted-foreground">
+                  Send push notifications to debtor
+                </p>
+              </div>
             </div>
-            <div>
-              <p className="font-medium text-sm">Automatic reminders</p>
-              <p className="text-xs text-muted-foreground">
-                Send push notifications to debtor
-              </p>
-            </div>
+            <Switch
+              checked={reminderEnabled}
+              onCheckedChange={setReminderEnabled}
+            />
           </div>
-          <Switch
-            checked={reminderEnabled}
-            onCheckedChange={setReminderEnabled}
-          />
-        </div>
 
-        {reminderEnabled && (
-          <div className="pl-4 border-l-2 border-amber-500/30 ml-4 space-y-2">
-            <Label className="text-sm text-muted-foreground">Send reminder every:</Label>
-            <Select value={reminderInterval} onValueChange={setReminderInterval}>
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="Select interval" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="1">Every day</SelectItem>
-                <SelectItem value="2">Every 2 days</SelectItem>
-                <SelectItem value="3">Every 3 days</SelectItem>
-                <SelectItem value="5">Every 5 days</SelectItem>
-                <SelectItem value="7">Every week</SelectItem>
-                <SelectItem value="14">Every 2 weeks</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        )}
-      </div>
+          {reminderEnabled && (
+            <div className="pl-4 border-l-2 border-amber-500/30 ml-4 space-y-2">
+              <Label className="text-sm text-muted-foreground">Send reminder every:</Label>
+              <Select value={reminderInterval} onValueChange={setReminderInterval}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Select interval" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="1">Every day</SelectItem>
+                  <SelectItem value="2">Every 2 days</SelectItem>
+                  <SelectItem value="3">Every 3 days</SelectItem>
+                  <SelectItem value="5">Every 5 days</SelectItem>
+                  <SelectItem value="7">Every week</SelectItem>
+                  <SelectItem value="14">Every 2 weeks</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Submit */}
       <Button type="submit" className="w-full" disabled={submitting}>

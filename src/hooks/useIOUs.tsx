@@ -35,6 +35,7 @@ export interface IOU {
   reminder_enabled?: boolean;
   reminder_interval_days?: number | null;
   last_reminder_sent_at?: string | null;
+  direction?: string; // 'owed_to_me' | 'i_owe'
   // Creditor info (for debtor view)
   creditor_username?: string | null;
   creditor_phone_number?: string | null;
@@ -48,6 +49,7 @@ export interface IOUInsert {
   due_date?: string;
   reminder_enabled?: boolean;
   reminder_interval_days?: number;
+  direction?: string; // 'owed_to_me' | 'i_owe'
 }
 
 // Convert LocalIOU to IOU interface
@@ -71,6 +73,7 @@ function localIOUToIOU(local: LocalIOU): IOU {
     reminder_enabled: local.reminder_enabled,
     reminder_interval_days: local.reminder_interval_days,
     last_reminder_sent_at: local.last_reminder_sent_at,
+    direction: local.direction || 'owed_to_me',
     creditor_username: local.creditor_username,
     creditor_phone_number: local.creditor_phone_number,
   };
@@ -133,11 +136,33 @@ export function useIOUs() {
     }
   }, [offline.isOnline]);
 
-  // Filter IOUs by perspective
-  const owedToMe = ious.filter((iou) => iou.creditor_id === user?.id);
+  // Filter IOUs by perspective, accounting for direction
+  const owedToMe = ious.filter((iou) => {
+    const direction = iou.direction || 'owed_to_me';
+    // Creator with "owed_to_me" = someone owes the creator
+    if (iou.creditor_id === user?.id && direction === 'owed_to_me') return true;
+    // Someone else created "i_owe" for themselves, and I'm the debtor (other person) = they owe me
+    // This case would only apply if the other person's "i_owe" entry shows up for me as creditor
+    // But since creditor_id is always the creator, this means: if direction is 'i_owe' and debtor matches me,
+    // then the creator owes me (the debtor_phone is the other person, which is me in this case)
+    // Actually: for direction='i_owe', creditor_id=creator, debtor_phone=other person
+    // The creator is the real debtor, the other person (debtor_phone) is the real creditor
+    // So if I am the debtor_phone person in an 'i_owe' entry, someone owes me
+    if (direction === 'i_owe') {
+      if (iou.debtor_user_id === user?.id) return true;
+      if (profile?.phone_suffix && iou.debtor_phone_suffix === profile.phone_suffix) return true;
+    }
+    return false;
+  });
   const iOwe = ious.filter((iou) => {
-    if (iou.debtor_user_id === user?.id) return true;
-    if (profile?.phone_suffix && iou.debtor_phone_suffix === profile.phone_suffix) return true;
+    const direction = iou.direction || 'owed_to_me';
+    // Creator with "i_owe" = creator owes the other person
+    if (iou.creditor_id === user?.id && direction === 'i_owe') return true;
+    // Someone else created "owed_to_me" and I'm the debtor = I owe them
+    if (direction === 'owed_to_me') {
+      if (iou.debtor_user_id === user?.id) return true;
+      if (profile?.phone_suffix && iou.debtor_phone_suffix === profile.phone_suffix) return true;
+    }
     return false;
   });
 
@@ -170,15 +195,27 @@ export function useIOUs() {
         toast.success("IOU created successfully");
       }
 
-      // Send push notification to debtor (regardless of online/offline status)
+      // Send push notification to the other person
       const phoneSuffix = getPhoneSuffix(newIOU.debtor_phone_number);
       if (phoneSuffix && navigator.onLine) {
-        sendPushNotification({
-          phoneSuffixes: [phoneSuffix],
-          title: "New IOU",
-          body: `You owe ${newIOU.currency} ${newIOU.amount}${newIOU.description ? ` for "${newIOU.description}"` : ""}`,
-          data: { type: "iou", id: newIOU.id },
-        });
+        const direction = newIOU.direction || 'owed_to_me';
+        if (direction === 'owed_to_me') {
+          // Normal: notify debtor that they owe
+          sendPushNotification({
+            phoneSuffixes: [phoneSuffix],
+            title: "New IOU",
+            body: `You owe ${newIOU.currency} ${newIOU.amount}${newIOU.description ? ` for "${newIOU.description}"` : ""}`,
+            data: { type: "iou", id: newIOU.id },
+          });
+        } else {
+          // Reverse: notify the real creditor (other person) that a debt was logged
+          sendPushNotification({
+            phoneSuffixes: [phoneSuffix],
+            title: "Debt Logged",
+            body: `Someone recorded that they owe you ${newIOU.currency} ${newIOU.amount}${newIOU.description ? ` for "${newIOU.description}"` : ""}. No need to create a duplicate entry.`,
+            data: { type: "iou", id: newIOU.id },
+          });
+        }
       }
     },
     onError: (error: Error) => {

@@ -126,6 +126,7 @@ export default function IOUDetail() {
   }
 
   const isCreditor = iou.creditor_id === user.id;
+  const direction = (iou as any).direction || 'owed_to_me';
   const remaining = iou.amount - iou.amount_paid;
   const progress = iou.amount > 0 ? (iou.amount_paid / iou.amount) * 100 : 0;
 
@@ -143,7 +144,11 @@ export default function IOUDetail() {
     return contact?.nickname || phoneSuffix;
   };
 
-  // For creditors, show debtor name. For debtors, show creditor name.
+  // Determine display based on direction
+  const isOwedToMe = isCreditor
+    ? direction === 'owed_to_me'
+    : direction === 'i_owe';
+
   const debtorName = getContactName(iou.debtor_phone_number);
   const creditorName = iou.creditor_username || getContactName(iou.creditor_phone_number || '') || 'Unknown';
   const displayName = isCreditor ? debtorName : creditorName;
@@ -415,7 +420,7 @@ Never lose track of debts again. Split bills, send reminders & get paid faster.
             <div className="flex-1">
               <div className="flex items-center gap-2">
                 <h2 className="font-semibold text-lg text-foreground">{displayName}</h2>
-                {isCreditor ? (
+                {isOwedToMe ? (
                   <span className="flex items-center gap-1 text-xs text-emerald-600 bg-emerald-50 dark:bg-emerald-950/50 px-2 py-0.5 rounded-full">
                     <ArrowDownLeft className="h-3 w-3" />
                     owes you
@@ -526,7 +531,7 @@ Never lose track of debts again. Split bills, send reminders & get paid faster.
         </div>
 
         {/* Reminder Settings - for creditors */}
-        {isCreditor && iou.status !== "paid" && (
+        {isCreditor && direction === 'owed_to_me' && iou.status !== "paid" && (
           <div className="card-elevated p-4 space-y-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
