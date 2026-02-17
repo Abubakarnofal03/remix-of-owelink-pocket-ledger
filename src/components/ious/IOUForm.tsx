@@ -4,6 +4,8 @@ import { useContacts, Contact } from "@/hooks/useContacts";
 import { useDeviceContacts, DeviceContact } from "@/hooks/useDeviceContacts";
 import { useIOUs, IOUInsert } from "@/hooks/useIOUs";
 import { useAuth } from "@/hooks/useAuth";
+import { useRecurring } from "@/hooks/useRecurring";
+import { RecurringToggle } from "@/components/recurring/RecurringToggle";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -49,6 +51,7 @@ export function IOUForm() {
   const { contacts, addContact, loading: contactsLoading } = useContacts();
   const { deviceContacts, fetchDeviceContacts, loading: deviceContactsLoading } = useDeviceContacts();
   const { createIOU } = useIOUs();
+  const { createRecurring } = useRecurring();
 
   const currencySymbol = getCurrencySymbol(currency);
 
@@ -68,6 +71,8 @@ export function IOUForm() {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [reminderEnabled, setReminderEnabled] = useState(false);
   const [reminderInterval, setReminderInterval] = useState<string>("3");
+  const [recurringEnabled, setRecurringEnabled] = useState(false);
+  const [recurringFrequency, setRecurringFrequency] = useState("monthly");
 
   // Prevent double-submit
   const submitLockRef = useRef(false);
@@ -193,6 +198,33 @@ export function IOUForm() {
 
       // Navigate regardless of result (local save should have completed)
       toast.success("Saved offline, will sync when back online");
+
+      // Create recurring schedule if enabled
+      if (recurringEnabled && selectedDebtor) {
+        try {
+          const nextRun = new Date();
+          if (recurringFrequency === "weekly") nextRun.setDate(nextRun.getDate() + 7);
+          else if (recurringFrequency === "monthly") nextRun.setMonth(nextRun.getMonth() + 1);
+          else nextRun.setFullYear(nextRun.getFullYear() + 1);
+
+          await createRecurring({
+            entity_type: "iou",
+            template_data: {
+              debtor_phone_number: selectedDebtor.phone_number,
+              amount: total,
+              currency,
+              description: description.trim() || undefined,
+              direction,
+              created_ref: new Date().toISOString(),
+            },
+            frequency: recurringFrequency as "weekly" | "monthly" | "yearly",
+            next_run_at: nextRun.toISOString(),
+          });
+        } catch (e) {
+          console.error("Failed to create recurring schedule:", e);
+        }
+      }
+
       navigate("/ious");
     } catch (error) {
       console.error("Error creating IOU:", error);
@@ -493,6 +525,14 @@ export function IOUForm() {
           )}
         </div>
       )}
+
+      {/* Recurring */}
+      <RecurringToggle
+        enabled={recurringEnabled}
+        onEnabledChange={setRecurringEnabled}
+        frequency={recurringFrequency}
+        onFrequencyChange={setRecurringFrequency}
+      />
 
       {/* Submit */}
       <Button type="submit" className="w-full" disabled={submitting}>

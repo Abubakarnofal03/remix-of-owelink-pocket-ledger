@@ -4,6 +4,8 @@ import { useContacts, Contact } from "@/hooks/useContacts";
 import { useDeviceContacts, DeviceContact } from "@/hooks/useDeviceContacts";
 import { useBills, BillInsert } from "@/hooks/useBills";
 import { useAuth } from "@/hooks/useAuth";
+import { useRecurring } from "@/hooks/useRecurring";
+import { RecurringToggle } from "@/components/recurring/RecurringToggle";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -74,6 +76,7 @@ export function BillForm() {
   const { contacts, addContact, loading: contactsLoading } = useContacts();
   const { deviceContacts, fetchDeviceContacts, loading: deviceContactsLoading } = useDeviceContacts();
   const { createBill } = useBills();
+  const { createRecurring } = useRecurring();
 
   const currencySymbol = getCurrencySymbol(currency);
 
@@ -92,6 +95,8 @@ export function BillForm() {
   const [showDeviceContacts, setShowDeviceContacts] = useState(false);
   const [reminderEnabled, setReminderEnabled] = useState(false);
   const [reminderInterval, setReminderInterval] = useState<string>("3");
+  const [recurringEnabled, setRecurringEnabled] = useState(false);
+  const [recurringFrequency, setRecurringFrequency] = useState("monthly");
 
   // Prevent double-submit
   const submitLockRef = useRef(false);
@@ -311,6 +316,36 @@ export function BillForm() {
 
       // Navigate regardless of result (local save should have completed)
       toast.success("Saved offline, will sync when back online");
+
+      // Create recurring schedule if enabled
+      if (recurringEnabled) {
+        try {
+          const nextRun = new Date();
+          if (recurringFrequency === "weekly") nextRun.setDate(nextRun.getDate() + 7);
+          else if (recurringFrequency === "monthly") nextRun.setMonth(nextRun.getMonth() + 1);
+          else nextRun.setFullYear(nextRun.getFullYear() + 1);
+
+          await createRecurring({
+            entity_type: "bill",
+            template_data: {
+              title: title.trim(),
+              description: description.trim() || undefined,
+              total_amount: total,
+              currency,
+              participants: participants.map(p => ({
+                phone_number: p.phone_number,
+                amount_owed: equalSplit ? splitAmount : p.amount,
+              })),
+              created_ref: new Date().toISOString(),
+            },
+            frequency: recurringFrequency as "weekly" | "monthly" | "yearly",
+            next_run_at: nextRun.toISOString(),
+          });
+        } catch (e) {
+          console.error("Failed to create recurring schedule:", e);
+        }
+      }
+
       navigate("/bills");
     } catch (error) {
       console.error("Error creating bill:", error);
@@ -733,6 +768,14 @@ export function BillForm() {
           </div>
         </div>
       )}
+
+      {/* Recurring */}
+      <RecurringToggle
+        enabled={recurringEnabled}
+        onEnabledChange={setRecurringEnabled}
+        frequency={recurringFrequency}
+        onFrequencyChange={setRecurringFrequency}
+      />
 
       {/* Submit */}
       <Button type="submit" className="w-full" disabled={submitting}>
