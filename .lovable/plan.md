@@ -1,56 +1,78 @@
-## Plan: Bulletproof Offline Auth + Better User-Friendliness
 
-### Part 1: Fix the Logout Issue (Once and For All)
+## Plan: Add "I Owe Someone" Mode + Creditor Notifications
 
-**Root Cause**: There's a race condition in the auth state listener. When `onAuthStateChange` fires with a null session (common on slow networks, app resume, or token expiry), the code immediately sets `user = null` on line 142. This triggers `Index.tsx` to redirect to `/auth` BEFORE the cached session restoration on line 162-171 can kick in.
+### What Changes
 
-**Fix Strategy -- "Never set user to null unless explicitly signed out"**:
+**1. Direction Toggle in IOUForm**
+Add a toggle at the top of the IOU creation form with two modes:
+- **"They owe me"** (default, current behavior) -- you are the creditor
+- **"I owe them"** (new) -- you are the debtor
 
-1. **Initialize user/session from cache on mount** (before any async calls):
-  - On component mount, if `logged_in` flag exists, immediately hydrate `user`, `session`, and `profile` from localStorage cache
-  - This means `user` is never `null` for a logged-in user, even before Supabase responds
-2. **Guard onAuthStateChange against false nulls**:
-  - Only set `user = null` when `event === "SIGNED_OUT"` (explicit logout)
-  - For all other events where session is null but `logged_in` flag exists, silently restore from cache without the brief null flash
-  - Remove the pattern of "set null first, then restore" -- instead, skip the null entirely
-3. **Guard getSession() similarly**:
-  - If getSession returns null but `logged_in` flag is set, keep the cached state without flashing null
+The toggle will be a styled segmented control using the existing Tabs component. When "I owe them" is selected:
+- The label changes from "Who owes you?" to "Who do you owe?"
+- The validation error changes accordingly
+- Reminders are hidden (no point reminding yourself via push)
 
-**Technical changes**:
+**2. Data Handling on Submit**
+When "I owe them" is selected, the IOU is created with **swapped roles**:
+- `creditor_id` = the selected contact's user (looked up via phone suffix), or left as a placeholder
+- `debtor_phone_number` = the current user's phone number
+- `debtor_user_id` = the current user's ID
+- `debtor_phone_suffix` = the current user's phone suffix
 
-- `src/hooks/useAuth.tsx`: 
-  - Initialize `useState` for user/session/profile from cache (synchronous, on first render)
-  - In `onAuthStateChange`, do NOT set user/session to null unless event is `SIGNED_OUT`
-  - Set `loading = false` immediately if cache is available on mount
-  - In `getSession()` handler, same guard
+Since the `ious` table requires `creditor_id` (the person owed money), and we may not know the creditor's `user_id`, we'll store the **creditor's phone number** in a new approach: create the IOU with `creditor_id = current_user` but add a flag field to distinguish direction. However, looking at the existing schema and RLS policies more carefully:
 
-### Part 2: Improve User-Friendliness for New/Non-Technical Users
+- RLS requires `creditor_id = auth.uid()` for INSERT
+- The debtor view relies on `debtor_user_id` or phone suffix matching
 
-**Problem**: A new user (especially aged 30-50) opening the app doesn't immediately understand what each feature does or how to start using it. The existing tutorial helps but the app itself could be more self-explanatory.
+**Best approach**: Keep `creditor_id = current_user` (so RLS INSERT works), but set `debtor_phone_number` to the **other person's phone** and add a new boolean column `is_reverse` (or `direction`) to indicate "I created this but I'm the debtor." Then in the query layer, when `is_reverse = true`, swap the display logic.
 
-**Improvements**:
+Actually, even simpler: We don't need a new column. We can use the existing structure differently:
+- For "I owe them": set `creditor_id = current_user` (for RLS), `debtor_phone_number = current_user_phone`, `debtor_user_id = current_user_id`. The "other person" info goes into description or a new field.
 
-1. **Better Empty States with Action Guidance**:
-  - When a user has no bills, instead of just "No bills yet", show a friendly illustration-style message like:
-    - "Split a dinner bill? A trip? Tap + to get started"
-  - Same for Owes: "Lent money to a friend? Track it here so you don't forget"
-  - Same for Expenses: "Keep track of where your money goes"
-  - Each empty state includes a prominent action button
-2. **Contextual Tooltips on First Visit to Each Page**:
-  - Add a small dismissible "tip" banner at the top of Bills, Owes, and Expenses pages that appears only on first visit
-  - Example for Bills: "Bills let you split expenses with friends. Add a bill, pick participants, and the app calculates who owes what."
-  - Stored in localStorage per page so it only shows once
-3. **Friendlier Labels and Descriptions on Home Page**:
-  - Add small helper text under each Quick Action button explaining what it does
-  - "Split Bill" -> subtitle "Share expenses with friends"
-  - "Track Owe" -> subtitle "Someone owes you?"  
-  - "Add Expense" -> subtitle "Log your spending"
-  - Add a small message on Owes and Bills section on top "to see individual history of person go to contacts->click on contact", just sophisticate this message.
+Let me reconsider. The cleanest approach that works with existing RLS:
 
-**Technical changes**:
+**Add a `direction` column** to the `ious` table:
+- `direction = 'owed_to_me'` (default, current behavior)
+- `direction = 'i_owe'` (new reverse mode)
 
-- `src/pages/Index.tsx`: Add subtitle text under Quick Action buttons
-- `src/pages/Bills.tsx`: Enhanced empty state with friendly copy and action button; add first-visit tip banner
-- `src/pages/IOUs.tsx`: Same treatment
-- `src/pages/Expenses.tsx`: Same treatment  
-- `src/components/ui/FirstVisitTip.tsx` (new): Reusable dismissible tip banner component that shows once per page
+For both directions, `creditor_id` remains `auth.uid()` (the creator). The `debtor_phone_number` always stores the **other person's** phone. The `direction` field tells the UI how to interpret the roles:
+- `owed_to_me`: creator is creditor, other person is debtor (current)
+- `i_owe`: creator is actually the debtor, other person is the creditor
+
+**3. Notification to the Creditor (Preventing Duplicates)**
+When "I owe them" is created, send a push notification to the other person (the real creditor) saying:
+- Title: "Someone logged a debt to you"
+- Body: "[Your name] recorded that they owe you [currency] [amount] for [description]"
+
+This notification tells the creditor "don't create a duplicate entry -- it's already tracked." The notification includes `type: "iou"` and `id` for deep-linking.
+
+**4. Display Logic Updates**
+- In `useIOUs.tsx`, update `owedToMe` and `iOwe` filters to account for `direction`
+- In `IOUCard.tsx` and `IOUDetail.tsx`, swap creditor/debtor display based on `direction`
+- Reminders only apply to `direction = 'owed_to_me'` (skip reverse IOUs in the reminder edge function)
+
+### Technical Details
+
+**Database Migration:**
+```sql
+ALTER TABLE ious ADD COLUMN direction text NOT NULL DEFAULT 'owed_to_me';
+```
+
+**Files to modify:**
+1. `src/components/ious/IOUForm.tsx` -- Add direction toggle, swap labels, hide reminders for "i_owe"
+2. `src/hooks/useIOUs.tsx` -- Update `IOUInsert` interface to include `direction`; update `owedToMe`/`iOwe` filters; update notification message for reverse IOUs
+3. `src/lib/offline/offlineDataLayer.ts` -- Add `direction` to `IOUInsertOffline` and `createIOUOfflineFirst`
+4. `src/lib/offline/db.ts` -- Add `direction` to `LocalIOU` interface
+5. `src/components/ious/IOUCard.tsx` -- Adjust display name logic based on direction
+6. `src/pages/IOUDetail.tsx` -- Adjust creditor/debtor display based on direction
+7. `supabase/functions/send-iou-reminders/index.ts` -- Add filter to skip `direction = 'i_owe'` IOUs
+8. `src/lib/offline/dataSync.ts` -- Include `direction` in sync logic
+
+**Filter logic change in `useIOUs.tsx`:**
+- `owedToMe`: IOUs where (`creditor_id = me` AND `direction = 'owed_to_me'`) OR (`direction = 'i_owe'` AND debtor matches me -- meaning someone else said they owe me)
+- `iOwe`: IOUs where (`creditor_id = me` AND `direction = 'i_owe'`) OR (debtor matches me AND `direction = 'owed_to_me'`)
+
+**Notification on reverse IOU creation:**
+- Send push to the other person's phone suffix with message: "Debt logged: [creator_name] says they owe you [amount]"
+- Deep links to the IOU detail page so the creditor can see/verify it
