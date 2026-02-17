@@ -20,13 +20,15 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
-import { ArrowLeft, User, Phone, Bell, Moon, Shield, LogOut, Coins, Database, ChevronDown, Vibrate, Fingerprint, GraduationCap } from "lucide-react";
+import { ArrowLeft, User, Phone, Bell, Moon, Shield, LogOut, Coins, Database, ChevronDown, Vibrate, Fingerprint, GraduationCap, RefreshCw, Trash2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { CURRENCIES, getCurrencySymbol } from "@/lib/currencies";
 import { hapticSuccess } from "@/lib/haptics";
 import { OfflineDiagnostics } from "@/components/settings/OfflineDiagnostics";
 import { useBiometric } from "@/hooks/useBiometric";
+import { useRecurring } from "@/hooks/useRecurring";
+import { Button as ActionButton } from "@/components/ui/button";
 
 export default function Settings() {
   const { user, profile, loading: authLoading, signOut, currency, updateSettings } = useAuth();
@@ -37,6 +39,7 @@ export default function Settings() {
   const [saving, setSaving] = useState(false);
   const { isAvailable, isEnabled, enableBiometric, disableBiometric } = useBiometric();
   const [biometricLoading, setBiometricLoading] = useState(false);
+  const { schedules, loading: recurringLoading, toggleRecurring, deleteRecurring } = useRecurring();
 
   useEffect(() => {
     if (profile?.username) {
@@ -289,6 +292,51 @@ export default function Settings() {
             </CollapsibleTrigger>
             <CollapsibleContent className="pt-4">
               <OfflineDiagnostics />
+            </CollapsibleContent>
+          </div>
+        </Collapsible>
+
+        {/* Recurring Schedules */}
+        <Collapsible>
+          <div className="card-elevated p-4">
+            <CollapsibleTrigger className="flex items-center justify-between w-full">
+              <h3 className="font-semibold text-foreground flex items-center gap-2">
+                <RefreshCw className="h-4 w-4" />
+                Recurring Schedules
+              </h3>
+              <ChevronDown className="h-4 w-4 text-muted-foreground transition-transform duration-200 group-data-[state=open]:rotate-180" />
+            </CollapsibleTrigger>
+            <CollapsibleContent className="pt-4 space-y-3">
+              {schedules.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-4">
+                  No recurring schedules yet. Create one from a bill or owe form.
+                </p>
+              ) : (
+                schedules.map((schedule) => (
+                  <div key={schedule.id} className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg border border-border">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate">
+                        {schedule.template_data.title || schedule.template_data.description || "Recurring " + schedule.entity_type}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {schedule.frequency} · {schedule.entity_type} · Next: {new Date(schedule.next_run_at).toLocaleDateString()}
+                      </p>
+                    </div>
+                    <Switch
+                      checked={schedule.is_active}
+                      onCheckedChange={(active) => toggleRecurring({ id: schedule.id, is_active: active })}
+                    />
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                      onClick={() => deleteRecurring(schedule.id)}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ))
+              )}
             </CollapsibleContent>
           </div>
         </Collapsible>
