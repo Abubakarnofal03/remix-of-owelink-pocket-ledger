@@ -17,6 +17,7 @@ import {
   Lightbulb,
   Loader2,
 } from "lucide-react";
+import { ExpenseChart } from "@/components/insights/ExpenseChart";
 
 const iconMap: Record<string, React.ReactNode> = {
   "trending-up": <TrendingUp className="h-4 w-4" />,
@@ -76,6 +77,9 @@ export default function Insights() {
             <span className="ml-1.5">Refresh</span>
           </Button>
         </div>
+
+        {/* Expense Chart - always visible */}
+        <ExpenseChart />
 
         {loading && !data ? (
           <div className="space-y-4">
