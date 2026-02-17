@@ -18,6 +18,7 @@ import {
   Loader2,
 } from "lucide-react";
 import { ExpenseChart } from "@/components/insights/ExpenseChart";
+import { WeekComparisonChart } from "@/components/insights/WeekComparisonChart";
 
 const iconMap: Record<string, React.ReactNode> = {
   "trending-up": <TrendingUp className="h-4 w-4" />,
@@ -78,8 +79,9 @@ export default function Insights() {
           </Button>
         </div>
 
-        {/* Expense Chart - always visible */}
+        {/* Expense Charts - always visible */}
         <ExpenseChart />
+        <WeekComparisonChart />
 
         {loading && !data ? (
           <div className="space-y-4">
