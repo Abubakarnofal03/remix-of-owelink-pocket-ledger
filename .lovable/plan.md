@@ -1,78 +1,124 @@
 
-## Plan: Add "I Owe Someone" Mode + Creditor Notifications
+# Plan: Add AI Insights, Recurring Bills/IOUs, and Stripe Subscription
 
-### What Changes
+This plan implements three premium features for Owelink: AI-powered spending insights, recurring bills/IOUs, and a Stripe-powered subscription paywall at $2.99/month.
 
-**1. Direction Toggle in IOUForm**
-Add a toggle at the top of the IOU creation form with two modes:
-- **"They owe me"** (default, current behavior) -- you are the creditor
-- **"I owe them"** (new) -- you are the debtor
+---
 
-The toggle will be a styled segmented control using the existing Tabs component. When "I owe them" is selected:
-- The label changes from "Who owes you?" to "Who do you owe?"
-- The validation error changes accordingly
-- Reminders are hidden (no point reminding yourself via push)
+## Feature 1: AI-Powered Smart Insights
 
-**2. Data Handling on Submit**
-When "I owe them" is selected, the IOU is created with **swapped roles**:
-- `creditor_id` = the selected contact's user (looked up via phone suffix), or left as a placeholder
-- `debtor_phone_number` = the current user's phone number
-- `debtor_user_id` = the current user's ID
-- `debtor_phone_suffix` = the current user's phone suffix
+A new "Insights" page accessible from the dashboard that analyzes the user's bills, IOUs, and expenses using Lovable AI to generate a personalized financial summary.
 
-Since the `ious` table requires `creditor_id` (the person owed money), and we may not know the creditor's `user_id`, we'll store the **creditor's phone number** in a new approach: create the IOU with `creditor_id = current_user` but add a flag field to distinguish direction. However, looking at the existing schema and RLS policies more carefully:
+### What the user sees:
+- A new "Insights" card on the dashboard with a sparkle icon
+- Tapping it opens a dedicated `/insights` page
+- The page shows an AI-generated summary covering:
+  - Monthly spending trends
+  - Who owes the most / who you owe the most
+  - Payment reliability patterns
+  - Debt clearance predictions
+  - Actionable tips (e.g., "Follow up with X, they have 3 overdue IOUs")
+- A "Refresh Insights" button to regenerate
+- Results are cached locally so it doesn't call AI every time
 
-- RLS requires `creditor_id = auth.uid()` for INSERT
-- The debtor view relies on `debtor_user_id` or phone suffix matching
+### Technical approach:
+1. **New edge function** `supabase/functions/ai-insights/index.ts`:
+   - Receives the user's financial summary data (totals, counts, top debtors) from the client
+   - Sends it to Lovable AI (google/gemini-3-flash-preview) with a financial analysis system prompt
+   - Returns structured insights as non-streaming JSON response
+2. **New page** `src/pages/Insights.tsx` with the insights UI
+3. **New hook** `src/hooks/useInsights.tsx` that:
+   - Gathers summary data from local DB (bills, IOUs, expenses)
+   - Calls the edge function
+   - Caches results in localStorage with a timestamp (refresh every 24h or on demand)
+4. **Dashboard update**: Add an "AI Insights" card to `src/pages/Index.tsx`
+5. **Route**: Add `/insights` to `src/App.tsx`
 
-**Best approach**: Keep `creditor_id = current_user` (so RLS INSERT works), but set `debtor_phone_number` to the **other person's phone** and add a new boolean column `is_reverse` (or `direction`) to indicate "I created this but I'm the debtor." Then in the query layer, when `is_reverse = true`, swap the display logic.
+---
 
-Actually, even simpler: We don't need a new column. We can use the existing structure differently:
-- For "I owe them": set `creditor_id = current_user` (for RLS), `debtor_phone_number = current_user_phone`, `debtor_user_id = current_user_id`. The "other person" info goes into description or a new field.
+## Feature 2: Recurring Bills and IOUs
 
-Let me reconsider. The cleanest approach that works with existing RLS:
+Allow users to set bills and IOUs as recurring (weekly, monthly, yearly) so they auto-create new entries on schedule.
 
-**Add a `direction` column** to the `ious` table:
-- `direction = 'owed_to_me'` (default, current behavior)
-- `direction = 'i_owe'` (new reverse mode)
+### What the user sees:
+- In the Bill and IOU creation forms, a new "Recurring" toggle
+- When enabled, shows frequency options: Weekly, Monthly, Yearly
+- Active recurring items show a recurring icon badge
+- A "Recurring" section in Settings to view/manage all active recurring schedules
+- New entries are auto-created by a scheduled backend function
 
-For both directions, `creditor_id` remains `auth.uid()` (the creator). The `debtor_phone_number` always stores the **other person's** phone. The `direction` field tells the UI how to interpret the roles:
-- `owed_to_me`: creator is creditor, other person is debtor (current)
-- `i_owe`: creator is actually the debtor, other person is the creditor
+### Technical approach:
+1. **Database migration**: New `recurring_schedules` table:
+   - `id`, `user_id`, `entity_type` (bill/iou), `template_data` (JSONB with the bill/IOU fields), `frequency` (weekly/monthly/yearly), `next_run_at`, `last_run_at`, `is_active`, `created_at`
+   - RLS: users can only manage their own schedules
+2. **New edge function** `supabase/functions/process-recurring/index.ts`:
+   - Queries `recurring_schedules` where `next_run_at <= now()` and `is_active = true`
+   - For each, creates the corresponding bill or IOU entry
+   - Updates `next_run_at` based on frequency
+   - Can be triggered via a cron-like mechanism or called periodically
+3. **Form updates**:
+   - `src/components/ious/IOUForm.tsx`: Add recurring toggle + frequency selector
+   - `src/components/bills/BillForm.tsx`: Add recurring toggle + frequency selector
+4. **New hook** `src/hooks/useRecurring.tsx` for CRUD on recurring schedules
+5. **Settings section**: Add a "Recurring" management area in Settings page
 
-**3. Notification to the Creditor (Preventing Duplicates)**
-When "I owe them" is created, send a push notification to the other person (the real creditor) saying:
-- Title: "Someone logged a debt to you"
-- Body: "[Your name] recorded that they owe you [currency] [amount] for [description]"
+---
 
-This notification tells the creditor "don't create a duplicate entry -- it's already tracked." The notification includes `type: "iou"` and `id` for deep-linking.
+## Feature 3: Stripe Subscription ($2.99/month Pro Plan)
 
-**4. Display Logic Updates**
-- In `useIOUs.tsx`, update `owedToMe` and `iOwe` filters to account for `direction`
-- In `IOUCard.tsx` and `IOUDetail.tsx`, swap creditor/debtor display based on `direction`
-- Reminders only apply to `direction = 'owed_to_me'` (skip reverse IOUs in the reminder edge function)
+Implement a subscription paywall that gates the premium features (AI Insights, Recurring, unlimited IOUs/bills).
 
-### Technical Details
+### What the user sees:
+- Free tier limits: 10 active IOUs, 5 active bills, 20 contacts, no AI insights, no recurring
+- When hitting a limit, a premium upgrade sheet appears
+- Settings page shows subscription status and "Upgrade to Pro" button
+- Pro plan: $2.99/month or $24.99/year
+- Features unlocked: Unlimited everything, AI Insights, Recurring bills/IOUs, PDF exports
 
-**Database Migration:**
-```sql
-ALTER TABLE ious ADD COLUMN direction text NOT NULL DEFAULT 'owed_to_me';
-```
+### Technical approach:
+1. **Enable Stripe** via the Stripe integration tool
+2. **Database migration**: Add `subscription_status` and `subscription_tier` columns to `profiles` table (or a new `subscriptions` table)
+3. **Stripe products**: Create "Owelink Pro Monthly" ($2.99) and "Owelink Pro Yearly" ($24.99) products
+4. **Edge functions** for Stripe checkout and webhook handling
+5. **New hook** `src/hooks/useSubscription.tsx`:
+   - Checks subscription status from profile
+   - Provides `isPro`, `canUseFeature(feature)`, `openUpgrade()` helpers
+6. **Paywall component** `src/components/premium/UpgradeSheet.tsx`:
+   - Bottom sheet showing Pro benefits and pricing
+   - "Subscribe" button triggers Stripe checkout
+7. **Gate premium features**:
+   - AI Insights page: check `isPro` before calling edge function
+   - Recurring toggle: show lock icon and upgrade prompt for free users
+   - IOUs/Bills: check count limits before creation
+8. **Settings update**: Show subscription status, manage/cancel subscription link
 
-**Files to modify:**
-1. `src/components/ious/IOUForm.tsx` -- Add direction toggle, swap labels, hide reminders for "i_owe"
-2. `src/hooks/useIOUs.tsx` -- Update `IOUInsert` interface to include `direction`; update `owedToMe`/`iOwe` filters; update notification message for reverse IOUs
-3. `src/lib/offline/offlineDataLayer.ts` -- Add `direction` to `IOUInsertOffline` and `createIOUOfflineFirst`
-4. `src/lib/offline/db.ts` -- Add `direction` to `LocalIOU` interface
-5. `src/components/ious/IOUCard.tsx` -- Adjust display name logic based on direction
-6. `src/pages/IOUDetail.tsx` -- Adjust creditor/debtor display based on direction
-7. `supabase/functions/send-iou-reminders/index.ts` -- Add filter to skip `direction = 'i_owe'` IOUs
-8. `src/lib/offline/dataSync.ts` -- Include `direction` in sync logic
+---
 
-**Filter logic change in `useIOUs.tsx`:**
-- `owedToMe`: IOUs where (`creditor_id = me` AND `direction = 'owed_to_me'`) OR (`direction = 'i_owe'` AND debtor matches me -- meaning someone else said they owe me)
-- `iOwe`: IOUs where (`creditor_id = me` AND `direction = 'i_owe'`) OR (debtor matches me AND `direction = 'owed_to_me'`)
+## Implementation Order
 
-**Notification on reverse IOU creation:**
-- Send push to the other person's phone suffix with message: "Debt logged: [creator_name] says they owe you [amount]"
-- Deep links to the IOU detail page so the creditor can see/verify it
+1. **Stripe Subscription** (foundation -- gates everything else)
+2. **AI Insights** (most impactful premium feature)
+3. **Recurring Bills/IOUs** (builds on existing bill/IOU creation)
+
+## Files to Create
+- `supabase/functions/ai-insights/index.ts`
+- `supabase/functions/process-recurring/index.ts`
+- `src/pages/Insights.tsx`
+- `src/hooks/useInsights.tsx`
+- `src/hooks/useRecurring.tsx`
+- `src/hooks/useSubscription.tsx`
+- `src/components/premium/UpgradeSheet.tsx`
+
+## Files to Modify
+- `src/App.tsx` (add routes)
+- `src/pages/Index.tsx` (add insights card, gate features)
+- `src/pages/Settings.tsx` (add subscription status, recurring management)
+- `src/components/ious/IOUForm.tsx` (add recurring toggle)
+- `src/components/bills/BillForm.tsx` (add recurring toggle)
+- `src/hooks/useIOUs.tsx` (add free tier limit check)
+- `src/hooks/useBills.tsx` (add free tier limit check)
+- `src/hooks/useContacts.tsx` (add free tier limit check)
+
+## Database Migrations
+- Add `recurring_schedules` table
+- Add subscription columns to `profiles` or new `subscriptions` table
