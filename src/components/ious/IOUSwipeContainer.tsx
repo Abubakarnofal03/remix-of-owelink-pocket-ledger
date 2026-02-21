@@ -133,22 +133,33 @@ export function IOUSwipeContainer({ currentIOUId, children }: IOUSwipeContainerP
           <ChevronLeft className="h-4 w-4" />
         </button>
 
-        <div className="flex-1 text-center">
-          <p className="text-xs font-medium text-foreground">{currentPersonName}</p>
-          <div className="flex items-center justify-center gap-1 mt-1">
-            {slides.map((_, i) => (
-              <div
-                key={i}
-                className={cn(
-                  "h-1 rounded-full transition-all",
-                  i === selectedIndex
-                    ? "w-4 bg-primary"
-                    : slides[i].type === "separator"
-                    ? "w-1.5 bg-amber-400/60"
-                    : "w-1.5 bg-muted-foreground/30"
-                )}
-              />
-            ))}
+        <div className="flex-1 text-center min-w-0 px-2">
+          <p className="text-xs font-medium text-foreground truncate">{currentPersonName}</p>
+          <div className="flex items-center justify-center gap-0.5 mt-1 max-w-full overflow-hidden">
+            {slides.length <= 15 ? (
+              slides.map((_, i) => (
+                <div
+                  key={i}
+                  className={cn(
+                    "h-1 rounded-full transition-all shrink-0",
+                    i === selectedIndex
+                      ? "w-3 bg-primary"
+                      : slides[i].type === "separator"
+                      ? "w-1 bg-amber-400/60"
+                      : "w-1 bg-muted-foreground/30"
+                  )}
+                />
+              ))
+            ) : (
+              <div className="flex items-center gap-1">
+                <div className="h-1 w-8 bg-muted rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-primary rounded-full transition-all"
+                    style={{ width: `${((selectedIndex + 1) / slides.length) * 100}%` }}
+                  />
+                </div>
+              </div>
+            )}
           </div>
           <p className="text-[10px] text-muted-foreground mt-0.5">
             {currentIOUPosition} / {totalIOUs}
