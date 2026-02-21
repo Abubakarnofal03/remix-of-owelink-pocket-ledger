@@ -2,7 +2,8 @@ import { useState, useMemo } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { Navigate, useNavigate } from "react-router-dom";
 import { AppLayout } from "@/components/layout/AppLayout";
-import { useIOUs } from "@/hooks/useIOUs";
+import { useIOUs, IOU } from "@/hooks/useIOUs";
+import { useBills } from "@/hooks/useBills";
 import { useContacts } from "@/hooks/useContacts";
 import { IOUList } from "@/components/ious/IOUList";
 import { GroupedIOUList } from "@/components/ious/GroupedIOUList";
@@ -28,6 +29,7 @@ type StatusFilter = "all" | "unpaid" | "paid";
 export default function IOUs() {
   const { user, loading: authLoading } = useAuth();
   const { owedToMe, iOwe, loading, refetch } = useIOUs();
+  const { getBillDebtsOwedToMe } = useBills();
   const { contacts, loading: contactsLoading } = useContacts();
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<"owed" | "owe">("owed");
@@ -44,8 +46,33 @@ export default function IOUs() {
     return contact?.nickname || null;
   };
 
-  const currentList = activeTab === "owed" ? owedToMe : iOwe;
-  const hasAnyIOUs = owedToMe.length > 0 || iOwe.length > 0;
+  // Merge bill debts into owedToMe list
+  const billDebtsAsIOUs = useMemo((): (IOU & { source: 'bill'; sourceBillTitle: string; sourceBillId: string })[] => {
+    return getBillDebtsOwedToMe().map(debt => ({
+      id: `bill-debt-${debt.billId}-${debt.participantPhone}`,
+      creditor_id: user?.id || '',
+      debtor_phone_number: debt.participantPhone,
+      debtor_phone_suffix: null,
+      debtor_user_id: null,
+      amount: debt.amount_owed,
+      amount_paid: debt.amount_paid,
+      currency: debt.currency,
+      description: debt.billTitle,
+      due_date: null,
+      status: debt.status,
+      created_at: debt.created_at,
+      updated_at: debt.created_at,
+      deleted_at: null,
+      direction: 'owed_to_me',
+      source: 'bill' as const,
+      sourceBillTitle: debt.billTitle,
+      sourceBillId: debt.billId,
+    }));
+  }, [getBillDebtsOwedToMe, user?.id]);
+
+  const mergedOwedToMe = useMemo(() => [...owedToMe, ...billDebtsAsIOUs], [owedToMe, billDebtsAsIOUs]);
+  const currentList = activeTab === "owed" ? mergedOwedToMe : iOwe;
+  const hasAnyIOUs = mergedOwedToMe.length > 0 || iOwe.length > 0;
 
   const filteredList = useMemo(() => {
     let result = currentList;
@@ -131,7 +158,7 @@ export default function IOUs() {
               <TabsList className="w-full">
                 <TabsTrigger value="owed" className="flex-1 gap-2">
                   <ArrowDownLeft className="h-4 w-4" />
-                  Owed to me ({owedToMe.length})
+                  Owed to me ({mergedOwedToMe.length})
                 </TabsTrigger>
                 <TabsTrigger value="owe" className="flex-1 gap-2">
                   <ArrowUpRight className="h-4 w-4" />
