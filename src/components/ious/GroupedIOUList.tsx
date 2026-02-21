@@ -177,25 +177,25 @@ export function GroupedIOUList({ ious, loading, isCreditor = true, contactsLoadi
             {/* Group Header - More prominent with person details */}
             <div className="p-4 bg-gradient-to-r from-primary/15 via-primary/10 to-primary/5 border-b-2 border-primary/20">
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="ring-2 ring-primary/30 rounded-full">
-                    <AvatarCustom name={group.name} size="lg" />
+              <div className="flex items-center gap-2 min-w-0 flex-1">
+                  <div className="ring-2 ring-primary/30 rounded-full shrink-0">
+                    <AvatarCustom name={group.name} size="md" />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <h3 className="font-bold text-lg text-foreground truncate">
+                    <h3 className="font-bold text-base text-foreground truncate">
                       {contactsLoading ? <Skeleton className="h-5 w-28 inline-block" /> : group.name}
                     </h3>
-                    <p className="text-xs text-muted-foreground flex items-center gap-1">
-                      <Phone className="h-3 w-3" />
+                    <p className="text-[11px] text-muted-foreground flex items-center gap-1 truncate">
+                      <Phone className="h-3 w-3 shrink-0" />
                       {contactsLoading ? <Skeleton className="h-3 w-20 inline-block" /> : group.phone}
                     </p>
-                    <p className="text-xs text-muted-foreground font-medium">
+                    <p className="text-[11px] text-muted-foreground font-medium">
                       {group.ious.length} record{group.ious.length !== 1 ? 's' : ''} • {group.pendingIOUs.length} pending
                     </p>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1 shrink-0">
                   {/* View Contact button */}
                   {(() => {
                     const contact = contacts.find(c =>
@@ -210,10 +210,10 @@ export function GroupedIOUList({ ious, loading, isCreditor = true, contactsLoadi
                           e.stopPropagation();
                           navigate(`/contacts/${contact.id}`);
                         }}
-                        className="h-10 w-10 rounded-full border-border hover:bg-accent"
+                        className="h-8 w-8 rounded-full border-border hover:bg-accent"
                         title={`View ${group.name}'s contact`}
                       >
-                        <User className="h-5 w-5 text-muted-foreground" />
+                        <User className="h-4 w-4 text-muted-foreground" />
                       </Button>
                     ) : null;
                   })()}
@@ -227,10 +227,10 @@ export function GroupedIOUList({ ious, loading, isCreditor = true, contactsLoadi
                         e.stopPropagation();
                         navigate(`/ious/new?phone=${encodeURIComponent(group.phone)}&name=${encodeURIComponent(group.name)}`);
                       }}
-                      className="h-10 w-10 rounded-full border-primary/30 hover:bg-primary/10"
+                      className="h-8 w-8 rounded-full border-primary/30 hover:bg-primary/10"
                       title={`Add another IOU for ${group.name}`}
                     >
-                      <Plus className="h-5 w-5 text-primary" />
+                      <Plus className="h-4 w-4 text-primary" />
                     </Button>
                   )}
                   
@@ -243,9 +243,9 @@ export function GroupedIOUList({ ious, loading, isCreditor = true, contactsLoadi
                         e.stopPropagation();
                         openWhatsApp(group);
                       }}
-                      className="h-10 w-10 rounded-full text-emerald-600 border-emerald-300 hover:bg-emerald-50 dark:border-emerald-700 dark:hover:bg-emerald-950"
+                      className="h-8 w-8 rounded-full text-emerald-600 border-emerald-300 hover:bg-emerald-50 dark:border-emerald-700 dark:hover:bg-emerald-950"
                     >
-                      <MessageCircle className="h-5 w-5" />
+                      <MessageCircle className="h-4 w-4" />
                     </Button>
                   )}
                 </div>
