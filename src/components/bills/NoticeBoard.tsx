@@ -1,8 +1,10 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { offlineDb, LocalBillNotice, generateLocalId, safeDbOperation } from "@/lib/offline/db";
+import { addToSyncQueue } from "@/lib/offline/syncQueue";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Megaphone, Send, Trash2, Loader2, Pin } from "lucide-react";
+import { Megaphone, Send, Trash2, Loader2, Pin, WifiOff } from "lucide-react";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { getPhoneSuffix, sendPushNotification } from "@/lib/notifications";
@@ -15,6 +17,7 @@ interface Notice {
   message: string;
   color: string;
   created_at: string;
+  is_local?: boolean;
 }
 
 interface NoticeBoardProps {
@@ -31,24 +34,76 @@ const NOTICE_COLORS = [
   "#fb923c", "#a78bfa", "#2dd4bf", "#f87171",
 ];
 
-// Deterministic rotation based on notice id
 const getRotation = (id: string): number => {
   const hash = id.split("").reduce((a, c) => a + c.charCodeAt(0), 0);
   const rotations = [-2, 1, -1, 2, -1.5, 0.5, -0.5, 1.5];
   return rotations[hash % rotations.length];
 };
 
-// Pastel version of a hex color
 const toPastel = (hex: string): string => {
   const r = parseInt(hex.slice(1, 3), 16);
   const g = parseInt(hex.slice(3, 5), 16);
   const b = parseInt(hex.slice(5, 7), 16);
-  // Mix with white (blend ~60% white)
   const pr = Math.round(r + (255 - r) * 0.6);
   const pg = Math.round(g + (255 - g) * 0.6);
   const pb = Math.round(b + (255 - b) * 0.6);
   return `rgb(${pr}, ${pg}, ${pb})`;
 };
+
+// Cache notices to IndexedDB
+async function cacheNotices(notices: Notice[], billId: string): Promise<void> {
+  await safeDbOperation(async () => {
+    // Clear old notices for this bill then bulk add
+    const existing = await offlineDb.billNotices.where('bill_id').equals(billId).toArray();
+    const existingIds = new Set(existing.map(n => n.id));
+    const newNotices: LocalBillNotice[] = notices
+      .filter(n => !existingIds.has(n.id))
+      .map(n => ({
+        id: n.id,
+        bill_id: n.bill_id,
+        author_phone_suffix: n.author_phone_suffix,
+        message: n.message,
+        color: n.color,
+        created_at: n.created_at,
+        updated_at: n.created_at,
+        synced_at: Date.now(),
+        is_local: false,
+      }));
+    if (newNotices.length > 0) {
+      await offlineDb.billNotices.bulkPut(newNotices);
+    }
+    // Update existing
+    for (const n of notices) {
+      if (existingIds.has(n.id)) {
+        await offlineDb.billNotices.update(n.id, { synced_at: Date.now(), is_local: false });
+      }
+    }
+    // Remove notices that no longer exist on server (deleted by others)
+    const serverIds = new Set(notices.map(n => n.id));
+    const toDelete = existing.filter(n => !serverIds.has(n.id) && !n.is_local);
+    if (toDelete.length > 0) {
+      await offlineDb.billNotices.bulkDelete(toDelete.map(n => n.id));
+    }
+  }, undefined);
+}
+
+// Load cached notices from IndexedDB
+async function loadCachedNotices(billId: string): Promise<Notice[]> {
+  return safeDbOperation(async () => {
+    const cached = await offlineDb.billNotices.where('bill_id').equals(billId).toArray();
+    return cached
+      .map(n => ({
+        id: n.id,
+        bill_id: n.bill_id,
+        author_phone_suffix: n.author_phone_suffix,
+        message: n.message,
+        color: n.color,
+        created_at: n.created_at,
+        is_local: n.is_local,
+      }))
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+  }, []);
+}
 
 export function NoticeBoard({
   billId,
@@ -66,6 +121,14 @@ export function NoticeBoard({
 
   useEffect(() => {
     const fetchNotices = async () => {
+      // Load cached first for instant display
+      const cached = await loadCachedNotices(billId);
+      if (cached.length > 0) {
+        setNotices(cached);
+        setLoading(false);
+      }
+
+      // Then try server fetch
       try {
         const { data, error } = await supabase
           .from("bill_notices")
@@ -73,9 +136,19 @@ export function NoticeBoard({
           .eq("bill_id", billId)
           .order("created_at", { ascending: false });
         if (error) throw error;
-        setNotices(data || []);
+        const serverNotices: Notice[] = data || [];
+        
+        // Merge: keep local-only notices that haven't synced yet
+        const serverIds = new Set(serverNotices.map(n => n.id));
+        const localOnly = cached.filter(n => n.is_local && !serverIds.has(n.id));
+        const merged = [...localOnly, ...serverNotices];
+        setNotices(merged);
+
+        // Cache server data
+        await cacheNotices(serverNotices, billId);
       } catch (error) {
         console.error("Error fetching notices:", error);
+        // Offline - cached data already shown
       } finally {
         setLoading(false);
       }
@@ -88,11 +161,35 @@ export function NoticeBoard({
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "bill_notices", filter: `bill_id=eq.${billId}` },
-        (payload) => {
+        async (payload) => {
           if (payload.eventType === "INSERT") {
-            setNotices((prev) => [payload.new as Notice, ...prev]);
+            const newNotice = payload.new as Notice;
+            setNotices((prev) => {
+              // Avoid duplicate if we already have it (from local creation)
+              if (prev.some(n => n.id === newNotice.id)) {
+                return prev.map(n => n.id === newNotice.id ? { ...newNotice, is_local: false } : n);
+              }
+              return [newNotice, ...prev];
+            });
+            // Cache the new notice
+            await safeDbOperation(async () => {
+              await offlineDb.billNotices.put({
+                id: newNotice.id,
+                bill_id: newNotice.bill_id,
+                author_phone_suffix: newNotice.author_phone_suffix,
+                message: newNotice.message,
+                color: newNotice.color,
+                created_at: newNotice.created_at,
+                updated_at: newNotice.created_at,
+                synced_at: Date.now(),
+                is_local: false,
+              });
+            }, undefined);
           } else if (payload.eventType === "DELETE") {
             setNotices((prev) => prev.filter((n) => n.id !== payload.old.id));
+            await safeDbOperation(async () => {
+              await offlineDb.billNotices.delete(payload.old.id);
+            }, undefined);
           }
         }
       )
@@ -104,20 +201,62 @@ export function NoticeBoard({
   const handleSubmit = async () => {
     if (!newMessage.trim() || !userPhoneSuffix) return;
     setSubmitting(true);
+
+    const color = NOTICE_COLORS[Math.floor(Math.random() * NOTICE_COLORS.length)];
+    const localId = generateLocalId();
+    const now = new Date().toISOString();
+
+    // Create local notice immediately
+    const localNotice: Notice = {
+      id: localId,
+      bill_id: billId,
+      author_phone_suffix: userPhoneSuffix,
+      message: newMessage.trim(),
+      color,
+      created_at: now,
+      is_local: true,
+    };
+
+    // Save to IndexedDB first
+    await safeDbOperation(async () => {
+      await offlineDb.billNotices.put({
+        id: localId,
+        bill_id: billId,
+        author_phone_suffix: userPhoneSuffix,
+        message: newMessage.trim(),
+        color,
+        created_at: now,
+        updated_at: now,
+        synced_at: undefined,
+        is_local: true,
+      });
+    }, undefined);
+
+    // Update UI immediately
+    setNotices((prev) => [localNotice, ...prev]);
+    setNewMessage("");
+
     try {
-      const color = NOTICE_COLORS[Math.floor(Math.random() * NOTICE_COLORS.length)];
+      // Try server insert
       const { data, error } = await supabase
         .from("bill_notices")
-        .insert({ bill_id: billId, author_phone_suffix: userPhoneSuffix, message: newMessage.trim(), color })
+        .insert({ id: localId, bill_id: billId, author_phone_suffix: userPhoneSuffix, message: newMessage.trim(), color })
         .select()
         .single();
+
       if (error) throw error;
-      setNotices((prev) => [data, ...prev]);
-      setNewMessage("");
+
+      // Mark as synced
+      setNotices((prev) => prev.map(n => n.id === localId ? { ...n, is_local: false } : n));
+      await safeDbOperation(async () => {
+        await offlineDb.billNotices.update(localId, { synced_at: Date.now(), is_local: false });
+      }, undefined);
+
       toast.success("Notice posted!");
 
+      // Send push notifications
       const recipientSuffixes = participantPhoneSuffixes.filter((s) => s !== userPhoneSuffix);
-      if (recipientSuffixes.length > 0 && navigator.onLine) {
+      if (recipientSuffixes.length > 0) {
         const authorName = getContactName(userPhoneSuffix);
         sendPushNotification({
           phoneSuffixes: recipientSuffixes,
@@ -128,21 +267,38 @@ export function NoticeBoard({
       }
     } catch (error) {
       console.error("Error posting notice:", error);
-      toast.error("Failed to post notice");
+      // Queue for sync
+      await addToSyncQueue('bill_notice', 'create', localId, {
+        id: localId,
+        bill_id: billId,
+        author_phone_suffix: userPhoneSuffix,
+        message: newMessage.trim(),
+        color,
+      });
+      toast.success("Notice saved offline – will sync when online");
     } finally {
       setSubmitting(false);
     }
   };
 
   const handleDelete = async (noticeId: string) => {
+    // Remove from UI immediately
+    setNotices((prev) => prev.filter((n) => n.id !== noticeId));
+
+    // Remove from local cache
+    await safeDbOperation(async () => {
+      await offlineDb.billNotices.delete(noticeId);
+    }, undefined);
+
     try {
       const { error } = await supabase.from("bill_notices").delete().eq("id", noticeId);
       if (error) throw error;
-      setNotices((prev) => prev.filter((n) => n.id !== noticeId));
       toast.success("Notice deleted");
     } catch (error) {
       console.error("Error deleting notice:", error);
-      toast.error("Failed to delete notice");
+      // Queue deletion for sync
+      await addToSyncQueue('bill_notice', 'delete', noticeId, {});
+      toast.success("Notice deleted offline – will sync when online");
     }
   };
 
@@ -235,6 +391,13 @@ export function NoticeBoard({
                       <div className="absolute -top-1 left-1/2 -translate-x-1/2">
                         <Pin className="h-4 w-4 text-gray-500 dark:text-gray-400 fill-gray-400 dark:fill-gray-500" />
                       </div>
+
+                      {/* Offline indicator */}
+                      {notice.is_local && (
+                        <div className="absolute top-1 left-1">
+                          <WifiOff className="h-3 w-3 text-amber-600" />
+                        </div>
+                      )}
 
                       {/* Author */}
                       <div className="flex items-center gap-1.5 mb-1.5">

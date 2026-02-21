@@ -138,6 +138,9 @@ export async function processSyncItem(item: SyncQueueItem): Promise<boolean> {
       case 'expense_bucket':
         success = await syncExpenseBucket(item);
         break;
+      case 'bill_notice':
+        success = await syncBillNotice(item);
+        break;
     }
 
     if (success) {
@@ -701,6 +704,48 @@ async function syncExpenseBucket(item: SyncQueueItem): Promise<boolean> {
       if (error) throw error;
 
       await offlineDb.expenseBuckets.delete(entity_id);
+      return true;
+    }
+  }
+
+  return false;
+}
+
+// Sync bill notice operations
+async function syncBillNotice(item: SyncQueueItem): Promise<boolean> {
+  const { operation, entity_id, payload } = item;
+
+  switch (operation) {
+    case 'create': {
+      const { id: _, is_local: __, synced_at: ___, ...data } = payload;
+      const { data: result, error } = await withTimeout(
+        supabase
+          .from('bill_notices')
+          .upsert({ ...data, id: entity_id } as any, { onConflict: 'id' })
+          .select()
+          .single(),
+        SYNC_REQUEST_TIMEOUT_MS,
+        'Bill notice upsert'
+      );
+
+      if (error) throw error;
+
+      await offlineDb.billNotices.update(entity_id, {
+        synced_at: Date.now(),
+        is_local: false,
+      });
+      return true;
+    }
+
+    case 'delete': {
+      const { error } = await supabase
+        .from('bill_notices')
+        .delete()
+        .eq('id', entity_id);
+
+      if (error) throw error;
+
+      await offlineDb.billNotices.delete(entity_id);
       return true;
     }
   }
