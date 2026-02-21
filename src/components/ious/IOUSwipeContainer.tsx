@@ -1,10 +1,14 @@
 import { useMemo, useCallback, useEffect, useState } from "react";
 import useEmblaCarousel from "embla-carousel-react";
 import { useIOUs, IOU } from "@/hooks/useIOUs";
+import { useBills } from "@/hooks/useBills";
+import { useAuth } from "@/hooks/useAuth";
 import { useContacts } from "@/hooks/useContacts";
 import { useNavigate } from "react-router-dom";
 import { AvatarCustom } from "@/components/ui/avatar-custom";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { MoneyDisplay } from "@/components/ui/MoneyDisplay";
+import { StatusBadge } from "@/components/ui/StatusBadge";
+import { ChevronLeft, ChevronRight, Receipt } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface IOUSwipeContainerProps {
@@ -12,12 +16,16 @@ interface IOUSwipeContainerProps {
   children: React.ReactNode;
 }
 
+type ExtendedIOU = IOU & { source?: 'bill'; sourceBillTitle?: string; sourceBillId?: string };
+
 type SlideItem =
-  | { type: "iou"; iou: IOU }
+  | { type: "iou"; iou: ExtendedIOU }
   | { type: "separator"; personName: string; personPhone: string };
 
 export function IOUSwipeContainer({ currentIOUId, children }: IOUSwipeContainerProps) {
   const { ious } = useIOUs();
+  const { getBillDebtsOwedToMe } = useBills();
+  const { user } = useAuth();
   const { contacts } = useContacts();
   const navigate = useNavigate();
 
@@ -30,13 +38,37 @@ export function IOUSwipeContainer({ currentIOUId, children }: IOUSwipeContainerP
     return contact?.nickname || phone;
   };
 
+  // Merge real IOUs with bill-sourced debts
+  const allIOUs: ExtendedIOU[] = useMemo(() => {
+    const billDebts: ExtendedIOU[] = getBillDebtsOwedToMe().map(debt => ({
+      id: `bill-debt-${debt.billId}-${debt.participantPhone}`,
+      creditor_id: user?.id || '',
+      debtor_phone_number: debt.participantPhone,
+      debtor_phone_suffix: null,
+      debtor_user_id: null,
+      amount: debt.amount_owed,
+      amount_paid: debt.amount_paid,
+      currency: debt.currency,
+      description: debt.billTitle,
+      due_date: null,
+      status: debt.status,
+      created_at: debt.created_at,
+      updated_at: debt.created_at,
+      deleted_at: null,
+      direction: 'owed_to_me',
+      source: 'bill' as const,
+      sourceBillTitle: debt.billTitle,
+      sourceBillId: debt.billId,
+    }));
+    return [...ious, ...billDebts];
+  }, [ious, getBillDebtsOwedToMe, user?.id]);
+
   // Build slides: IOUs grouped by person with separators
   const { slides, currentIndex } = useMemo(() => {
-    if (ious.length === 0) return { slides: [] as SlideItem[], currentIndex: 0 };
+    if (allIOUs.length === 0) return { slides: [] as SlideItem[], currentIndex: 0 };
 
-    // Group by debtor phone suffix
-    const groupMap = new Map<string, IOU[]>();
-    ious.forEach((iou) => {
+    const groupMap = new Map<string, ExtendedIOU[]>();
+    allIOUs.forEach((iou) => {
       const suffix = iou.debtor_phone_number.replace(/[^0-9]/g, "").slice(-10);
       if (!groupMap.has(suffix)) groupMap.set(suffix, []);
       groupMap.get(suffix)!.push(iou);
@@ -48,7 +80,6 @@ export function IOUSwipeContainer({ currentIOUId, children }: IOUSwipeContainerP
 
     const groups = Array.from(groupMap.entries());
     groups.forEach(([, groupIOUs], groupIdx) => {
-      // Add separator before each group (except first)
       if (groupIdx > 0) {
         const personName = getContactName(groupIOUs[0].debtor_phone_number);
         slideList.push({
@@ -67,7 +98,7 @@ export function IOUSwipeContainer({ currentIOUId, children }: IOUSwipeContainerP
     });
 
     return { slides: slideList, currentIndex: foundIndex };
-  }, [ious, currentIOUId, contacts]);
+  }, [allIOUs, currentIOUId, contacts]);
 
   const [emblaRef, emblaApi] = useEmblaCarousel({
     startIndex: currentIndex,
@@ -85,10 +116,12 @@ export function IOUSwipeContainer({ currentIOUId, children }: IOUSwipeContainerP
     setCanScrollPrev(emblaApi.canScrollPrev());
     setCanScrollNext(emblaApi.canScrollNext());
 
-    // Navigate to the IOU if it's an IOU slide
     const slide = slides[idx];
     if (slide?.type === "iou" && slide.iou.id !== currentIOUId) {
-      navigate(`/ious/${slide.iou.id}`, { replace: true });
+      // Only navigate for real IOUs, not bill-debt ones
+      if (!slide.iou.source) {
+        navigate(`/ious/${slide.iou.id}`, { replace: true });
+      }
     }
   }, [emblaApi, slides, currentIOUId, navigate]);
 
@@ -99,7 +132,6 @@ export function IOUSwipeContainer({ currentIOUId, children }: IOUSwipeContainerP
     return () => { emblaApi.off("select", onSelect); };
   }, [emblaApi, onSelect]);
 
-  // Get current person name
   const currentSlide = slides[selectedIndex];
   const currentPersonName = useMemo(() => {
     if (!currentSlide) return "";
@@ -107,7 +139,6 @@ export function IOUSwipeContainer({ currentIOUId, children }: IOUSwipeContainerP
     return getContactName(currentSlide.iou.debtor_phone_number);
   }, [currentSlide, contacts]);
 
-  // Count IOUs only (not separators) for progress
   const totalIOUs = slides.filter((s) => s.type === "iou").length;
   const currentIOUPosition = useMemo(() => {
     let count = 0;
@@ -194,6 +225,9 @@ export function IOUSwipeContainer({ currentIOUId, children }: IOUSwipeContainerP
                     </div>
                   </div>
                 </div>
+              ) : slide.iou.source === 'bill' ? (
+                // Bill-debt inline card
+                <BillDebtSlide iou={slide.iou} getContactName={getContactName} navigate={navigate} />
               ) : slide.iou.id === currentIOUId ? (
                 children
               ) : null}
@@ -201,6 +235,87 @@ export function IOUSwipeContainer({ currentIOUId, children }: IOUSwipeContainerP
           ))}
         </div>
       </div>
+    </div>
+  );
+}
+
+/** Inline card for bill-sourced debts shown in the swipe carousel */
+function BillDebtSlide({
+  iou,
+  getContactName,
+  navigate,
+}: {
+  iou: ExtendedIOU;
+  getContactName: (phone: string) => string;
+  navigate: (path: string) => void;
+}) {
+  const remaining = iou.amount - iou.amount_paid;
+  const progress = iou.amount > 0 ? (iou.amount_paid / iou.amount) * 100 : 0;
+  const debtorName = getContactName(iou.debtor_phone_number);
+
+  return (
+    <div className="animate-fade-in space-y-4 px-1">
+      {/* Bill badge header */}
+      <div className="flex items-center gap-2 justify-center">
+        <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1 rounded-full bg-indigo-100 text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
+          <Receipt className="h-3.5 w-3.5" />
+          From Bill
+        </span>
+      </div>
+
+      {/* Person info */}
+      <div className="card-elevated p-4 border-l-4 border-l-indigo-500">
+        <div className="flex items-center gap-4">
+          <AvatarCustom name={debtorName} size="lg" />
+          <div className="flex-1 min-w-0">
+            <h2 className="font-semibold text-lg text-foreground truncate">{debtorName}</h2>
+            <p className="text-sm text-muted-foreground truncate">{iou.debtor_phone_number}</p>
+          </div>
+          <StatusBadge status={iou.status as any} />
+        </div>
+      </div>
+
+      {/* Amount summary */}
+      <div className="card-elevated p-4 border-l-4 border-l-indigo-500">
+        <p className="text-xs text-muted-foreground mb-1 uppercase tracking-wide">
+          Bill: {iou.sourceBillTitle}
+        </p>
+        <div className="flex items-center justify-between mb-3">
+          <div>
+            <p className="text-sm text-muted-foreground">Total Owed</p>
+            <MoneyDisplay amount={iou.amount} currency={iou.currency} size="xl" />
+          </div>
+          <div className="text-right">
+            <p className="text-sm text-muted-foreground">Remaining</p>
+            <MoneyDisplay amount={remaining} currency={iou.currency} size="lg" className="text-primary" />
+          </div>
+        </div>
+
+        {/* Progress bar */}
+        <div className="h-2 bg-muted rounded-full overflow-hidden">
+          <div
+            className="h-full bg-indigo-500 rounded-full transition-all"
+            style={{ width: `${progress}%` }}
+          />
+        </div>
+        <div className="flex justify-between mt-1">
+          <p className="text-[11px] text-muted-foreground">{Math.round(progress)}% paid</p>
+          <p className="text-[11px] text-muted-foreground">
+            {iou.currency} {iou.amount_paid.toFixed(2)} / {iou.amount.toFixed(2)}
+          </p>
+        </div>
+      </div>
+
+      {/* View Bill button */}
+      {iou.sourceBillId && (
+        <button
+          onClick={() => navigate(`/bills/${iou.sourceBillId}`)}
+          className="w-full py-3 rounded-xl border border-indigo-300 dark:border-indigo-700 text-indigo-600 dark:text-indigo-400 text-sm font-medium hover:bg-indigo-50 dark:hover:bg-indigo-950/30 transition-colors flex items-center justify-center gap-2"
+        >
+          <Receipt className="h-4 w-4" />
+          View Full Bill
+        </button>
+      )}
     </div>
   );
 }
