@@ -29,78 +29,114 @@ export function TourOverlay({
 }: TourOverlayProps) {
   const [highlightRect, setHighlightRect] = useState<HighlightRect | null>(null);
   const [popoverStyle, setPopoverStyle] = useState<React.CSSProperties>({});
+  const [measured, setMeasured] = useState(false);
   const popoverRef = useRef<HTMLDivElement>(null);
+  const measurePassRef = useRef(0);
 
-  const updatePosition = useCallback(() => {
-    if (!step.target) {
-      setHighlightRect(null);
-      setPopoverStyle({
-        top: "50%",
-        left: "50%",
-        transform: "translate(-50%, -50%)",
-      });
-      return;
-    }
-
-    const el = document.querySelector(step.target);
-    if (!el) {
-      setHighlightRect(null);
-      setPopoverStyle({
-        top: "50%",
-        left: "50%",
-        transform: "translate(-50%, -50%)",
-      });
-      return;
-    }
-
-    const rect = el.getBoundingClientRect();
-    const padding = 6;
-    const highlight: HighlightRect = {
-      top: rect.top - padding,
-      left: rect.left - padding,
-      width: rect.width + padding * 2,
-      height: rect.height + padding * 2,
-    };
-    setHighlightRect(highlight);
-
+  const computePosition = useCallback((highlight: HighlightRect | null, popoverH: number) => {
     const vw = window.innerWidth;
     const vh = window.innerHeight;
     const margin = 12;
-    const popoverW = Math.min(300, vw - margin * 2);
+    const popoverW = Math.min(280, vw - 24);
     const gap = 12;
-    const popoverH = popoverRef.current?.offsetHeight || 180;
+    const safeBottom = parseInt(getComputedStyle(document.documentElement).getPropertyValue('env(safe-area-inset-bottom)') || '0', 10) || 0;
 
-    const pos = step.position || "bottom";
-    let style: React.CSSProperties = { width: popoverW };
+    if (!highlight) {
+      // Center position — use measured height
+      const top = Math.max(margin, (vh - popoverH) / 2);
+      return {
+        top,
+        left: (vw - popoverW) / 2,
+        width: popoverW,
+      } as React.CSSProperties;
+    }
+
+    // Determine effective position
+    let pos = step.position || "bottom";
+    // Force top for bottom-nav targets
+    if (highlight.top + highlight.height > vh - 100) {
+      pos = "top";
+    }
 
     const centerX = Math.max(margin, Math.min(
       highlight.left + highlight.width / 2 - popoverW / 2,
       vw - popoverW - margin
     ));
 
-    const spaceBelow = vh - (highlight.top + highlight.height + gap);
+    const spaceBelow = vh - (highlight.top + highlight.height + gap) - safeBottom;
     const spaceAbove = highlight.top - gap;
 
-    if (pos === "bottom" && spaceBelow >= popoverH) {
-      style.top = highlight.top + highlight.height + gap;
-      style.left = centerX;
-    } else if (pos === "top" && spaceAbove >= popoverH) {
-      style.top = highlight.top - popoverH - gap;
-      style.left = centerX;
-    } else if (spaceBelow >= popoverH) {
-      style.top = highlight.top + highlight.height + gap;
-      style.left = centerX;
-    } else if (spaceAbove >= popoverH) {
-      style.top = highlight.top - popoverH - gap;
-      style.left = centerX;
+    let top: number;
+
+    if (pos === "top" && spaceAbove >= popoverH) {
+      top = highlight.top - popoverH - gap;
+    } else if (pos === "bottom" && spaceBelow >= popoverH) {
+      top = highlight.top + highlight.height + gap;
+    } else if (spaceAbove >= spaceBelow) {
+      top = highlight.top - popoverH - gap;
     } else {
-      style.bottom = margin;
-      style.left = centerX;
+      top = highlight.top + highlight.height + gap;
     }
 
-    setPopoverStyle(style);
+    // Clamp to screen bounds
+    top = Math.max(margin, Math.min(top, vh - popoverH - margin - safeBottom));
+    const left = Math.max(margin, Math.min(centerX, vw - popoverW - margin));
+
+    return { top, left, width: popoverW } as React.CSSProperties;
+  }, [step.position]);
+
+  const updatePosition = useCallback(() => {
+    if (!step.target) {
+      setHighlightRect(null);
+      const popoverH = popoverRef.current?.offsetHeight || 180;
+      setPopoverStyle(computePosition(null, popoverH));
+      setMeasured(true);
+      return;
+    }
+
+    const el = document.querySelector(step.target);
+    if (!el) {
+      setHighlightRect(null);
+      const popoverH = popoverRef.current?.offsetHeight || 180;
+      setPopoverStyle(computePosition(null, popoverH));
+      setMeasured(true);
+      return;
+    }
+
+    // Scroll into view first, then measure after scroll settles
     el.scrollIntoView({ behavior: "smooth", block: "center" });
-  }, [step]);
+
+    setTimeout(() => {
+      const rect = el.getBoundingClientRect();
+      const padding = 6;
+      const highlight: HighlightRect = {
+        top: rect.top - padding,
+        left: rect.left - padding,
+        width: rect.width + padding * 2,
+        height: rect.height + padding * 2,
+      };
+      setHighlightRect(highlight);
+
+      // First pass: render invisibly to measure
+      const popoverH = popoverRef.current?.offsetHeight || 180;
+      setPopoverStyle(computePosition(highlight, popoverH));
+      setMeasured(true);
+
+      // Second pass: re-measure after render
+      requestAnimationFrame(() => {
+        const actualH = popoverRef.current?.offsetHeight || popoverH;
+        if (actualH !== popoverH) {
+          setPopoverStyle(computePosition(highlight, actualH));
+        }
+      });
+    }, 350);
+  }, [step, computePosition]);
+
+  // Reset measured state on step change
+  useEffect(() => {
+    setMeasured(false);
+    measurePassRef.current += 1;
+  }, [stepIndex]);
 
   useEffect(() => {
     const timer = setTimeout(updatePosition, 200);
@@ -111,20 +147,24 @@ export function TourOverlay({
     };
   }, [updatePosition]);
 
+  // Re-measure after popover renders with content
   useEffect(() => {
-    if (popoverRef.current) {
-      const timer = setTimeout(updatePosition, 300);
+    if (popoverRef.current && measured) {
+      const timer = setTimeout(() => {
+        const actualH = popoverRef.current?.offsetHeight;
+        if (actualH) {
+          const highlight = highlightRect;
+          setPopoverStyle(computePosition(highlight, actualH));
+        }
+      }, 100);
       return () => clearTimeout(timer);
     }
-  }, [stepIndex, updatePosition]);
+  }, [measured, stepIndex, highlightRect, computePosition]);
 
   const isClickStep = step.action === "click" && step.nextOnClick;
   const progress = ((stepIndex + 1) / totalSteps) * 100;
 
-  // Build 4 overlay regions around the highlight hole so clicks pass through to the actual element
   const overlayColor = "rgba(0,0,0,0.7)";
-  const vw = "100vw";
-  const vh = "100vh";
 
   return (
     <div className="fixed inset-0 z-[9999]" style={{ pointerEvents: "none" }}>
@@ -174,7 +214,6 @@ export function TourOverlay({
           />
         </>
       ) : (
-        /* No highlight - full overlay */
         <div
           style={{
             position: "absolute", inset: 0,
@@ -201,8 +240,15 @@ export function TourOverlay({
       {/* Popover */}
       <div
         ref={popoverRef}
-        className="absolute max-w-[calc(100vw-24px)] bg-card border border-border rounded-2xl shadow-2xl p-3 space-y-2.5 animate-fade-in"
-        style={{ ...popoverStyle, pointerEvents: "auto", zIndex: 10001 }}
+        className="absolute bg-card border border-border rounded-2xl shadow-2xl p-3 space-y-2.5 animate-fade-in"
+        style={{
+          ...popoverStyle,
+          maxWidth: "calc(100vw - 24px)",
+          pointerEvents: "auto",
+          zIndex: 10001,
+          opacity: measured ? 1 : 0,
+          transition: "opacity 0.15s ease-in",
+        }}
       >
         {/* Progress bar */}
         <div className="flex items-center gap-1.5">
