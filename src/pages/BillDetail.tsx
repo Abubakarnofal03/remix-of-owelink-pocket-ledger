@@ -712,6 +712,16 @@ Never lose track of debts again. Split bills, send reminders & get paid faster.
           )}
         </div>
 
+        {/* Notice Board - at top */}
+        <NoticeBoard
+          billId={bill.id}
+          billTitle={bill.title}
+          isCreator={isCreator}
+          userPhoneSuffix={userPhoneSuffix}
+          participantPhoneSuffixes={bill.participants?.map(p => p.phone_suffix || getPhoneSuffix(p.phone_number)).filter(Boolean) as string[] || []}
+          getContactName={getContactNameBySuffix}
+        />
+
         {/* Amount Summary */}
         <div className="card-elevated p-4">
           <div className="flex items-center justify-between mb-4">
@@ -942,15 +952,8 @@ Never lose track of debts again. Split bills, send reminders & get paid faster.
           </div>
         </div>
 
-        {/* Notice Board */}
-        <NoticeBoard
-          billId={bill.id}
-          billTitle={bill.title}
-          isCreator={isCreator}
-          userPhoneSuffix={userPhoneSuffix}
-          participantPhoneSuffixes={bill.participants?.map(p => p.phone_suffix || getPhoneSuffix(p.phone_number)).filter(Boolean) as string[] || []}
-          getContactName={getContactNameBySuffix}
-        />
+
+
 
         {isDebtor && currentUserParticipant && currentUserParticipant.status !== 'paid' && debtorRemainingAmount > 0 && (
           <div className="card-elevated p-4">

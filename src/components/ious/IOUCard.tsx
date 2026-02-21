@@ -3,13 +3,13 @@ import { StatusBadge } from "@/components/ui/StatusBadge";
 import { MoneyDisplay } from "@/components/ui/MoneyDisplay";
 import { AvatarCustom } from "@/components/ui/avatar-custom";
 import { format } from "date-fns";
-import { Calendar, ChevronRight, ArrowDownLeft, ArrowUpRight, Archive } from "lucide-react";
+import { Calendar, ChevronRight, ArrowDownLeft, ArrowUpRight, Archive, Receipt } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useContacts } from "@/hooks/useContacts";
 import { useAuth } from "@/hooks/useAuth";
 
 interface IOUCardProps {
-  iou: IOU;
+  iou: IOU & { source?: 'iou' | 'bill'; sourceBillTitle?: string; sourceBillId?: string };
 }
 
 export function IOUCard({ iou }: IOUCardProps) {
@@ -41,15 +41,24 @@ export function IOUCard({ iou }: IOUCardProps) {
   
   const displayName = otherPersonName;
 
+  const isBillSourced = (iou as any).source === 'bill';
+  const linkTo = isBillSourced ? `/bills/${(iou as any).sourceBillId}` : `/ious/${iou.id}`;
+
   return (
-    <Link to={`/ious/${iou.id}`} className="block">
-      <div className="bg-card rounded-lg p-3 hover:bg-accent/30 transition-all border border-border/50 shadow-sm">
+    <Link to={linkTo} className="block">
+      <div className={`bg-card rounded-lg p-3 hover:bg-accent/30 transition-all border shadow-sm ${isBillSourced ? 'border-indigo-300 dark:border-indigo-700 bg-indigo-50/30 dark:bg-indigo-950/20' : 'border-border/50'}`}>
         <div className="flex items-start justify-between gap-2 mb-2">
           <div className="flex items-center gap-2 flex-1 min-w-0">
             <AvatarCustom name={displayName} size="sm" />
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
                 <h4 className="font-medium text-sm text-foreground truncate">{displayName}</h4>
+                {isBillSourced && (
+                  <span className="inline-flex items-center gap-0.5 text-[10px] bg-indigo-100 text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-400 px-1.5 py-0.5 rounded-full shrink-0">
+                    <Receipt className="h-2.5 w-2.5" />
+                    From Bill
+                  </span>
+                )}
                 {isArchived && (
                   <span className="inline-flex items-center gap-0.5 text-[10px] bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-400 px-1.5 py-0.5 rounded-full shrink-0">
                     <Archive className="h-2.5 w-2.5" />

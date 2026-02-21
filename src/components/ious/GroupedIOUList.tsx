@@ -6,7 +6,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { AvatarCustom } from "@/components/ui/avatar-custom";
 import { MoneyDisplay } from "@/components/ui/MoneyDisplay";
 import { Button } from "@/components/ui/button";
-import { MessageCircle, ChevronDown, ChevronUp, Plus, Phone } from "lucide-react";
+import { MessageCircle, ChevronDown, ChevronUp, Plus, Phone, User } from "lucide-react";
 import { useContacts } from "@/hooks/useContacts";
 import { formatPhoneForWhatsApp } from "@/lib/phoneUtils";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
@@ -196,6 +196,28 @@ export function GroupedIOUList({ ious, loading, isCreditor = true, contactsLoadi
                 </div>
 
                 <div className="flex items-center gap-2">
+                  {/* View Contact button */}
+                  {(() => {
+                    const contact = contacts.find(c =>
+                      c.phone_number === group.phone ||
+                      c.phone_suffix === group.phone.replace(/[^0-9]/g, '').slice(-10)
+                    );
+                    return contact ? (
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          navigate(`/contacts/${contact.id}`);
+                        }}
+                        className="h-10 w-10 rounded-full border-border hover:bg-accent"
+                        title={`View ${group.name}'s contact`}
+                      >
+                        <User className="h-5 w-5 text-muted-foreground" />
+                      </Button>
+                    ) : null;
+                  })()}
+
                   {/* Add IOU button - only show for creditor */}
                   {isCreditor && (
                     <Button
@@ -203,7 +225,6 @@ export function GroupedIOUList({ ious, loading, isCreditor = true, contactsLoadi
                       size="icon"
                       onClick={(e) => {
                         e.stopPropagation();
-                        // Navigate to new IOU with pre-filled debtor
                         navigate(`/ious/new?phone=${encodeURIComponent(group.phone)}&name=${encodeURIComponent(group.name)}`);
                       }}
                       className="h-10 w-10 rounded-full border-primary/30 hover:bg-primary/10"

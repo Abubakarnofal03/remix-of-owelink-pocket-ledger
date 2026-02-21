@@ -5,6 +5,7 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import { useIOUDetail, useIOUs } from "@/hooks/useIOUs";
 import { useContacts } from "@/hooks/useContacts";
 import { useIOUPaymentRequests } from "@/hooks/useIOUPaymentRequests";
+import { IOUSwipeContainer } from "@/components/ious/IOUSwipeContainer";
 import { useOffline } from "@/hooks/useOffline";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -392,6 +393,7 @@ Never lose track of debts again. Split bills, send reminders & get paid faster.
 
   return (
     <AppLayout hideNav>
+      <IOUSwipeContainer currentIOUId={iou.id}>
       <div className="animate-fade-in space-y-6">
         {/* Header */}
         <div className="flex items-center gap-3">
@@ -808,6 +810,7 @@ Never lose track of debts again. Split bills, send reminders & get paid faster.
           onSubmit={handlePaymentRequestSubmit}
         />
       </div>
+      </IOUSwipeContainer>
     </AppLayout>
   );
 }

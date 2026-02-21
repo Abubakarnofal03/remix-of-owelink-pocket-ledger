@@ -364,6 +364,56 @@ export function useBills() {
     );
   };
 
+  // Get bill debts where other people owe the current user (for IOUs integration)
+  const getBillDebtsOwedToMe = (): Array<{
+    participantPhone: string;
+    amount_owed: number;
+    amount_paid: number;
+    billId: string;
+    billTitle: string;
+    currency: string;
+    status: string;
+    created_at: string;
+  }> => {
+    if (!user) return [];
+    const debts: Array<{
+      participantPhone: string;
+      amount_owed: number;
+      amount_paid: number;
+      billId: string;
+      billTitle: string;
+      currency: string;
+      status: string;
+      created_at: string;
+    }> = [];
+
+    bills.forEach(bill => {
+      // Only bills I created
+      if (bill.creator_id !== user.id) return;
+      if (bill.deleted_at) return;
+      
+      bill.participants?.forEach(p => {
+        // Skip participants that are the creator themselves
+        if (p.user_id === user.id) return;
+        // Only unpaid
+        if (p.status === 'paid' || p.amount_paid >= p.amount_owed) return;
+        
+        debts.push({
+          participantPhone: p.phone_number,
+          amount_owed: p.amount_owed,
+          amount_paid: p.amount_paid,
+          billId: bill.id,
+          billTitle: bill.title,
+          currency: bill.currency,
+          status: p.status,
+          created_at: bill.created_at,
+        });
+      });
+    });
+
+    return debts;
+  };
+
   return {
     bills,
     loading,
@@ -372,6 +422,7 @@ export function useBills() {
     deleteBill,
     getBillById,
     updateBillInCache,
+    getBillDebtsOwedToMe,
     refetch: () => queryClient.invalidateQueries({ queryKey: billsQueryKey }),
   };
 }
