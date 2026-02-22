@@ -1,64 +1,62 @@
 
 
-# Bulk Settlement Feature for Grouped IOUs
+# Android Widget Guide + Quick Action Buttons
 
 ## Overview
-Add a "Settle" button in each person's group header in the Owes list. When tapped, the user enters a lump-sum amount (e.g., 7000), and the system automatically distributes it across that person's pending IOUs (oldest first), then shows a confirmation dialog with the breakdown before applying.
+This plan creates two things:
+1. A complete step-by-step guide document (`docs/ANDROID_WIDGET_GUIDE.md`) with every file and command needed to build an Android home screen widget
+2. A TypeScript bridge file (`src/lib/widgetBridge.ts`) for pushing data from the app to the widget
 
-## How It Works
+The widget will display your balance summary AND include 3 quick action buttons: **Split Bill**, **Track Owe**, and **Add Expense** -- tapping any of them opens the app directly to that screen.
 
-1. User taps "Settle" button on a person's group card
-2. A dialog opens asking "How much did [Person] pay?"
-3. User enters the amount (e.g., 7000)
-4. The system calculates allocation across pending IOUs (oldest first, fully paying smaller ones before moving to the next):
-   - IOU 1 (5000) -> fully paid (5000)
-   - IOU 3 (1000) -> fully paid (1000)
-   - IOU 2 (4000) -> partially paid (1000 of 4000)
-5. User sees a preview breakdown and confirms
-6. All IOUs are updated in one go
+## What Gets Created
 
-## Files to Change
+### File 1: `docs/ANDROID_WIDGET_GUIDE.md`
+A comprehensive markdown guide containing complete, copy-pasteable code for:
 
-**New file: `src/components/ious/BulkSettlementDialog.tsx`**
-- Dialog with amount input field
-- After entering amount, shows allocation preview table:
-  - Each IOU description, original amount, amount being applied, new remaining
-  - IOUs marked as "Fully Paid" or "Partial" 
-- Confirm and Cancel buttons
-- Uses the `updateIOUOfflineFirst` function for each IOU
+1. **Widget Layout** (`res/layout/widget_layout.xml`)
+   - Balance display: "Owed to You", "You Owe", "Net Balance"
+   - 3 action buttons at the bottom: Split Bill, Track Owe, Add Expense
+   - Each button uses a `PendingIntent` that opens the app via deep links (`owelink://bills/new`, `owelink://ious/new`, `owelink://expenses`)
 
-**Modified: `src/components/ious/GroupedIOUList.tsx`**
-- Add a "Settle" button (with a Banknote icon) in the group header actions area (next to WhatsApp, Add, View Contact buttons)
-- Only show for creditor view (`isCreditor`) when there are pending IOUs
-- Opens `BulkSettlementDialog` with the group's pending IOUs
+2. **Widget Background** (`res/drawable/widget_background.xml`)
+   - Rounded rectangle matching OweLink's dark theme
 
-**Modified: `src/hooks/useIOUs.tsx`**
-- Add a `bulkUpdatePayments` function that takes an array of `{ id, amount_paid, status }` updates
-- Updates each IOU locally and triggers background sync
+3. **Widget Provider Config** (`res/xml/owelink_widget_info.xml`)
+   - Size, update interval, preview, resize settings
+
+4. **Widget Provider Class** (`OweLinkWidget.java`)
+   - Reads balances from `SharedPreferences`
+   - Sets up `RemoteViews` with balance data
+   - Configures `PendingIntent` for each quick action button (bill, owe, expense)
+   - Configures tap-to-open on the main widget area
+
+5. **Capacitor Bridge Plugin** (`WidgetBridge.java`)
+   - Receives balance data from the web app
+   - Writes to `SharedPreferences`
+   - Triggers widget refresh via `AppWidgetManager`
+
+6. **AndroidManifest.xml changes**
+   - Exact XML to register the widget receiver
+
+7. **MainActivity.java changes**
+   - Plugin registration line
+
+8. **Build and test commands**
+   - `npx cap sync android`, build in Android Studio, add widget from launcher
+
+### File 2: `src/lib/widgetBridge.ts`
+TypeScript code that:
+- Uses `registerPlugin('WidgetBridge')` from Capacitor
+- Exports an `updateWidget(owedToYou, youOwe, netBalance)` function
+- Can be called from `useBalances` hook whenever balances update
 
 ## Technical Details
 
-### Allocation Algorithm (in BulkSettlementDialog)
-```
-function allocatePayment(pendingIOUs: IOU[], totalPayment: number):
-  1. Sort IOUs by created_at ascending (oldest first)
-  2. remaining = totalPayment
-  3. For each IOU:
-     - owed = iou.amount - iou.amount_paid
-     - apply = min(remaining, owed)
-     - allocation.push({ iou, apply, newPaid: iou.amount_paid + apply, fullyPaid: apply >= owed })
-     - remaining -= apply
-     - if remaining <= 0, break
-  4. Return allocations + any leftover
-```
+The widget quick action buttons work by leveraging the existing deep link infrastructure already set up in `AndroidManifest.xml` (the `owelink://` scheme) and the `useCapacitor` hook that handles routing. Each button creates a `PendingIntent` with the corresponding deep link URI:
+- Split Bill button -> `owelink://bills/new`
+- Track Owe button -> `owelink://ious/new`  
+- Add Expense button -> `owelink://expenses`
 
-### Validation
-- Amount must be > 0
-- Amount must not exceed total remaining across all pending IOUs
-- Show warning if amount exceeds total (excess cannot be applied)
-
-### UI Flow
-The dialog has two steps:
-1. **Input step**: Amount field + "Calculate" button
-2. **Preview step**: Table showing allocation per IOU + "Confirm Settlement" button
+No changes to existing app files are needed beyond creating the two new files.
 
