@@ -28,7 +28,7 @@ type StatusFilter = "all" | "unpaid" | "paid";
 
 export default function IOUs() {
   const { user, loading: authLoading } = useAuth();
-  const { owedToMe, iOwe, loading, refetch } = useIOUs();
+  const { owedToMe, iOwe, loading, refetch, bulkSettleIOUs } = useIOUs();
   const { getBillDebtsOwedToMe } = useBills();
   const { contacts, loading: contactsLoading } = useContacts();
   const navigate = useNavigate();
@@ -190,10 +190,10 @@ export default function IOUs() {
 
           {/* List */}
           {loading ? (
-            <GroupedIOUList ious={[]} loading isCreditor={activeTab === "owed"} contactsLoading={contactsLoading} />
+            <GroupedIOUList ious={[]} loading isCreditor={activeTab === "owed"} contactsLoading={contactsLoading} onBulkSettle={bulkSettleIOUs} />
           ) : hasAnyIOUs ? (
             filteredList.length > 0 ? (
-              <GroupedIOUList ious={filteredList} isCreditor={activeTab === "owed"} contactsLoading={contactsLoading} />
+              <GroupedIOUList ious={filteredList} isCreditor={activeTab === "owed"} contactsLoading={contactsLoading} onBulkSettle={bulkSettleIOUs} />
             ) : (
               <EmptyState
                 icon={searchQuery ? Search : activeTab === "owed" ? ArrowDownLeft : ArrowUpRight}
