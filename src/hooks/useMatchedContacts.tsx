@@ -281,11 +281,11 @@ export function useMatchedContacts() {
     }
   }, [user, checkCache, setCache]);
 
-  // Auto-fetch on mount (once)
+  // Auto-fetch on mount (once) — only on native
   useEffect(() => {
-    if (user && Capacitor.isNativePlatform() && !fetchedRef.current) {
+    if (!Capacitor.isNativePlatform()) return;
+    if (user && !fetchedRef.current) {
       fetchedRef.current = true;
-      // Check cache first
       const cached = checkCache();
       if (cached) {
         setMatchedContacts(cached);
