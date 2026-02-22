@@ -12,4 +12,12 @@
     <string name="shortcut_iou_long">Create a new IOU</string>
     <string name="shortcut_expense_short">Add Expense</string>
     <string name="shortcut_expense_long">Track a new expense</string>
+
+    <!-- Widget -->
+    <string name="widget_owed_to_you_label">Owed to You</string>
+    <string name="widget_you_owe_label">You Owe</string>
+    <string name="widget_net_label">Net</string>
+    <string name="widget_split_bill">Split Bill</string>
+    <string name="widget_track_owe">Track Owe</string>
+    <string name="widget_add_expense">Expense</string>
 </resources>
