@@ -70,11 +70,8 @@ export default function Bills() {
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       result = result.filter(b => {
-        // Search in title
         if (b.title?.toLowerCase().includes(q)) return true;
-        // Search in description
         if (b.description?.toLowerCase().includes(q)) return true;
-        // Search in participants' phone numbers or names
         if (b.participants?.some(p => {
           if (p.phone_number.includes(q)) return true;
           const name = getContactName(p.phone_number);
@@ -85,6 +82,14 @@ export default function Bills() {
       });
     }
     
+    // Sort: pinned first, then by created_at
+    result = [...result].sort((a, b) => {
+      const aPinned = a.is_pinned ? 1 : 0;
+      const bPinned = b.is_pinned ? 1 : 0;
+      if (aPinned !== bPinned) return bPinned - aPinned;
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    });
+
     return result;
   }, [bills, filter, statusFilter, searchQuery, user, contacts]);
 

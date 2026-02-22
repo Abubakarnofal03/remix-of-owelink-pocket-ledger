@@ -43,6 +43,7 @@ export interface Bill {
   reminder_enabled?: boolean;
   reminder_interval_days?: number | null;
   last_reminder_sent_at?: string | null;
+  is_pinned?: boolean;
   participants?: BillParticipant[];
   is_local?: boolean;
   creator?: {
@@ -84,8 +85,8 @@ function localBillToBill(local: LocalBill & { participants?: LocalBillParticipan
     reminder_enabled: local.reminder_enabled,
     reminder_interval_days: local.reminder_interval_days,
     last_reminder_sent_at: local.last_reminder_sent_at,
+    is_pinned: (local as any).is_pinned || false,
     is_local: local.is_local,
-    // Include creator info for participant view
     creator: local.creator_username ? {
       username: local.creator_username,
       phone_number: local.creator_phone_number || '',
@@ -414,6 +415,24 @@ export function useBills() {
     return debts;
   };
 
+  const togglePin = async (id: string, currentlyPinned: boolean) => {
+    const newPinned = !currentlyPinned;
+    // Update cache immediately
+    queryClient.setQueryData<Bill[]>(billsQueryKey, (old = []) =>
+      old.map((b) => (b.id === id ? { ...b, is_pinned: newPinned } : b))
+    );
+    // Update local DB
+    try {
+      await offlineDb.bills.update(id, { is_pinned: newPinned } as any);
+    } catch (e) {
+      console.warn("Failed to update local pin:", e);
+    }
+    // Update server if online
+    if (offline.isOnline && !id.startsWith("local-")) {
+      supabase.from("bills").update({ is_pinned: newPinned }).eq("id", id).then();
+    }
+  };
+
   return {
     bills,
     loading,
@@ -423,6 +442,7 @@ export function useBills() {
     getBillById,
     updateBillInCache,
     getBillDebtsOwedToMe,
+    togglePin,
     refetch: () => queryClient.invalidateQueries({ queryKey: billsQueryKey }),
   };
 }

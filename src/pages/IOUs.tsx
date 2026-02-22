@@ -88,17 +88,22 @@ export default function IOUs() {
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       result = result.filter(iou => {
-        // Search in description
         if (iou.description?.toLowerCase().includes(q)) return true;
-        // Search in debtor phone
         if (iou.debtor_phone_number.includes(q)) return true;
-        // Search in debtor name
         const name = getContactName(iou.debtor_phone_number);
         if (name?.toLowerCase().includes(q)) return true;
         return false;
       });
     }
     
+    // Sort: pinned first, then by created_at
+    result = [...result].sort((a, b) => {
+      const aPinned = a.is_pinned ? 1 : 0;
+      const bPinned = b.is_pinned ? 1 : 0;
+      if (aPinned !== bPinned) return bPinned - aPinned;
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    });
+
     return result;
   }, [currentList, statusFilter, searchQuery, contacts]);
 
