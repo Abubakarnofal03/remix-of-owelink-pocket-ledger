@@ -2,7 +2,9 @@ import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "./useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { useQueryClient } from "@tanstack/react-query";
+import { offlineDb, generateLocalId, safeDbOperation, LocalExpenseGroup, LocalExpenseGroupMember, LocalGroupExpense } from "@/lib/offline/db";
+import { addToSyncQueue } from "@/lib/offline/syncQueue";
+import { syncExpenseGroupsFromServer } from "@/lib/offline/dataSync";
 
 export interface ExpenseGroup {
   id: string;
@@ -13,6 +15,7 @@ export interface ExpenseGroup {
   created_at: string;
   updated_at: string;
   deleted_at: string | null;
+  is_local?: boolean;
 }
 
 export interface ExpenseGroupMember {
@@ -23,6 +26,7 @@ export interface ExpenseGroupMember {
   user_id: string | null;
   nickname: string | null;
   created_at: string;
+  is_local?: boolean;
 }
 
 export interface GroupExpense {
@@ -35,26 +39,58 @@ export interface GroupExpense {
   split_details: any;
   created_at: string;
   deleted_at: string | null;
+  is_local?: boolean;
+}
+
+export interface GroupWithStats extends ExpenseGroup {
+  memberCount: number;
+  totalExpenses: number;
 }
 
 export function useExpenseGroups() {
   const { user } = useAuth();
-  const [groups, setGroups] = useState<ExpenseGroup[]>([]);
+  const [groups, setGroups] = useState<GroupWithStats[]>([]);
   const [loading, setLoading] = useState(true);
 
   const fetchGroups = useCallback(async () => {
     if (!user) return;
-    try {
-      const { data, error } = await supabase
-        .from("expense_groups")
-        .select("*")
-        .is("deleted_at", null)
-        .order("created_at", { ascending: false });
 
-      if (error) throw error;
-      setGroups((data || []) as ExpenseGroup[]);
-    } catch (error) {
-      console.error("Error fetching groups:", error);
+    // Load from local DB first (instant)
+    const localData = await safeDbOperation(async () => {
+      const localGroups = await offlineDb.expenseGroups.filter(g => !g.deleted_at).toArray();
+      const allMembers = await offlineDb.expenseGroupMembers.toArray();
+      const allExpenses = await offlineDb.groupExpenses.filter(e => !e.deleted_at).toArray();
+
+      return localGroups.map(g => ({
+        ...g,
+        memberCount: allMembers.filter(m => m.group_id === g.id).length,
+        totalExpenses: allExpenses.filter(e => e.group_id === g.id).reduce((sum, e) => sum + e.amount, 0),
+      })).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    }, []);
+
+    if (localData.length > 0) {
+      setGroups(localData as GroupWithStats[]);
+      setLoading(false);
+    }
+
+    // Background sync from server
+    try {
+      await syncExpenseGroupsFromServer(user.id);
+      // Re-read from local DB after sync
+      const refreshed = await safeDbOperation(async () => {
+        const localGroups = await offlineDb.expenseGroups.filter(g => !g.deleted_at).toArray();
+        const allMembers = await offlineDb.expenseGroupMembers.toArray();
+        const allExpenses = await offlineDb.groupExpenses.filter(e => !e.deleted_at).toArray();
+
+        return localGroups.map(g => ({
+          ...g,
+          memberCount: allMembers.filter(m => m.group_id === g.id).length,
+          totalExpenses: allExpenses.filter(e => e.group_id === g.id).reduce((sum, e) => sum + e.amount, 0),
+        })).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+      }, []);
+      setGroups(refreshed as GroupWithStats[]);
+    } catch (e) {
+      console.error('[Groups] Background sync failed:', e);
     } finally {
       setLoading(false);
     }
@@ -66,22 +102,34 @@ export function useExpenseGroups() {
 
   const createGroup = async (data: { name: string; description?: string; currency: string }) => {
     if (!user) return null;
-    try {
-      const { data: group, error } = await supabase
-        .from("expense_groups")
-        .insert({
-          creator_id: user.id,
-          name: data.name,
-          description: data.description || null,
-          currency: data.currency,
-        })
-        .select()
-        .single();
+    const now = new Date().toISOString();
+    const localId = generateLocalId();
 
-      if (error) throw error;
-      setGroups(prev => [group as ExpenseGroup, ...prev]);
+    const localGroup: LocalExpenseGroup = {
+      id: localId,
+      creator_id: user.id,
+      name: data.name,
+      description: data.description || null,
+      currency: data.currency,
+      created_at: now,
+      updated_at: now,
+      deleted_at: null,
+      is_local: true,
+    };
+
+    try {
+      await offlineDb.expenseGroups.put(localGroup);
+      await addToSyncQueue("expense_group", "create", localId, {
+        creator_id: user.id,
+        name: data.name,
+        description: data.description || null,
+        currency: data.currency,
+      });
+
+      const newGroup: GroupWithStats = { ...localGroup, memberCount: 0, totalExpenses: 0 };
+      setGroups(prev => [newGroup, ...prev]);
       toast.success("Group created");
-      return group as ExpenseGroup;
+      return localGroup as ExpenseGroup;
     } catch (error: any) {
       console.error("Error creating group:", error);
       toast.error(error.message || "Failed to create group");
@@ -91,12 +139,20 @@ export function useExpenseGroups() {
 
   const deleteGroup = async (id: string) => {
     try {
-      const { error } = await supabase
-        .from("expense_groups")
-        .update({ deleted_at: new Date().toISOString() })
-        .eq("id", id);
+      const existing = await offlineDb.expenseGroups.get(id);
+      if (!existing) return false;
 
-      if (error) throw error;
+      const isUnsyncedLocal = existing.is_local && !existing.synced_at;
+      if (isUnsyncedLocal) {
+        await offlineDb.expenseGroups.delete(id);
+        await offlineDb.expenseGroupMembers.where('group_id').equals(id).delete();
+        await offlineDb.groupExpenses.where('group_id').equals(id).delete();
+        await offlineDb.syncQueue.where('entity_id').equals(id).delete();
+      } else {
+        await offlineDb.expenseGroups.update(id, { deleted_at: new Date().toISOString(), is_local: true });
+        await addToSyncQueue("expense_group", "delete", id, { deleted_at: new Date().toISOString() });
+      }
+
       setGroups(prev => prev.filter(g => g.id !== id));
       toast.success("Group deleted");
       return true;
@@ -119,6 +175,23 @@ export function useExpenseGroupDetail(groupId: string | undefined) {
 
   const fetchAll = useCallback(async () => {
     if (!user || !groupId) return;
+
+    // Load from local DB first
+    const localData = await safeDbOperation(async () => {
+      const g = await offlineDb.expenseGroups.get(groupId);
+      const m = await offlineDb.expenseGroupMembers.where('group_id').equals(groupId).toArray();
+      const e = await offlineDb.groupExpenses.where('group_id').equals(groupId).filter(x => !x.deleted_at).toArray();
+      return { group: g, members: m, expenses: e };
+    }, { group: null, members: [], expenses: [] });
+
+    if (localData.group) {
+      setGroup(localData.group as ExpenseGroup);
+      setMembers((localData.members || []) as ExpenseGroupMember[]);
+      setExpenses(((localData.expenses || []) as GroupExpense[]).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()));
+      setLoading(false);
+    }
+
+    // Background sync
     try {
       const [groupRes, membersRes, expensesRes] = await Promise.all([
         supabase.from("expense_groups").select("*").eq("id", groupId).single(),
@@ -127,11 +200,32 @@ export function useExpenseGroupDetail(groupId: string | undefined) {
       ]);
 
       if (groupRes.error) throw groupRes.error;
-      setGroup(groupRes.data as ExpenseGroup);
-      setMembers((membersRes.data || []) as ExpenseGroupMember[]);
-      setExpenses((expensesRes.data || []) as GroupExpense[]);
+
+      const now = Date.now();
+      // Cache to local DB
+      if (groupRes.data) {
+        await offlineDb.expenseGroups.put({ ...groupRes.data, synced_at: now, is_local: false } as any);
+        setGroup(groupRes.data as ExpenseGroup);
+      }
+      if (membersRes.data) {
+        // Replace members for this group
+        await offlineDb.expenseGroupMembers.where('group_id').equals(groupId).filter(m => !m.is_local).delete();
+        const localM = await offlineDb.expenseGroupMembers.where('group_id').equals(groupId).toArray();
+        const serverMembers = membersRes.data.map((m: any) => ({ ...m, synced_at: now, is_local: false }));
+        const localOnlyM = localM.filter(lm => !serverMembers.some((sm: any) => sm.id === lm.id));
+        await offlineDb.expenseGroupMembers.bulkPut([...serverMembers, ...localOnlyM]);
+        setMembers([...serverMembers, ...localOnlyM] as ExpenseGroupMember[]);
+      }
+      if (expensesRes.data) {
+        await offlineDb.groupExpenses.where('group_id').equals(groupId).filter(e => !e.is_local).delete();
+        const localE = await offlineDb.groupExpenses.where('group_id').equals(groupId).filter(e => e.is_local === true).toArray();
+        const serverExpenses = expensesRes.data.map((e: any) => ({ ...e, synced_at: now, is_local: false }));
+        const localOnlyE = localE.filter(le => !serverExpenses.some((se: any) => se.id === le.id));
+        await offlineDb.groupExpenses.bulkPut([...serverExpenses, ...localOnlyE]);
+        setExpenses(([...serverExpenses, ...localOnlyE] as GroupExpense[]).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()));
+      }
     } catch (error) {
-      console.error("Error fetching group detail:", error);
+      console.error("Error syncing group detail:", error);
     } finally {
       setLoading(false);
     }
@@ -143,21 +237,31 @@ export function useExpenseGroupDetail(groupId: string | undefined) {
 
   const addMember = async (data: { phone_number: string; nickname?: string }) => {
     if (!groupId) return null;
-    try {
-      const { data: member, error } = await supabase
-        .from("expense_group_members")
-        .insert({
-          group_id: groupId,
-          phone_number: data.phone_number,
-          nickname: data.nickname || null,
-        })
-        .select()
-        .single();
+    const now = new Date().toISOString();
+    const localId = generateLocalId();
 
-      if (error) throw error;
-      setMembers(prev => [...prev, member as ExpenseGroupMember]);
+    const localMember: LocalExpenseGroupMember = {
+      id: localId,
+      group_id: groupId,
+      phone_number: data.phone_number,
+      phone_suffix: null,
+      user_id: null,
+      nickname: data.nickname || null,
+      created_at: now,
+      is_local: true,
+    };
+
+    try {
+      await offlineDb.expenseGroupMembers.put(localMember);
+      await addToSyncQueue("expense_group_member", "create", localId, {
+        group_id: groupId,
+        phone_number: data.phone_number,
+        nickname: data.nickname || null,
+      });
+
+      setMembers(prev => [...prev, localMember as ExpenseGroupMember]);
       toast.success("Member added");
-      return member as ExpenseGroupMember;
+      return localMember as ExpenseGroupMember;
     } catch (error: any) {
       console.error("Error adding member:", error);
       toast.error(error.message || "Failed to add member");
@@ -167,12 +271,15 @@ export function useExpenseGroupDetail(groupId: string | undefined) {
 
   const removeMember = async (memberId: string) => {
     try {
-      const { error } = await supabase
-        .from("expense_group_members")
-        .delete()
-        .eq("id", memberId);
+      const existing = await offlineDb.expenseGroupMembers.get(memberId);
+      if (existing?.is_local && !existing.synced_at) {
+        await offlineDb.expenseGroupMembers.delete(memberId);
+        await offlineDb.syncQueue.where('entity_id').equals(memberId).delete();
+      } else {
+        await offlineDb.expenseGroupMembers.delete(memberId);
+        await addToSyncQueue("expense_group_member", "delete", memberId, {});
+      }
 
-      if (error) throw error;
       setMembers(prev => prev.filter(m => m.id !== memberId));
       toast.success("Member removed");
       return true;
@@ -185,24 +292,36 @@ export function useExpenseGroupDetail(groupId: string | undefined) {
 
   const addExpense = async (data: { paid_by_member_id: string; amount: number; description?: string; split_type?: string; split_details?: any }) => {
     if (!groupId) return null;
-    try {
-      const { data: expense, error } = await supabase
-        .from("group_expenses")
-        .insert({
-          group_id: groupId,
-          paid_by_member_id: data.paid_by_member_id,
-          amount: data.amount,
-          description: data.description || null,
-          split_type: data.split_type || 'equal',
-          split_details: data.split_details || {},
-        })
-        .select()
-        .single();
+    const now = new Date().toISOString();
+    const localId = generateLocalId();
 
-      if (error) throw error;
-      setExpenses(prev => [expense as GroupExpense, ...prev]);
+    const localExpense: LocalGroupExpense = {
+      id: localId,
+      group_id: groupId,
+      paid_by_member_id: data.paid_by_member_id,
+      amount: data.amount,
+      description: data.description || null,
+      split_type: data.split_type || 'equal',
+      split_details: data.split_details || {},
+      created_at: now,
+      deleted_at: null,
+      is_local: true,
+    };
+
+    try {
+      await offlineDb.groupExpenses.put(localExpense);
+      await addToSyncQueue("group_expense", "create", localId, {
+        group_id: groupId,
+        paid_by_member_id: data.paid_by_member_id,
+        amount: data.amount,
+        description: data.description || null,
+        split_type: data.split_type || 'equal',
+        split_details: data.split_details || {},
+      });
+
+      setExpenses(prev => [localExpense as GroupExpense, ...prev]);
       toast.success("Expense added");
-      return expense as GroupExpense;
+      return localExpense as GroupExpense;
     } catch (error: any) {
       console.error("Error adding expense:", error);
       toast.error(error.message || "Failed to add expense");
@@ -212,12 +331,15 @@ export function useExpenseGroupDetail(groupId: string | undefined) {
 
   const deleteExpense = async (expenseId: string) => {
     try {
-      const { error } = await supabase
-        .from("group_expenses")
-        .update({ deleted_at: new Date().toISOString() })
-        .eq("id", expenseId);
+      const existing = await offlineDb.groupExpenses.get(expenseId);
+      if (existing?.is_local && !existing.synced_at) {
+        await offlineDb.groupExpenses.delete(expenseId);
+        await offlineDb.syncQueue.where('entity_id').equals(expenseId).delete();
+      } else {
+        await offlineDb.groupExpenses.update(expenseId, { deleted_at: new Date().toISOString(), is_local: true });
+        await addToSyncQueue("group_expense", "delete", expenseId, { deleted_at: new Date().toISOString() });
+      }
 
-      if (error) throw error;
       setExpenses(prev => prev.filter(e => e.id !== expenseId));
       toast.success("Expense deleted");
       return true;
