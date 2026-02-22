@@ -138,22 +138,8 @@ export default function Index() {
             </div>
           </div>
 
-          {/* AI Insights Card */}
-          <Link to="/insights" className="block stagger-4 opacity-0 animate-slide-up">
-            <div className="card-elevated p-4 flex items-center gap-3 hover:ring-2 hover:ring-primary/20 transition-all">
-              <div className="h-10 w-10 rounded-xl bg-violet-100 dark:bg-violet-900/30 flex items-center justify-center">
-                <Sparkles className="h-5 w-5 text-violet-600 dark:text-violet-400" />
-              </div>
-              <div className="flex-1">
-                <p className="text-sm font-semibold text-foreground">AI Insights</p>
-                <p className="text-xs text-muted-foreground">Get smart analysis of your finances</p>
-              </div>
-              <ArrowUpRight className="h-4 w-4 text-muted-foreground" />
-            </div>
-          </Link>
-
           {/* Quick Actions */}
-          <div className="space-y-3 stagger-5 opacity-0 animate-slide-up" data-tour="quick-actions">
+          <div className="space-y-3 stagger-4 opacity-0 animate-slide-up" data-tour="quick-actions">
             <h2 className="font-semibold text-foreground">Quick Actions</h2>
             <div className="grid grid-cols-3 gap-3">
               <Link to="/bills/new">
@@ -185,6 +171,20 @@ export default function Index() {
               </Link>
             </div>
           </div>
+
+          {/* AI Insights Card */}
+          <Link to="/insights" className="block stagger-5 opacity-0 animate-slide-up">
+            <div className="card-elevated p-4 flex items-center gap-3 hover:ring-2 hover:ring-primary/20 transition-all">
+              <div className="h-10 w-10 rounded-xl bg-violet-100 dark:bg-violet-900/30 flex items-center justify-center">
+                <Sparkles className="h-5 w-5 text-violet-600 dark:text-violet-400" />
+              </div>
+              <div className="flex-1">
+                <p className="text-sm font-semibold text-foreground">AI Insights</p>
+                <p className="text-xs text-muted-foreground">Get smart analysis of your finances</p>
+              </div>
+              <ArrowUpRight className="h-4 w-4 text-muted-foreground" />
+            </div>
+          </Link>
 
           {/* Recent Activity */}
           <div className="space-y-3 stagger-6 opacity-0 animate-slide-up" data-tour="recent-activity">
