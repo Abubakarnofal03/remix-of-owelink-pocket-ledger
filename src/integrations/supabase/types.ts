@@ -326,6 +326,77 @@ export type Database = {
         }
         Relationships: []
       }
+      expense_group_members: {
+        Row: {
+          created_at: string
+          group_id: string
+          id: string
+          nickname: string | null
+          phone_number: string
+          phone_suffix: string | null
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          group_id: string
+          id?: string
+          nickname?: string | null
+          phone_number: string
+          phone_suffix?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          group_id?: string
+          id?: string
+          nickname?: string | null
+          phone_number?: string
+          phone_suffix?: string | null
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "expense_group_members_group_id_fkey"
+            columns: ["group_id"]
+            isOneToOne: false
+            referencedRelation: "expense_groups"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      expense_groups: {
+        Row: {
+          created_at: string
+          creator_id: string
+          currency: string
+          deleted_at: string | null
+          description: string | null
+          id: string
+          name: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          creator_id: string
+          currency?: string
+          deleted_at?: string | null
+          description?: string | null
+          id?: string
+          name: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          creator_id?: string
+          currency?: string
+          deleted_at?: string | null
+          description?: string | null
+          id?: string
+          name?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       expenses: {
         Row: {
           amount: number
@@ -372,6 +443,57 @@ export type Database = {
             columns: ["bucket_id"]
             isOneToOne: false
             referencedRelation: "expense_buckets"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      group_expenses: {
+        Row: {
+          amount: number
+          created_at: string
+          deleted_at: string | null
+          description: string | null
+          group_id: string
+          id: string
+          paid_by_member_id: string
+          split_details: Json | null
+          split_type: string
+        }
+        Insert: {
+          amount: number
+          created_at?: string
+          deleted_at?: string | null
+          description?: string | null
+          group_id: string
+          id?: string
+          paid_by_member_id: string
+          split_details?: Json | null
+          split_type?: string
+        }
+        Update: {
+          amount?: number
+          created_at?: string
+          deleted_at?: string | null
+          description?: string | null
+          group_id?: string
+          id?: string
+          paid_by_member_id?: string
+          split_details?: Json | null
+          split_type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "group_expenses_group_id_fkey"
+            columns: ["group_id"]
+            isOneToOne: false
+            referencedRelation: "expense_groups"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "group_expenses_paid_by_member_id_fkey"
+            columns: ["paid_by_member_id"]
+            isOneToOne: false
+            referencedRelation: "expense_group_members"
             referencedColumns: ["id"]
           },
         ]
