@@ -6,17 +6,19 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { AvatarCustom } from "@/components/ui/avatar-custom";
 import { MoneyDisplay } from "@/components/ui/MoneyDisplay";
 import { Button } from "@/components/ui/button";
-import { MessageCircle, ChevronDown, ChevronUp, Plus, Phone, User } from "lucide-react";
+import { MessageCircle, ChevronDown, ChevronUp, Plus, Phone, User, Banknote } from "lucide-react";
 import { useContacts } from "@/hooks/useContacts";
 import { formatPhoneForWhatsApp } from "@/lib/phoneUtils";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { cn } from "@/lib/utils";
+import { BulkSettlementDialog } from "./BulkSettlementDialog";
 
 interface GroupedIOUListProps {
   ious: IOU[];
   loading?: boolean;
-  isCreditor?: boolean; // true = "owed to me", false = "I owe"
+  isCreditor?: boolean;
   contactsLoading?: boolean;
+  onBulkSettle?: (updates: { id: string; amount_paid: number; status: string }[]) => Promise<void>;
 }
 
 interface PersonGroup {
@@ -29,10 +31,11 @@ interface PersonGroup {
   pendingIOUs: IOU[];
 }
 
-export function GroupedIOUList({ ious, loading, isCreditor = true, contactsLoading = false }: GroupedIOUListProps) {
+export function GroupedIOUList({ ious, loading, isCreditor = true, contactsLoading = false, onBulkSettle }: GroupedIOUListProps) {
   const { contacts } = useContacts();
   const navigate = useNavigate();
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+  const [settlementGroup, setSettlementGroup] = useState<PersonGroup | null>(null);
 
   // Get contact name from phone number
   const getContactName = (phone: string): string => {
@@ -234,6 +237,22 @@ export function GroupedIOUList({ ious, loading, isCreditor = true, contactsLoadi
                     </Button>
                   )}
                   
+                  {/* Settle button - only for creditor with pending IOUs */}
+                  {isCreditor && hasPending && onBulkSettle && (
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSettlementGroup(group);
+                      }}
+                      className="h-8 w-8 rounded-full border-primary/30 hover:bg-primary/10"
+                      title={`Settle ${group.name}'s IOUs`}
+                    >
+                      <Banknote className="h-4 w-4 text-primary" />
+                    </Button>
+                  )}
+
                   {/* WhatsApp button - only show for creditor with pending IOUs */}
                   {isCreditor && hasPending && (
                     <Button
@@ -335,6 +354,16 @@ export function GroupedIOUList({ ious, loading, isCreditor = true, contactsLoadi
           </div>
         );
       })}
+      {settlementGroup && onBulkSettle && (
+        <BulkSettlementDialog
+          open={!!settlementGroup}
+          onOpenChange={(open) => !open && setSettlementGroup(null)}
+          personName={settlementGroup.name}
+          pendingIOUs={settlementGroup.pendingIOUs}
+          currency={settlementGroup.currency}
+          onConfirm={onBulkSettle}
+        />
+      )}
     </div>
   );
 }

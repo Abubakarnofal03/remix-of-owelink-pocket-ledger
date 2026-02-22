@@ -376,6 +376,33 @@ export function useIOUs() {
     }
   };
 
+  const bulkSettleIOUs = async (updates: { id: string; amount_paid: number; status: string }[]) => {
+    for (const upd of updates) {
+      await updateIOUOfflineFirst(upd.id, {
+        amount_paid: upd.amount_paid,
+        status: upd.status,
+      } as any);
+
+      // Optimistic cache update
+      queryClient.setQueryData<IOU[]>(iousQueryKey, (old = []) =>
+        old.map((i) =>
+          i.id === upd.id ? { ...i, amount_paid: upd.amount_paid, status: upd.status } : i
+        )
+      );
+
+      // Server sync if online
+      if (offline.isOnline && !upd.id.startsWith("local-")) {
+        supabase
+          .from("ious")
+          .update({ amount_paid: upd.amount_paid, status: upd.status })
+          .eq("id", upd.id)
+          .then();
+      }
+    }
+
+    queryClient.invalidateQueries({ queryKey: iousQueryKey });
+  };
+
   return {
     ious,
     owedToMe,
@@ -387,6 +414,7 @@ export function useIOUs() {
     getIOUById,
     updateIOUInCache,
     togglePin,
+    bulkSettleIOUs,
     refetch: () => queryClient.invalidateQueries({ queryKey: iousQueryKey }),
   };
 }
