@@ -8,15 +8,17 @@ interface SettlementSummaryProps {
   settlements: Settlement[];
   members: ExpenseGroupMember[];
   currency: string;
+  hasExpenses?: boolean;
 }
 
-export function SettlementSummary({ settlements, members, currency }: SettlementSummaryProps) {
+export function SettlementSummary({ settlements, members, currency, hasExpenses = false }: SettlementSummaryProps) {
   const getMemberName = (id: string) => {
     const member = members.find(m => m.id === id);
     return member?.nickname || member?.phone_number || 'Unknown';
   };
 
   if (settlements.length === 0) {
+    if (!hasExpenses) return null;
     return (
       <Card className="border-emerald-200 dark:border-emerald-800 bg-emerald-50/50 dark:bg-emerald-950/20">
         <CardContent className="p-4 flex items-center gap-3">

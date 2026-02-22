@@ -165,7 +165,7 @@ export default function GroupExpenseDetail() {
         </Card>
 
         {/* Settlement Summary */}
-        <SettlementSummary settlements={settlements} members={members} currency={group.currency} />
+        <SettlementSummary settlements={settlements} members={members} currency={group.currency} hasExpenses={expenses.length > 0} />
 
         {/* Members */}
         <div className="space-y-3">
