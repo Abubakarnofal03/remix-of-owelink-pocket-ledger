@@ -138,6 +138,7 @@ export type Database = {
           description: string | null
           due_date: string | null
           id: string
+          is_pinned: boolean
           last_reminder_sent_at: string | null
           reminder_enabled: boolean | null
           reminder_interval_days: number | null
@@ -154,6 +155,7 @@ export type Database = {
           description?: string | null
           due_date?: string | null
           id?: string
+          is_pinned?: boolean
           last_reminder_sent_at?: string | null
           reminder_enabled?: boolean | null
           reminder_interval_days?: number | null
@@ -170,6 +172,7 @@ export type Database = {
           description?: string | null
           due_date?: string | null
           id?: string
+          is_pinned?: boolean
           last_reminder_sent_at?: string | null
           reminder_enabled?: boolean | null
           reminder_interval_days?: number | null
@@ -248,6 +251,48 @@ export type Database = {
           phone_suffix?: string
           updated_at?: string
           user_id?: string
+        }
+        Relationships: []
+      }
+      disputes: {
+        Row: {
+          created_at: string
+          creator_response: string | null
+          disputed_by_phone_suffix: string
+          disputed_by_user_id: string | null
+          entity_id: string
+          entity_type: string
+          id: string
+          proposed_amount: number | null
+          reason: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          creator_response?: string | null
+          disputed_by_phone_suffix: string
+          disputed_by_user_id?: string | null
+          entity_id: string
+          entity_type: string
+          id?: string
+          proposed_amount?: number | null
+          reason: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          creator_response?: string | null
+          disputed_by_phone_suffix?: string
+          disputed_by_user_id?: string | null
+          entity_id?: string
+          entity_type?: string
+          id?: string
+          proposed_amount?: number | null
+          reason?: string
+          status?: string
+          updated_at?: string
         }
         Relationships: []
       }
@@ -447,6 +492,7 @@ export type Database = {
           direction: string
           due_date: string | null
           id: string
+          is_pinned: boolean
           last_reminder_sent_at: string | null
           reminder_enabled: boolean | null
           reminder_interval_days: number | null
@@ -467,6 +513,7 @@ export type Database = {
           direction?: string
           due_date?: string | null
           id?: string
+          is_pinned?: boolean
           last_reminder_sent_at?: string | null
           reminder_enabled?: boolean | null
           reminder_interval_days?: number | null
@@ -487,6 +534,7 @@ export type Database = {
           direction?: string
           due_date?: string | null
           id?: string
+          is_pinned?: boolean
           last_reminder_sent_at?: string | null
           reminder_enabled?: boolean | null
           reminder_interval_days?: number | null

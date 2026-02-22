@@ -32,6 +32,7 @@ export interface IOU {
   updated_at: string;
   deleted_at: string | null;
   is_local?: boolean;
+  is_pinned?: boolean;
   reminder_enabled?: boolean;
   reminder_interval_days?: number | null;
   last_reminder_sent_at?: string | null;
@@ -70,6 +71,7 @@ function localIOUToIOU(local: LocalIOU): IOU {
     updated_at: local.updated_at,
     deleted_at: local.deleted_at,
     is_local: local.is_local,
+    is_pinned: (local as any).is_pinned || false,
     reminder_enabled: local.reminder_enabled,
     reminder_interval_days: local.reminder_interval_days,
     last_reminder_sent_at: local.last_reminder_sent_at,
@@ -359,6 +361,21 @@ export function useIOUs() {
     );
   };
 
+  const togglePin = async (id: string, currentlyPinned: boolean) => {
+    const newPinned = !currentlyPinned;
+    queryClient.setQueryData<IOU[]>(iousQueryKey, (old = []) =>
+      old.map((i) => (i.id === id ? { ...i, is_pinned: newPinned } : i))
+    );
+    try {
+      await offlineDb.ious.update(id, { is_pinned: newPinned } as any);
+    } catch (e) {
+      console.warn("Failed to update local pin:", e);
+    }
+    if (offline.isOnline && !id.startsWith("local-")) {
+      supabase.from("ious").update({ is_pinned: newPinned }).eq("id", id).then();
+    }
+  };
+
   return {
     ious,
     owedToMe,
@@ -369,6 +386,7 @@ export function useIOUs() {
     deleteIOU,
     getIOUById,
     updateIOUInCache,
+    togglePin,
     refetch: () => queryClient.invalidateQueries({ queryKey: iousQueryKey }),
   };
 }

@@ -5,8 +5,12 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import { useIOUDetail, useIOUs } from "@/hooks/useIOUs";
 import { useContacts } from "@/hooks/useContacts";
 import { useIOUPaymentRequests } from "@/hooks/useIOUPaymentRequests";
+import { useDisputes } from "@/hooks/useDisputes";
 import { IOUSwipeContainer } from "@/components/ious/IOUSwipeContainer";
 import { useOffline } from "@/hooks/useOffline";
+import { DisputeDialog } from "@/components/disputes/DisputeDialog";
+import { DisputeCard } from "@/components/disputes/DisputeCard";
+import { DisputeResponseDialog } from "@/components/disputes/DisputeResponseDialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -57,6 +61,7 @@ import {
   Bell,
   BellOff,
   Send,
+  AlertTriangle,
 } from "lucide-react";
 import { toast } from "sonner";
 import { getPhoneSuffix, sendPushNotification } from "@/lib/notifications";
@@ -78,6 +83,8 @@ export default function IOUDetail() {
   const [showPaymentDialog, setShowPaymentDialog] = useState(false);
   const [showPaymentRequestDialog, setShowPaymentRequestDialog] = useState(false);
   const [showEditPaymentDialog, setShowEditPaymentDialog] = useState(false);
+  const [showDisputeDialog, setShowDisputeDialog] = useState(false);
+  const [selectedDispute, setSelectedDispute] = useState<any>(null);
   const [paymentAmount, setPaymentAmount] = useState("");
   const [editPaymentAmount, setEditPaymentAmount] = useState("");
   const [editForm, setEditForm] = useState({
@@ -85,6 +92,9 @@ export default function IOUDetail() {
     amount: "",
     due_date: "",
   });
+
+  // Disputes hook - must be before early returns
+  const { disputes, createDispute, updateDispute, isCreating: isDisputeCreating, isUpdating: isDisputeUpdating } = useDisputes("iou", id);
 
   // Check if current user is the debtor - must be before any early returns
   const userPhoneSuffix = profile?.phone_suffix || (profile?.phone_number ? getPhoneSuffix(profile.phone_number) : null);
@@ -678,6 +688,32 @@ Never lose track of debts again. Split bills, send reminders & get paid faster.
           </Button>
         )}
 
+        {/* Dispute button - for debtors */}
+        {isDebtor && iou.status !== "paid" && (
+          <Button
+            variant="outline"
+            className="w-full border-amber-300 text-amber-700 hover:bg-amber-50 dark:border-amber-700 dark:text-amber-400 dark:hover:bg-amber-950"
+            onClick={() => setShowDisputeDialog(true)}
+          >
+            <AlertTriangle className="h-4 w-4 mr-2" />
+            Dispute Amount
+          </Button>
+        )}
+
+        {/* Disputes section */}
+        {disputes.length > 0 && (
+          <div className="space-y-3">
+            <h3 className="font-medium text-sm text-foreground">Disputes ({disputes.length})</h3>
+            {disputes.map((dispute) => (
+              <div key={dispute.id} onClick={() => {
+                if (isCreditor && dispute.status === 'open') setSelectedDispute(dispute);
+              }} className={isCreditor && dispute.status === 'open' ? 'cursor-pointer' : ''}>
+                <DisputeCard dispute={dispute} currency={iou.currency} />
+              </div>
+            ))}
+          </div>
+        )}
+
         {/* Edit Dialog */}
         <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
           <DialogContent>
@@ -809,6 +845,38 @@ Never lose track of debts again. Split bills, send reminders & get paid faster.
           currency={iou.currency}
           onSubmit={handlePaymentRequestSubmit}
         />
+        {/* Dispute Dialog - for debtors */}
+        <DisputeDialog
+          open={showDisputeDialog}
+          onOpenChange={setShowDisputeDialog}
+          entityType="iou"
+          entityId={iou.id}
+          currentAmount={iou.amount}
+          currency={iou.currency}
+          onSubmit={async (data) => {
+            await createDispute({ entity_type: "iou", entity_id: iou.id, ...data });
+          }}
+          isSubmitting={isDisputeCreating}
+        />
+
+        {/* Dispute Response Dialog - for creditors */}
+        {selectedDispute && (
+          <DisputeResponseDialog
+            open={!!selectedDispute}
+            onOpenChange={(open) => !open && setSelectedDispute(null)}
+            dispute={selectedDispute}
+            currency={iou.currency}
+            onAccept={async (response) => {
+              await updateDispute(selectedDispute.id, "accepted", response);
+              setSelectedDispute(null);
+            }}
+            onReject={async (response) => {
+              await updateDispute(selectedDispute.id, "rejected", response);
+              setSelectedDispute(null);
+            }}
+            isSubmitting={isDisputeUpdating}
+          />
+        )}
       </div>
       </IOUSwipeContainer>
     </AppLayout>
