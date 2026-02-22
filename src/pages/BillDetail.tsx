@@ -75,6 +75,11 @@ import {
 import { useOffline } from "@/hooks/useOffline";
 import { sendPushNotification, getPhoneSuffix } from "@/lib/notifications";
 import { formatPhoneForWhatsApp } from "@/lib/phoneUtils";
+import { useDisputes } from "@/hooks/useDisputes";
+import { DisputeDialog } from "@/components/disputes/DisputeDialog";
+import { DisputeCard } from "@/components/disputes/DisputeCard";
+import { DisputeResponseDialog } from "@/components/disputes/DisputeResponseDialog";
+import { AlertTriangle } from "lucide-react";
 
 export default function BillDetail() {
   const { user, profile, loading: authLoading } = useAuth();
@@ -85,8 +90,11 @@ export default function BillDetail() {
   const { contacts, addContact } = useContacts();
   const { sync } = useOffline();
   const { requests, createRequest, updateRequestStatus, refetch: refetchRequests } = usePaymentRequests(id);
+  const { disputes, createDispute, updateDispute, loading: disputesLoading } = useDisputes('bill', id);
 
   const [showEditDialog, setShowEditDialog] = useState(false);
+  const [showDisputeDialog, setShowDisputeDialog] = useState(false);
+  const [selectedDispute, setSelectedDispute] = useState<any>(null);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showPaymentDialog, setShowPaymentDialog] = useState(false);
   const [showAddParticipantDialog, setShowAddParticipantDialog] = useState(false);
@@ -127,6 +135,16 @@ export default function BillDetail() {
 
     return filtered;
   }, [contacts, bill?.participants, searchQuery]);
+
+  // Find current user's participant record (for debtors) - must be before early returns
+  const userPhoneSuffix = profile?.phone_suffix || (profile?.phone_number ? getPhoneSuffix(profile.phone_number) : null);
+  const currentUserParticipant = useMemo(() => {
+    if (!userPhoneSuffix || !bill?.participants) return null;
+    return bill.participants.find(p => {
+      const pSuffix = p.phone_suffix || getPhoneSuffix(p.phone_number);
+      return pSuffix === userPhoneSuffix;
+    });
+  }, [bill?.participants, userPhoneSuffix]);
 
   if (authLoading || loading) {
     return (
@@ -172,16 +190,6 @@ export default function BillDetail() {
     });
     return contact?.nickname || phoneSuffix;
   };
-
-  // Find current user's participant record (for debtors)
-  const userPhoneSuffix = profile?.phone_suffix || (profile?.phone_number ? getPhoneSuffix(profile.phone_number) : null);
-  const currentUserParticipant = useMemo(() => {
-    if (!userPhoneSuffix || !bill?.participants) return null;
-    return bill.participants.find(p => {
-      const pSuffix = p.phone_suffix || getPhoneSuffix(p.phone_number);
-      return pSuffix === userPhoneSuffix;
-    });
-  }, [bill?.participants, userPhoneSuffix]);
 
   // Check if user is a debtor (participant but not creator)
   const isDebtor = !isCreator && !!currentUserParticipant;
@@ -985,7 +993,72 @@ Never lose track of debts again. Split bills, send reminders & get paid faster.
             getContactName={getContactNameBySuffix}
           />
         )}
+
+        {/* Dispute Section */}
+        {isDebtor && currentUserParticipant && currentUserParticipant.status !== 'paid' && debtorRemainingAmount > 0 && (
+          <div className="card-elevated p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-medium text-foreground flex items-center gap-2">
+                  <AlertTriangle className="h-4 w-4 text-amber-500" />
+                  Dispute Amount
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  Think the amount is wrong? File a dispute
+                </p>
+              </div>
+              <Button
+                variant="outline"
+                onClick={() => setShowDisputeDialog(true)}
+              >
+                Dispute
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* Disputes List */}
+        {disputes.length > 0 && (
+          <div className="space-y-3">
+            <h2 className="font-semibold text-foreground flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4" />
+              Disputes ({disputes.length})
+            </h2>
+            {disputes.map((dispute) => (
+              <DisputeCard
+                key={dispute.id}
+                dispute={dispute}
+                currency={bill.currency}
+                isCreator={isCreator}
+                getContactName={getContactNameBySuffix}
+                onRespond={isCreator ? () => setSelectedDispute(dispute) : undefined}
+              />
+            ))}
+          </div>
+        )}
       </div>
+
+      {/* Dispute Dialog */}
+      <DisputeDialog
+        open={showDisputeDialog}
+        onOpenChange={setShowDisputeDialog}
+        entityType="bill"
+        entityId={bill.id}
+        currentAmount={debtorRemainingAmount}
+        currency={bill.currency}
+        onSubmit={createDispute}
+      />
+
+      {/* Dispute Response Dialog */}
+      {selectedDispute && (
+        <DisputeResponseDialog
+          open={!!selectedDispute}
+          onOpenChange={(open) => !open && setSelectedDispute(null)}
+          dispute={selectedDispute}
+          currency={bill.currency}
+          onRespond={updateDispute}
+        />
+      )}
 
       {/* Edit Dialog */}
       <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>

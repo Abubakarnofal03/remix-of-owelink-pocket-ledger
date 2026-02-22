@@ -1,5 +1,5 @@
 import { Link, useLocation } from "react-router-dom";
-import { Home, Receipt, FileText, Wallet, Users } from "lucide-react";
+import { Home, Receipt, FileText, Wallet, Users, UsersRound } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { hapticLight } from "@/lib/haptics";
 
@@ -7,7 +7,7 @@ const navItems = [
   { path: "/", icon: Home, label: "Home", tourId: "nav-home" },
   { path: "/bills", icon: Receipt, label: "Bills", tourId: "nav-bills" },
   { path: "/ious", icon: FileText, label: "Owes", tourId: "nav-owes" },
-  { path: "/expenses", icon: Wallet, label: "Expenses", tourId: "nav-expenses" },
+  { path: "/groups", icon: UsersRound, label: "Groups", tourId: "nav-groups" },
   { path: "/contacts", icon: Users, label: "Contacts", tourId: "nav-contacts" },
 ];
 
