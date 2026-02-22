@@ -141,6 +141,15 @@ export async function processSyncItem(item: SyncQueueItem): Promise<boolean> {
       case 'bill_notice':
         success = await syncBillNotice(item);
         break;
+      case 'expense_group':
+        success = await syncExpenseGroup(item);
+        break;
+      case 'expense_group_member':
+        success = await syncExpenseGroupMember(item);
+        break;
+      case 'group_expense':
+        success = await syncGroupExpense(item);
+        break;
     }
 
     if (success) {
@@ -750,6 +759,91 @@ async function syncBillNotice(item: SyncQueueItem): Promise<boolean> {
     }
   }
 
+  return false;
+}
+
+// Sync expense group operations
+async function syncExpenseGroup(item: SyncQueueItem): Promise<boolean> {
+  const { operation, entity_id, payload } = item;
+
+  switch (operation) {
+    case 'create': {
+      const { id: _, is_local: __, synced_at: ___, ...data } = payload;
+      const { error } = await withTimeout(
+        supabase.from('expense_groups').upsert({ ...data, id: entity_id } as any, { onConflict: 'id' }).select().single(),
+        SYNC_REQUEST_TIMEOUT_MS, 'Expense group upsert'
+      );
+      if (error) throw error;
+      await offlineDb.expenseGroups.update(entity_id, { synced_at: Date.now(), is_local: false });
+      return true;
+    }
+    case 'update': {
+      const { id: _, is_local: __, synced_at: ___, ...updateData } = payload;
+      const { error } = await withTimeout(
+        supabase.from('expense_groups').update(updateData).eq('id', entity_id),
+        SYNC_REQUEST_TIMEOUT_MS, 'Expense group update'
+      );
+      if (error) throw error;
+      await offlineDb.expenseGroups.update(entity_id, { synced_at: Date.now(), is_local: false });
+      return true;
+    }
+    case 'delete': {
+      const { error } = await supabase.from('expense_groups').update({ deleted_at: new Date().toISOString() }).eq('id', entity_id);
+      if (error) throw error;
+      await offlineDb.expenseGroups.delete(entity_id);
+      return true;
+    }
+  }
+  return false;
+}
+
+// Sync expense group member operations
+async function syncExpenseGroupMember(item: SyncQueueItem): Promise<boolean> {
+  const { operation, entity_id, payload } = item;
+
+  switch (operation) {
+    case 'create': {
+      const { id: _, is_local: __, synced_at: ___, ...data } = payload;
+      const { error } = await withTimeout(
+        supabase.from('expense_group_members').upsert({ ...data, id: entity_id } as any, { onConflict: 'id' }).select().single(),
+        SYNC_REQUEST_TIMEOUT_MS, 'Group member upsert'
+      );
+      if (error) throw error;
+      await offlineDb.expenseGroupMembers.update(entity_id, { synced_at: Date.now(), is_local: false });
+      return true;
+    }
+    case 'delete': {
+      const { error } = await supabase.from('expense_group_members').delete().eq('id', entity_id);
+      if (error) throw error;
+      await offlineDb.expenseGroupMembers.delete(entity_id);
+      return true;
+    }
+  }
+  return false;
+}
+
+// Sync group expense operations
+async function syncGroupExpense(item: SyncQueueItem): Promise<boolean> {
+  const { operation, entity_id, payload } = item;
+
+  switch (operation) {
+    case 'create': {
+      const { id: _, is_local: __, synced_at: ___, ...data } = payload;
+      const { error } = await withTimeout(
+        supabase.from('group_expenses').upsert({ ...data, id: entity_id } as any, { onConflict: 'id' }).select().single(),
+        SYNC_REQUEST_TIMEOUT_MS, 'Group expense upsert'
+      );
+      if (error) throw error;
+      await offlineDb.groupExpenses.update(entity_id, { synced_at: Date.now(), is_local: false });
+      return true;
+    }
+    case 'delete': {
+      const { error } = await supabase.from('group_expenses').update({ deleted_at: new Date().toISOString() }).eq('id', entity_id);
+      if (error) throw error;
+      await offlineDb.groupExpenses.delete(entity_id);
+      return true;
+    }
+  }
   return false;
 }
 

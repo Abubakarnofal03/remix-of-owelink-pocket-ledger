@@ -62,8 +62,8 @@ export default function GroupExpenses() {
               <GroupCard
                 key={group.id}
                 group={group}
-                memberCount={0}
-                totalExpenses={0}
+                memberCount={group.memberCount}
+                totalExpenses={group.totalExpenses}
               />
             ))}
           </div>

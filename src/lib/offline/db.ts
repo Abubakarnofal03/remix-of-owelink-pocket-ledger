@@ -277,10 +277,49 @@ export interface LocalBillNotice {
   is_local?: boolean;
 }
 
+export interface LocalExpenseGroup {
+  id: string;
+  creator_id: string;
+  name: string;
+  description: string | null;
+  currency: string;
+  created_at: string;
+  updated_at: string;
+  deleted_at: string | null;
+  synced_at?: number;
+  is_local?: boolean;
+}
+
+export interface LocalExpenseGroupMember {
+  id: string;
+  group_id: string;
+  phone_number: string;
+  phone_suffix: string | null;
+  user_id: string | null;
+  nickname: string | null;
+  created_at: string;
+  synced_at?: number;
+  is_local?: boolean;
+}
+
+export interface LocalGroupExpense {
+  id: string;
+  group_id: string;
+  paid_by_member_id: string;
+  amount: number;
+  description: string | null;
+  split_type: string;
+  split_details: any;
+  created_at: string;
+  deleted_at: string | null;
+  synced_at?: number;
+  is_local?: boolean;
+}
+
 export interface SyncQueueItem {
   id?: number;
   action_id: string;
-  entity_type: 'bill' | 'bill_participant' | 'iou' | 'payment' | 'contact' | 'notification' | 'payment_request' | 'iou_payment_request' | 'expense' | 'expense_bucket' | 'bill_notice';
+  entity_type: 'bill' | 'bill_participant' | 'iou' | 'payment' | 'contact' | 'notification' | 'payment_request' | 'iou_payment_request' | 'expense' | 'expense_bucket' | 'bill_notice' | 'expense_group' | 'expense_group_member' | 'group_expense';
   operation: 'create' | 'update' | 'delete';
   entity_id: string;
   payload: Record<string, unknown>;
@@ -331,6 +370,9 @@ class OfflineDatabase extends Dexie {
   expenses!: Table<LocalExpense, string>;
   expenseBuckets!: Table<LocalExpenseBucket, string>;
   billNotices!: Table<LocalBillNotice, string>;
+  expenseGroups!: Table<LocalExpenseGroup, string>;
+  expenseGroupMembers!: Table<LocalExpenseGroupMember, string>;
+  groupExpenses!: Table<LocalGroupExpense, string>;
   syncQueue!: Table<SyncQueueItem, number>;
   syncMetadata!: Table<SyncMetadata, string>;
   localAppContacts!: Table<LocalAppContact, string>;
@@ -437,6 +479,29 @@ class OfflineDatabase extends Dexie {
       expenses: 'id, user_id, bucket_id, created_at, synced_at',
       expenseBuckets: 'id, user_id, created_at, synced_at',
       billNotices: 'id, bill_id, author_phone_suffix, created_at, synced_at',
+      syncQueue: '++id, action_id, entity_type, operation, entity_id, status, created_at',
+      syncMetadata: 'id, entity_type, last_synced_at',
+      localAppContacts: 'id, phone_suffix, nickname, created_at',
+      nicknameOverrides: 'phone_suffix, updated_at',
+    });
+
+    // Version 7: Add expense groups, members, and group expenses
+    this.version(7).stores({
+      profiles: 'id, user_id, phone_suffix, synced_at',
+      bills: 'id, creator_id, status, created_at, updated_at, synced_at',
+      billParticipants: 'id, bill_id, phone_number, phone_suffix, user_id, synced_at',
+      ious: 'id, creditor_id, debtor_phone_suffix, debtor_user_id, status, created_at, synced_at',
+      payments: 'id, reference_type, reference_id, payer_phone_number, synced_at',
+      contacts: 'id, user_id, phone_number, phone_suffix, synced_at',
+      notifications: 'id, user_id, read, created_at, synced_at',
+      paymentRequests: 'id, bill_id, participant_id, status, created_at, synced_at',
+      iouPaymentRequests: 'id, iou_id, status, created_at, synced_at',
+      expenses: 'id, user_id, bucket_id, created_at, synced_at',
+      expenseBuckets: 'id, user_id, created_at, synced_at',
+      billNotices: 'id, bill_id, author_phone_suffix, created_at, synced_at',
+      expenseGroups: 'id, creator_id, created_at, synced_at',
+      expenseGroupMembers: 'id, group_id, phone_number, synced_at',
+      groupExpenses: 'id, group_id, paid_by_member_id, created_at, synced_at',
       syncQueue: '++id, action_id, entity_type, operation, entity_id, status, created_at',
       syncMetadata: 'id, entity_type, last_synced_at',
       localAppContacts: 'id, phone_suffix, nickname, created_at',
@@ -664,6 +729,9 @@ class OfflineDatabase extends Dexie {
       this.paymentRequests.clear(),
       this.iouPaymentRequests.clear(),
       this.billNotices.clear(),
+      this.expenseGroups.clear(),
+      this.expenseGroupMembers.clear(),
+      this.groupExpenses.clear(),
       this.syncQueue.clear(),
       this.syncMetadata.clear(),
     ]);

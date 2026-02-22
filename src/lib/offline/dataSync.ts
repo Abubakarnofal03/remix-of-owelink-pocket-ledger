@@ -380,6 +380,70 @@ export async function syncIOUPaymentRequestsFromServer(userId: string): Promise<
   }
 }
 
+// Fetch and store expense groups from server
+export async function syncExpenseGroupsFromServer(userId: string): Promise<void> {
+  try {
+    const { data: groupsData, error: groupsError } = await supabase
+      .from('expense_groups')
+      .select('*')
+      .is('deleted_at', null)
+      .order('created_at', { ascending: false });
+
+    if (groupsError) throw groupsError;
+
+    if (groupsData) {
+      const now = Date.now();
+      const groupIds = groupsData.map(g => g.id);
+
+      // Fetch members and expenses for all groups in parallel
+      const [membersRes, expensesRes] = await Promise.all([
+        groupIds.length > 0 ? supabase.from('expense_group_members').select('*').in('group_id', groupIds) : { data: [], error: null },
+        groupIds.length > 0 ? supabase.from('group_expenses').select('*').in('group_id', groupIds).is('deleted_at', null) : { data: [], error: null },
+      ]);
+
+      // Store groups
+      const localGroups = await offlineDb.expenseGroups.filter(g => g.is_local === true).toArray();
+      await offlineDb.expenseGroups.clear();
+      await offlineDb.expenseGroups.bulkPut([
+        ...groupsData.map(g => ({
+          id: g.id, creator_id: g.creator_id, name: g.name, description: g.description,
+          currency: g.currency, created_at: g.created_at, updated_at: g.updated_at,
+          deleted_at: g.deleted_at, synced_at: now, is_local: false,
+        })),
+        ...localGroups,
+      ]);
+
+      // Store members
+      const localMembers = await offlineDb.expenseGroupMembers.filter(m => m.is_local === true).toArray();
+      await offlineDb.expenseGroupMembers.clear();
+      await offlineDb.expenseGroupMembers.bulkPut([
+        ...(membersRes.data || []).map((m: any) => ({
+          id: m.id, group_id: m.group_id, phone_number: m.phone_number,
+          phone_suffix: m.phone_suffix, user_id: m.user_id, nickname: m.nickname,
+          created_at: m.created_at, synced_at: now, is_local: false,
+        })),
+        ...localMembers,
+      ]);
+
+      // Store group expenses
+      const localExpenses = await offlineDb.groupExpenses.filter(e => e.is_local === true).toArray();
+      await offlineDb.groupExpenses.clear();
+      await offlineDb.groupExpenses.bulkPut([
+        ...(expensesRes.data || []).map((e: any) => ({
+          id: e.id, group_id: e.group_id, paid_by_member_id: e.paid_by_member_id,
+          amount: e.amount, description: e.description, split_type: e.split_type,
+          split_details: e.split_details, created_at: e.created_at,
+          deleted_at: e.deleted_at, synced_at: now, is_local: false,
+        })),
+        ...localExpenses,
+      ]);
+    }
+  } catch (error) {
+    console.error('Error syncing expense groups from server:', error);
+    throw error;
+  }
+}
+
 // Full sync - fetch all data from server
 export async function performFullSync(userId: string, phoneSuffix: string | null): Promise<void> {
   await Promise.all([
@@ -390,6 +454,7 @@ export async function performFullSync(userId: string, phoneSuffix: string | null
     syncNotificationsFromServer(userId),
     syncPaymentRequestsFromServer(userId),
     syncIOUPaymentRequestsFromServer(userId),
+    syncExpenseGroupsFromServer(userId),
   ]);
   
   // Update sync metadata
@@ -401,5 +466,6 @@ export async function performFullSync(userId: string, phoneSuffix: string | null
     { id: 'notifications', entity_type: 'notifications', last_synced_at: Date.now(), last_server_timestamp: null },
     { id: 'payment_requests', entity_type: 'payment_requests', last_synced_at: Date.now(), last_server_timestamp: null },
     { id: 'iou_payment_requests', entity_type: 'iou_payment_requests', last_synced_at: Date.now(), last_server_timestamp: null },
+    { id: 'expense_groups', entity_type: 'expense_groups', last_synced_at: Date.now(), last_server_timestamp: null },
   ]);
 }
