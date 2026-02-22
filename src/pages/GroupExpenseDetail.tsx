@@ -12,6 +12,7 @@ import { AddGroupExpenseDialog } from "@/components/groups/AddGroupExpenseDialog
 import { SettlementSummary } from "@/components/groups/SettlementSummary";
 import { calculateBalances, simplifyDebts } from "@/lib/debtSimplification";
 import { Navigate, useParams, useNavigate } from "react-router-dom";
+import { cn } from "@/lib/utils";
 import { ArrowLeft, Plus, Users, Receipt, Trash2, UserPlus } from "lucide-react";
 import { format } from "date-fns";
 import { Input } from "@/components/ui/input";
@@ -59,10 +60,48 @@ export default function GroupExpenseDetail() {
 
   const totalExpenses = expenses.reduce((sum, e) => sum + e.amount, 0);
 
+  // Calculate per-member balances
+  const memberBalances = useMemo(() => {
+    if (members.length === 0) return new Map<string, number>();
+    const memberIds = members.map(m => m.id);
+    return calculateBalances(
+      expenses.map(e => ({
+        paid_by_member_id: e.paid_by_member_id,
+        amount: e.amount,
+        split_type: e.split_type,
+        split_details: e.split_details,
+      })),
+      memberIds
+    );
+  }, [members, expenses]);
+
+  // Per-member expense breakdown
+  const getMemberExpenses = (memberId: string) => {
+    return expenses.filter(e => e.paid_by_member_id === memberId);
+  };
+
+  const getMemberOwedShare = (memberId: string) => {
+    let totalOwed = 0;
+    for (const expense of expenses) {
+      if (expense.split_type === 'equal') {
+        totalOwed += expense.amount / members.length;
+      } else if (expense.split_type === 'exact' && expense.split_details) {
+        const details = expense.split_details as Record<string, number>;
+        totalOwed += details[memberId] || 0;
+      } else if (expense.split_type === 'percentage' && expense.split_details) {
+        const details = expense.split_details as Record<string, number>;
+        totalOwed += (expense.amount * (details[memberId] || 0)) / 100;
+      }
+    }
+    return totalOwed;
+  };
+
   const getMemberName = (memberId: string) => {
     const member = members.find(m => m.id === memberId);
     return member?.nickname || member?.phone_number || 'Unknown';
   };
+
+  const [expandedMember, setExpandedMember] = useState<string | null>(null);
 
   const filteredContacts = contacts.filter(c => {
     if (members.some(m => m.phone_number === c.phone_number)) return false;
@@ -176,22 +215,97 @@ export default function GroupExpenseDetail() {
           )}
 
           <div className="space-y-2">
-            {members.map((m) => (
-              <Card key={m.id}>
-                <CardContent className="p-3 flex items-center gap-3">
-                  <AvatarCustom name={m.nickname || m.phone_number} size="sm" />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate">{m.nickname || m.phone_number}</p>
-                    <p className="text-xs text-muted-foreground">{m.phone_number}</p>
-                  </div>
-                  {isCreator && m.user_id !== user.id && (
-                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => removeMember(m.id)}>
-                      <Trash2 className="h-3 w-3 text-destructive" />
-                    </Button>
+            {members.map((m) => {
+              const balance = memberBalances.get(m.id) || 0;
+              const totalPaid = getMemberExpenses(m.id).reduce((s, e) => s + e.amount, 0);
+              const totalOwed = getMemberOwedShare(m.id);
+              const isExpanded = expandedMember === m.id;
+
+              return (
+                <Card key={m.id} className="overflow-hidden">
+                  <CardContent
+                    className="p-3 flex items-center gap-3 cursor-pointer"
+                    onClick={() => setExpandedMember(isExpanded ? null : m.id)}
+                  >
+                    <AvatarCustom name={m.nickname || m.phone_number} size="sm" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate">{m.nickname || m.phone_number}</p>
+                      <p className="text-xs text-muted-foreground">{m.phone_number}</p>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <MoneyDisplay
+                        amount={Math.abs(balance)}
+                        currency={group.currency}
+                        size="sm"
+                        className={cn(
+                          "font-semibold",
+                          balance > 0.01 ? "text-emerald-600" : balance < -0.01 ? "text-destructive" : "text-muted-foreground"
+                        )}
+                      />
+                      <p className="text-[10px] text-muted-foreground">
+                        {balance > 0.01 ? "gets back" : balance < -0.01 ? "owes" : "settled"}
+                      </p>
+                    </div>
+                    {isCreator && m.user_id !== user.id && (
+                      <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={(e) => { e.stopPropagation(); removeMember(m.id); }}>
+                        <Trash2 className="h-3 w-3 text-destructive" />
+                      </Button>
+                    )}
+                  </CardContent>
+
+                  {isExpanded && (
+                    <div className="border-t px-4 py-3 bg-muted/30 space-y-2">
+                      <div className="flex justify-between text-xs">
+                        <span className="text-muted-foreground">Total paid</span>
+                        <MoneyDisplay amount={totalPaid} currency={group.currency} size="sm" className="font-medium" />
+                      </div>
+                      <div className="flex justify-between text-xs">
+                        <span className="text-muted-foreground">Fair share owed</span>
+                        <MoneyDisplay amount={totalOwed} currency={group.currency} size="sm" className="font-medium" />
+                      </div>
+                      <div className="border-t pt-2 flex justify-between text-xs font-semibold">
+                        <span>Net balance</span>
+                        <MoneyDisplay
+                          amount={Math.abs(balance)}
+                          currency={group.currency}
+                          size="sm"
+                          className={balance > 0.01 ? "text-emerald-600" : balance < -0.01 ? "text-destructive" : "text-muted-foreground"}
+                        />
+                      </div>
+                      {getMemberExpenses(m.id).length > 0 && (
+                        <div className="border-t pt-2 space-y-1">
+                          <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">Expenses paid</p>
+                          {getMemberExpenses(m.id).map(exp => (
+                            <div key={exp.id} className="flex justify-between text-xs">
+                              <span className="truncate mr-2">{exp.description || 'Expense'}</span>
+                              <MoneyDisplay amount={exp.amount} currency={group.currency} size="sm" />
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {/* Who this member owes / is owed */}
+                      {settlements.filter(s => s.from === m.id || s.to === m.id).length > 0 && (
+                        <div className="border-t pt-2 space-y-1">
+                          <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">Settlements</p>
+                          {settlements.filter(s => s.from === m.id).map((s, i) => (
+                            <div key={`owe-${i}`} className="flex justify-between text-xs">
+                              <span className="text-destructive">Owes {getMemberName(s.to)}</span>
+                              <MoneyDisplay amount={s.amount} currency={group.currency} size="sm" className="text-destructive" />
+                            </div>
+                          ))}
+                          {settlements.filter(s => s.to === m.id).map((s, i) => (
+                            <div key={`get-${i}`} className="flex justify-between text-xs">
+                              <span className="text-emerald-600">Gets from {getMemberName(s.from)}</span>
+                              <MoneyDisplay amount={s.amount} currency={group.currency} size="sm" className="text-emerald-600" />
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   )}
-                </CardContent>
-              </Card>
-            ))}
+                </Card>
+              );
+            })}
           </div>
         </div>
 
