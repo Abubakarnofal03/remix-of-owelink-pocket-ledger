@@ -47,12 +47,19 @@ interface DeviceContact {
  * 
  * NO contacts are stored in Supabase database.
  */
+// Module-level cache so contacts persist across unmount/remount cycles
+let _cachedLocalContacts: LocalAppContact[] | null = null;
+let _cachedDeviceContacts: DeviceContact[] | null = null;
+let _cachedNicknameOverrides: Map<string, string> | null = null;
+let _hasLoadedOnce = false;
+
 export function useContacts() {
   const { user } = useAuth();
-  const [localContacts, setLocalContacts] = useState<LocalAppContact[]>([]);
-  const [deviceContacts, setDeviceContacts] = useState<DeviceContact[]>([]);
-  const [nicknameOverrides, setNicknameOverrides] = useState<Map<string, string>>(new Map());
-  const [loading, setLoading] = useState(true);
+  const [localContacts, setLocalContacts] = useState<LocalAppContact[]>(_cachedLocalContacts || []);
+  const [deviceContacts, setDeviceContacts] = useState<DeviceContact[]>(_cachedDeviceContacts || []);
+  const [nicknameOverrides, setNicknameOverrides] = useState<Map<string, string>>(_cachedNicknameOverrides || new Map());
+  // Start as not-loading if we already have cached data
+  const [loading, setLoading] = useState(!_hasLoadedOnce);
   const [hasPermission, setHasPermission] = useState<boolean | null>(null);
 
   // Load local contacts and nickname overrides from IndexedDB
@@ -64,6 +71,9 @@ export function useContacts() {
       ]);
       setLocalContacts(contacts);
       setNicknameOverrides(overrides);
+      // Update module-level cache
+      _cachedLocalContacts = contacts;
+      _cachedNicknameOverrides = overrides;
     } catch (error) {
       console.error("Error loading local contacts:", error);
     }
@@ -103,6 +113,7 @@ export function useContacts() {
         }));
 
       setDeviceContacts(mapped);
+      _cachedDeviceContacts = mapped;
       return mapped;
     } catch (error) {
       console.error("Error fetching device contacts:", error);
@@ -115,11 +126,13 @@ export function useContacts() {
     if (!user) return;
 
     const init = async () => {
-      setLoading(true);
+      // Only show loading if we have no cached data
+      if (!_hasLoadedOnce) setLoading(true);
       await Promise.all([
         loadLocalData(),
         fetchDeviceContacts(),
       ]);
+      _hasLoadedOnce = true;
       setLoading(false);
     };
 
