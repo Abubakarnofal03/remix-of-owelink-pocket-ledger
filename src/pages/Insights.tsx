@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { PageLoadingSkeleton } from "@/components/ui/PageLoadingSkeleton";
 import { useAuth } from "@/hooks/useAuth";
 import { Navigate, useNavigate } from "react-router-dom";
 import { AppLayout } from "@/components/layout/AppLayout";
@@ -47,7 +48,13 @@ export default function Insights() {
     }
   }, [user]);
 
-  if (authLoading) return null;
+  if (authLoading) {
+    return (
+      <AppLayout hideNav>
+        <PageLoadingSkeleton variant="detail" />
+      </AppLayout>
+    );
+  }
   if (!user) return <Navigate to="/auth" replace />;
 
   return (

@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import { PageLoadingSkeleton } from "@/components/ui/PageLoadingSkeleton";
 import { useAuth } from "@/hooks/useAuth";
 import { Navigate, useNavigate } from "react-router-dom";
 import { AppLayout } from "@/components/layout/AppLayout";
@@ -112,7 +113,13 @@ export default function IOUs() {
     await refetch();
   };
 
-  if (authLoading) return null;
+  if (authLoading) {
+    return (
+      <AppLayout>
+        <PageLoadingSkeleton variant="list" />
+      </AppLayout>
+    );
+  }
   if (!user) return <Navigate to="/auth" replace />;
 
   return (
