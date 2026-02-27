@@ -44,6 +44,7 @@ export interface Bill {
   reminder_interval_days?: number | null;
   last_reminder_sent_at?: string | null;
   is_pinned?: boolean;
+  receipt_url?: string | null;
   participants?: BillParticipant[];
   is_local?: boolean;
   creator?: {
@@ -60,6 +61,7 @@ export interface BillInsert {
   due_date?: string;
   reminder_enabled?: boolean;
   reminder_interval_days?: number;
+  receipt_url?: string;
   participants: {
     phone_number: string;
     amount_owed: number;
@@ -86,6 +88,7 @@ function localBillToBill(local: LocalBill & { participants?: LocalBillParticipan
     reminder_interval_days: local.reminder_interval_days,
     last_reminder_sent_at: local.last_reminder_sent_at,
     is_pinned: (local as any).is_pinned || false,
+    receipt_url: (local as any).receipt_url || null,
     is_local: local.is_local,
     creator: local.creator_username ? {
       username: local.creator_username,

@@ -103,6 +103,7 @@ export interface LocalBill {
   reminder_enabled?: boolean;
   reminder_interval_days?: number | null;
   last_reminder_sent_at?: string | null;
+  receipt_url?: string | null;
   synced_at?: number;
   is_local?: boolean;
   // Creator info (for participant/debtor view)

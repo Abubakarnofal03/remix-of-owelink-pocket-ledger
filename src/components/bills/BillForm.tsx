@@ -33,7 +33,10 @@ import {
   User,
   Smartphone,
   Bell,
+  ImagePlus,
 } from "lucide-react";
+import { compressImage, blobToFile } from "@/lib/imageCompression";
+import { supabase } from "@/integrations/supabase/client";
 import { MiniCalculator } from "@/components/ui/MiniCalculator";
 import {
   Select,
@@ -97,6 +100,8 @@ export function BillForm() {
   const [reminderInterval, setReminderInterval] = useState<string>("3");
   const [recurringEnabled, setRecurringEnabled] = useState(false);
   const [recurringFrequency, setRecurringFrequency] = useState("monthly");
+  const [receiptFile, setReceiptFile] = useState<File | null>(null);
+  const [receiptPreview, setReceiptPreview] = useState<string | null>(null);
 
   // Prevent double-submit
   const submitLockRef = useRef(false);
@@ -303,6 +308,32 @@ export function BillForm() {
         participants: allParticipants,
       };
 
+      // Upload receipt if provided
+      if (receiptFile) {
+        try {
+          let fileToUpload: File = receiptFile;
+          // Compress images before upload
+          if (receiptFile.type.startsWith("image/")) {
+            const compressed = await compressImage(receiptFile);
+            fileToUpload = blobToFile(compressed, `receipt_${Date.now()}.jpg`);
+          }
+          const filePath = `bills/${user?.id}/${Date.now()}_${fileToUpload.name}`;
+          const { error: uploadError } = await supabase.storage
+            .from("receipts")
+            .upload(filePath, fileToUpload);
+          if (!uploadError) {
+            const { data: urlData } = supabase.storage
+              .from("receipts")
+              .getPublicUrl(filePath);
+            billData.receipt_url = urlData.publicUrl;
+          } else {
+            console.warn("[BillForm] Receipt upload failed:", uploadError);
+          }
+        } catch (e) {
+          console.warn("[BillForm] Receipt compression/upload failed:", e);
+        }
+      }
+
       // Race the createBill call with a timeout to ensure UI never hangs
       const result = await Promise.race([
         createBill(billData),
@@ -388,6 +419,71 @@ export function BillForm() {
           rows={2}
           className="resize-none"
         />
+      </div>
+
+      {/* Receipt/Invoice Upload (optional) */}
+      <div className="space-y-2">
+        <Label>Receipt / Invoice (optional)</Label>
+        {receiptPreview ? (
+          <div className="relative inline-block">
+            <img
+              src={receiptPreview}
+              alt="Receipt preview"
+              className="h-24 w-24 object-cover rounded-lg border border-border"
+            />
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="absolute -top-2 -right-2 h-6 w-6 rounded-full bg-destructive text-destructive-foreground"
+              onClick={() => {
+                setReceiptFile(null);
+                setReceiptPreview(null);
+              }}
+            >
+              <X className="h-3 w-3" />
+            </Button>
+          </div>
+        ) : receiptFile && !receiptPreview ? (
+          <div className="flex items-center gap-2 p-3 bg-muted/50 rounded-lg border border-border">
+            <Receipt className="h-4 w-4 text-muted-foreground" />
+            <span className="text-sm truncate flex-1">{receiptFile.name}</span>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6"
+              onClick={() => setReceiptFile(null)}
+            >
+              <X className="h-3 w-3" />
+            </Button>
+          </div>
+        ) : null}
+        <label
+          className="flex items-center gap-2 px-4 py-3 bg-muted/50 rounded-lg border border-dashed border-border cursor-pointer hover:bg-muted transition-colors"
+        >
+          <ImagePlus className="h-4 w-4 text-muted-foreground" />
+          <span className="text-sm text-muted-foreground">
+            {receiptFile ? "Change file" : "Attach a photo or PDF"}
+          </span>
+          <input
+            type="file"
+            accept="image/*,application/pdf"
+            className="hidden"
+            onChange={async (e) => {
+              const file = e.target.files?.[0];
+              if (!file) return;
+              setReceiptFile(file);
+              if (file.type.startsWith("image/")) {
+                const reader = new FileReader();
+                reader.onload = (ev) => setReceiptPreview(ev.target?.result as string);
+                reader.readAsDataURL(file);
+              } else {
+                setReceiptPreview(null);
+              }
+            }}
+          />
+        </label>
       </div>
 
       {/* Total Amount */}

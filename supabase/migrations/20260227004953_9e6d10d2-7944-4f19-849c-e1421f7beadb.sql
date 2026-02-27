@@ -1,0 +1,1 @@
+ALTER TABLE public.bills ADD COLUMN receipt_url text NULL;
