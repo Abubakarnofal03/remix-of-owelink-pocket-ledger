@@ -1,41 +1,50 @@
 
 
-## Plan: Add Optional Invoice/Receipt Upload to Bills
+## Plan: Full Bill Visibility for All Participants
 
-### Decision: Add `receipt_url` column to `bills` table
+### Problem
+The `bill_participants` table RLS policy "Participants can view own participation" only lets a participant see **their own** row. So when friend 1 opens the bill detail, they only see themselves — not friends 2, 3, 4, or the creator's share.
 
-Using the existing `invoices` table would be wasteful — it's a completely different entity with unrelated fields (invoice_number, client_phone_number, etc.). The most efficient approach is a single nullable `text` column on `bills` plus the already-existing `receipts` storage bucket.
+### Root Cause
+Missing RLS policy. Need a policy that says: "If you are a participant of bill X, you can see ALL participants of bill X."
 
-### Technical Details
+### Changes
 
-**Database Migration:**
-- Add `receipt_url text NULL` to `bills` table — zero storage cost when unused (nullable text = no bytes for NULL rows)
+**1. Database Migration — New RLS policy on `bill_participants`**
 
-**Storage:**
-- Reuse existing `receipts` bucket (already public) — no new bucket needed
+Add a SELECT policy:
+```sql
+CREATE POLICY "Participants can view all bill members"
+  ON public.bill_participants
+  FOR SELECT
+  USING (is_bill_participant(bill_id));
+```
 
-**Code Changes:**
+This uses the existing `is_bill_participant()` security definer function — if you're in the bill, you see everyone in the bill. No recursion risk since the function is `SECURITY DEFINER`.
 
-1. **`src/components/bills/BillForm.tsx`** — Add optional file upload field after the Description section:
-   - File input accepting image/* and application/pdf
-   - Preview thumbnail when image selected
-   - Upload to `receipts` bucket on submit, store URL in `receipt_url`
-   - Compress images before upload using existing `src/lib/imageCompression.ts`
+**2. No UI changes needed**
 
-2. **`src/hooks/useBills.tsx`** — Add `receipt_url` to `BillInsert` interface and pass through in create/update mutations
+The `BillDetail.tsx` page already:
+- Shows all participants with owed/paid/remaining amounts (lines 837-986)
+- Gates edit controls behind `isCreator` checks (status dropdown, edit amount, remove, record payment, send reminder)
+- Lets non-creators file disputes and post to the notice board
+- Shows the receipt/invoice to everyone
 
-3. **`src/lib/offline/db.ts`** — Add `receipt_url` to `LocalBill` interface
+The only thing blocking participants from seeing the full picture is the missing RLS policy.
 
-4. **`src/lib/offline/offlineDataLayer.ts`** — Pass `receipt_url` through in `createBillOfflineFirst`
+### What participants will see (read-only)
+- All member names, phone numbers, avatars
+- Each member's owed amount, paid amount, remaining amount
+- Individual progress bars
+- Bill total, collected amount, remaining amount, due date
+- Receipt/invoice attachment
+- Notice board and disputes
 
-5. **`src/pages/BillDetail.tsx`** — Display receipt image/link when `receipt_url` exists (clickable thumbnail that opens full image)
-
-6. **`src/lib/offline/dataSync.ts`** — Include `receipt_url` in sync column projection
-
-### Steps
-1. Run migration: `ALTER TABLE bills ADD COLUMN receipt_url text NULL`
-2. Update Bill interfaces and offline DB schema to include `receipt_url`
-3. Add file upload UI to BillForm with image compression
-4. Upload file to `receipts` bucket on bill creation, save URL
-5. Display receipt in BillDetail page
+### What participants cannot do (unchanged)
+- Edit bill title/description/total/due date
+- Change any participant's status
+- Record payments
+- Add/remove participants
+- Send reminders
+- Archive/delete the bill
 
