@@ -197,7 +197,57 @@ export default function IOUs() {
             <GroupedIOUList ious={[]} loading isCreditor={activeTab === "owed"} contactsLoading={contactsLoading} onBulkSettle={bulkSettleIOUs} />
           ) : hasAnyIOUs ? (
             filteredList.length > 0 ? (
-              <GroupedIOUList ious={filteredList} isCreditor={activeTab !== "owe"} contactsLoading={contactsLoading} onBulkSettle={bulkSettleIOUs} />
+              activeTab === "all" ? (
+                <div className="space-y-6">
+                  {/* Owed to me section */}
+                  {filteredList.filter(iou => {
+                    const dir = (iou as any).direction || 'owed_to_me';
+                    return (iou.creditor_id === user?.id && dir === 'owed_to_me') ||
+                           (dir === 'i_owe' && iou.creditor_id !== user?.id);
+                  }).length > 0 && (
+                    <>
+                      <h3 className="text-sm font-semibold text-emerald-600 flex items-center gap-2">
+                        <ArrowDownLeft className="h-4 w-4" />
+                        Owed to me
+                      </h3>
+                      <GroupedIOUList
+                        ious={filteredList.filter(iou => {
+                          const dir = (iou as any).direction || 'owed_to_me';
+                          return (iou.creditor_id === user?.id && dir === 'owed_to_me') ||
+                                 (dir === 'i_owe' && iou.creditor_id !== user?.id);
+                        })}
+                        isCreditor
+                        contactsLoading={contactsLoading}
+                        onBulkSettle={bulkSettleIOUs}
+                      />
+                    </>
+                  )}
+                  {/* I owe section */}
+                  {filteredList.filter(iou => {
+                    const dir = (iou as any).direction || 'owed_to_me';
+                    return (iou.creditor_id === user?.id && dir === 'i_owe') ||
+                           (dir === 'owed_to_me' && iou.creditor_id !== user?.id);
+                  }).length > 0 && (
+                    <>
+                      <h3 className="text-sm font-semibold text-rose-600 flex items-center gap-2">
+                        <ArrowUpRight className="h-4 w-4" />
+                        I owe
+                      </h3>
+                      <GroupedIOUList
+                        ious={filteredList.filter(iou => {
+                          const dir = (iou as any).direction || 'owed_to_me';
+                          return (iou.creditor_id === user?.id && dir === 'i_owe') ||
+                                 (dir === 'owed_to_me' && iou.creditor_id !== user?.id);
+                        })}
+                        isCreditor={false}
+                        contactsLoading={contactsLoading}
+                      />
+                    </>
+                  )}
+                </div>
+              ) : (
+                <GroupedIOUList ious={filteredList} isCreditor={activeTab === "owed"} contactsLoading={contactsLoading} onBulkSettle={bulkSettleIOUs} />
+              )
             ) : (
               <EmptyState
                 icon={searchQuery ? Search : activeTab === "owed" ? ArrowDownLeft : ArrowUpRight}
