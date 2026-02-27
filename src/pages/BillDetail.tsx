@@ -779,6 +779,32 @@ Never lose track of debts again. Split bills, send reminders & get paid faster.
             </div>
           )}
 
+          {/* Receipt/Invoice attachment */}
+          {(bill as any).receipt_url && (
+            <div className="mt-4 pt-4 border-t border-border">
+              <p className="text-xs text-muted-foreground mb-2 flex items-center gap-1">
+                <FileCheck className="h-3 w-3" />
+                Attached Receipt
+              </p>
+              <a
+                href={(bill as any).receipt_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-block"
+              >
+                {(bill as any).receipt_url.match(/\.(jpg|jpeg|png|webp|gif)/i) ? (
+                  <img
+                    src={(bill as any).receipt_url}
+                    alt="Receipt"
+                    className="h-20 w-20 object-cover rounded-lg border border-border hover:opacity-80 transition-opacity"
+                  />
+                ) : (
+                  <span className="text-sm text-primary underline">View Receipt</span>
+                )}
+              </a>
+            </div>
+          )}
+
           {/* Show creator info for participants (non-creators) */}
           {!isCreator && bill.creator && (
             <div className="flex items-center gap-2 mt-4 pt-4 border-t border-border">

@@ -140,6 +140,7 @@ export type Database = {
           id: string
           is_pinned: boolean
           last_reminder_sent_at: string | null
+          receipt_url: string | null
           reminder_enabled: boolean | null
           reminder_interval_days: number | null
           status: string
@@ -157,6 +158,7 @@ export type Database = {
           id?: string
           is_pinned?: boolean
           last_reminder_sent_at?: string | null
+          receipt_url?: string | null
           reminder_enabled?: boolean | null
           reminder_interval_days?: number | null
           status?: string
@@ -174,6 +176,7 @@ export type Database = {
           id?: string
           is_pinned?: boolean
           last_reminder_sent_at?: string | null
+          receipt_url?: string | null
           reminder_enabled?: boolean | null
           reminder_interval_days?: number | null
           status?: string

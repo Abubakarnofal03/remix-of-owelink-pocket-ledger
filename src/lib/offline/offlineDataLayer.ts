@@ -25,6 +25,7 @@ export interface BillInsertOffline {
   due_date?: string;
   reminder_enabled?: boolean;
   reminder_interval_days?: number;
+  receipt_url?: string;
   participants: {
     phone_number: string;
     amount_owed: number;
@@ -86,6 +87,7 @@ export async function createBillOfflineFirst(
     // Explicitly default to false if undefined
     reminder_enabled: bill.reminder_enabled === true,
     reminder_interval_days: bill.reminder_enabled ? (bill.reminder_interval_days || 3) : null,
+    receipt_url: bill.receipt_url || null,
     is_local: true,
   };
 
@@ -125,6 +127,7 @@ export async function createBillOfflineFirst(
       // Ensure reminder settings are explicitly passed
       reminder_enabled: localBill.reminder_enabled || false,
       reminder_interval_days: localBill.reminder_interval_days,
+      receipt_url: localBill.receipt_url,
       _participants: bill.participants,
       _local_bill_id: localBillId,
     });

@@ -50,6 +50,7 @@ export async function syncBillsFromServer(userId: string): Promise<void> {
           deleted_at: bill.deleted_at,
           reminder_enabled: bill.reminder_enabled,
           reminder_interval_days: bill.reminder_interval_days,
+          receipt_url: (bill as any).receipt_url || null,
           synced_at: now,
           is_local: false,
           // Creator info from profile lookup
