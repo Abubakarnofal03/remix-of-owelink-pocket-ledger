@@ -141,6 +141,13 @@ export default function IOUDetail() {
   const remaining = iou.amount - iou.amount_paid;
   const progress = iou.amount > 0 ? (iou.amount_paid / iou.amount) * 100 : 0;
 
+  // For "i_owe" direction: creator is the real debtor, the other person is the real creditor
+  // For "owed_to_me" direction: creator is the real creditor
+  const isRealCreditor = isCreditor
+    ? direction === 'owed_to_me'
+    : (isDebtor && direction === 'i_owe');
+  const canManage = isCreditor || (isDebtor && direction === 'i_owe');
+
   const getContactName = (phone: string) => {
     const contact = contacts.find(c => c.phone_number === phone);
     return contact?.nickname || phone;
@@ -413,14 +420,16 @@ Never lose track of debts again. Split bills, send reminders & get paid faster.
           <div className="flex-1">
             <h1 className="font-display text-xl font-bold text-foreground">Owe Details</h1>
           </div>
-          {isCreditor && (
+          {canManage && (
             <div className="flex gap-2">
               <Button variant="ghost" size="icon" onClick={openEditDialog}>
                 <Edit className="h-4 w-4" />
               </Button>
-              <Button variant="ghost" size="icon" onClick={() => setShowDeleteDialog(true)}>
-                <Trash2 className="h-4 w-4 text-destructive" />
-              </Button>
+              {isCreditor && (
+                <Button variant="ghost" size="icon" onClick={() => setShowDeleteDialog(true)}>
+                  <Trash2 className="h-4 w-4 text-destructive" />
+                </Button>
+              )}
             </div>
           )}
         </div>
@@ -462,8 +471,8 @@ Never lose track of debts again. Split bills, send reminders & get paid faster.
             </div>
           </div>
 
-          {/* WhatsApp button for creditors */}
-          {isCreditor && iou.status !== 'paid' && (
+          {/* WhatsApp button - only for real creditors (not for "I owe" direction) */}
+          {isRealCreditor && iou.status !== 'paid' && (
             <Button
               variant="outline"
               size="sm"
@@ -483,7 +492,7 @@ Never lose track of debts again. Split bills, send reminders & get paid faster.
               <p className="text-sm text-muted-foreground mb-1">Total Amount</p>
               <MoneyDisplay amount={iou.amount} currency={iou.currency} size="xl" />
             </div>
-            {isCreditor && (
+            {canManage && (
               <Select value={iou.status} onValueChange={handleStatusChange}>
                 <SelectTrigger className="w-24">
                   <SelectValue />
@@ -502,7 +511,7 @@ Never lose track of debts again. Split bills, send reminders & get paid faster.
               <p className="text-xs text-muted-foreground mb-1">Paid</p>
               <div className="flex items-center gap-2">
                 <MoneyDisplay amount={iou.amount_paid} currency={iou.currency} className="text-emerald-600" />
-                {isCreditor && (
+                {canManage && (
                   <Button
                     variant="outline"
                     size="sm"
@@ -542,8 +551,8 @@ Never lose track of debts again. Split bills, send reminders & get paid faster.
           )}
         </div>
 
-        {/* Reminder Settings - for creditors */}
-        {isCreditor && direction === 'owed_to_me' && iou.status !== "paid" && (
+        {/* Reminder Settings - only for real creditors (owed_to_me direction) */}
+        {isRealCreditor && iou.status !== "paid" && (
           <div className="card-elevated p-4 space-y-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -643,8 +652,8 @@ Never lose track of debts again. Split bills, send reminders & get paid faster.
           </div>
         )}
 
-        {/* Payment Requests Panel - for creditors to manage requests */}
-        {isCreditor && requests.length > 0 && (
+        {/* Payment Requests Panel - for real creditors to manage requests */}
+        {canManage && requests.length > 0 && (
           <IOUPaymentRequestsPanel
             requests={requests}
             currency={iou.currency}
@@ -662,8 +671,8 @@ Never lose track of debts again. Split bills, send reminders & get paid faster.
           </div>
         )}
 
-        {/* Actions - for creditors to record payment */}
-        {isCreditor && iou.status !== "paid" && (
+        {/* Actions - for whoever can manage to record payment */}
+        {canManage && iou.status !== "paid" && (
           <Button
             className="w-full"
             onClick={() => {
@@ -676,8 +685,8 @@ Never lose track of debts again. Split bills, send reminders & get paid faster.
           </Button>
         )}
 
-        {/* Request confirmation button - for debtors who haven't fully paid */}
-        {isDebtor && iou.status !== "paid" && remaining > 0 && (
+        {/* Request confirmation button - for real debtors who haven't fully paid */}
+        {isDebtor && !canManage && iou.status !== "paid" && remaining > 0 && (
           <Button
             className="w-full"
             variant="outline"
@@ -688,8 +697,8 @@ Never lose track of debts again. Split bills, send reminders & get paid faster.
           </Button>
         )}
 
-        {/* Dispute button - for debtors */}
-        {isDebtor && iou.status !== "paid" && (
+        {/* Dispute button - for real debtors (not managers) */}
+        {isDebtor && !canManage && iou.status !== "paid" && (
           <Button
             variant="outline"
             className="w-full border-amber-300 text-amber-700 hover:bg-amber-50 dark:border-amber-700 dark:text-amber-400 dark:hover:bg-amber-950"
