@@ -32,7 +32,7 @@ export default function IOUs() {
   const { getBillDebtsOwedToMe } = useBills();
   const { contacts, loading: contactsLoading } = useContacts();
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<"owed" | "owe">("owed");
+  const [activeTab, setActiveTab] = useState<"all" | "owed" | "owe">("all");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [searchQuery, setSearchQuery] = useState("");
 
@@ -71,7 +71,8 @@ export default function IOUs() {
   }, [getBillDebtsOwedToMe, user?.id]);
 
   const mergedOwedToMe = useMemo(() => [...owedToMe, ...billDebtsAsIOUs], [owedToMe, billDebtsAsIOUs]);
-  const currentList = activeTab === "owed" ? mergedOwedToMe : iOwe;
+  const allIOUs = useMemo(() => [...mergedOwedToMe, ...iOwe], [mergedOwedToMe, iOwe]);
+  const currentList = activeTab === "all" ? allIOUs : activeTab === "owed" ? mergedOwedToMe : iOwe;
   const hasAnyIOUs = mergedOwedToMe.length > 0 || iOwe.length > 0;
 
   const filteredList = useMemo(() => {
@@ -159,14 +160,17 @@ export default function IOUs() {
 
           {/* Tabs */}
           {hasAnyIOUs && (
-            <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "owed" | "owe")} data-tour="owe-tabs">
+            <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "all" | "owed" | "owe")} data-tour="owe-tabs">
               <TabsList className="w-full">
-                <TabsTrigger value="owed" className="flex-1 gap-2">
-                  <ArrowDownLeft className="h-4 w-4" />
-                  Owed to me ({mergedOwedToMe.length})
+                <TabsTrigger value="all" className="flex-1 gap-1">
+                  All ({allIOUs.length})
                 </TabsTrigger>
-                <TabsTrigger value="owe" className="flex-1 gap-2">
-                  <ArrowUpRight className="h-4 w-4" />
+                <TabsTrigger value="owed" className="flex-1 gap-1">
+                  <ArrowDownLeft className="h-3.5 w-3.5" />
+                  Owed ({mergedOwedToMe.length})
+                </TabsTrigger>
+                <TabsTrigger value="owe" className="flex-1 gap-1">
+                  <ArrowUpRight className="h-3.5 w-3.5" />
                   I owe ({iOwe.length})
                 </TabsTrigger>
               </TabsList>
@@ -193,7 +197,7 @@ export default function IOUs() {
             <GroupedIOUList ious={[]} loading isCreditor={activeTab === "owed"} contactsLoading={contactsLoading} onBulkSettle={bulkSettleIOUs} />
           ) : hasAnyIOUs ? (
             filteredList.length > 0 ? (
-              <GroupedIOUList ious={filteredList} isCreditor={activeTab === "owed"} contactsLoading={contactsLoading} onBulkSettle={bulkSettleIOUs} />
+              <GroupedIOUList ious={filteredList} isCreditor={activeTab !== "owe"} contactsLoading={contactsLoading} onBulkSettle={bulkSettleIOUs} />
             ) : (
               <EmptyState
                 icon={searchQuery ? Search : activeTab === "owed" ? ArrowDownLeft : ArrowUpRight}

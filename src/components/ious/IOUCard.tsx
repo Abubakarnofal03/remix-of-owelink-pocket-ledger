@@ -79,12 +79,12 @@ export function IOUCard({ iou }: IOUCardProps) {
       icon: <Edit className="h-4 w-4" />,
       onClick: () => navigate(`/ious/${iou.id}`),
     },
-    ...(isCreator && iou.status !== "paid" ? [{
+    ...((isCreator || (direction === 'i_owe' && !isCreator)) && iou.status !== "paid" ? [{
       label: "Mark as Paid",
       icon: <CheckCircle className="h-4 w-4" />,
       onClick: handleMarkAsPaid,
     }] : []),
-    ...(isCreator && iou.status !== "paid" ? [{
+    ...(isCreator && direction === 'owed_to_me' && iou.status !== "paid" ? [{
       label: "Send Reminder (WhatsApp)",
       icon: <MessageCircle className="h-4 w-4" />,
       onClick: () => {
