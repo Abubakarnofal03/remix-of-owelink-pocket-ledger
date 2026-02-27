@@ -58,6 +58,8 @@ import {
   Send,
   FileCheck,
   Loader2,
+  ImagePlus,
+  Camera,
 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
@@ -73,6 +75,7 @@ import {
   updateBillOfflineFirst,
 } from "@/lib/offline/offlineDataLayer";
 import { useOffline } from "@/hooks/useOffline";
+import { compressImage, blobToFile } from "@/lib/imageCompression";
 import { sendPushNotification, getPhoneSuffix } from "@/lib/notifications";
 import { formatPhoneForWhatsApp } from "@/lib/phoneUtils";
 import { useDisputes } from "@/hooks/useDisputes";
@@ -114,6 +117,9 @@ export default function BillDetail() {
     reminder_enabled: false,
     reminder_interval_days: "3",
   });
+  const [editReceiptFile, setEditReceiptFile] = useState<File | null>(null);
+  const [editReceiptPreview, setEditReceiptPreview] = useState<string | null>(null);
+  const [isUploadingReceipt, setIsUploadingReceipt] = useState(false);
   const [newParticipantPhone, setNewParticipantPhone] = useState("");
   const [newParticipantAmount, setNewParticipantAmount] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
@@ -221,6 +227,36 @@ export default function BillDetail() {
       }
     }
 
+    // Upload receipt if a new file was selected
+    let receiptUrl = bill.receipt_url || undefined;
+    if (editReceiptFile) {
+      setIsUploadingReceipt(true);
+      try {
+        let fileToUpload: File = editReceiptFile;
+        if (editReceiptFile.type.startsWith("image/")) {
+          const compressed = await compressImage(editReceiptFile);
+          fileToUpload = blobToFile(compressed, `receipt_${Date.now()}.jpg`);
+        }
+        const filePath = `bills/${user.id}/${Date.now()}_${fileToUpload.name}`;
+        const { error: uploadError } = await supabase.storage
+          .from("receipts")
+          .upload(filePath, fileToUpload);
+        if (!uploadError) {
+          const { data: urlData } = supabase.storage
+            .from("receipts")
+            .getPublicUrl(filePath);
+          receiptUrl = urlData.publicUrl;
+        } else {
+          console.error("Receipt upload error:", uploadError);
+          toast.error("Failed to upload receipt");
+        }
+      } catch (e) {
+        console.error("Receipt upload error:", e);
+      } finally {
+        setIsUploadingReceipt(false);
+      }
+    }
+
     const success = await updateBill(bill.id, {
       title: editForm.title,
       description: editForm.description || undefined,
@@ -228,6 +264,7 @@ export default function BillDetail() {
       due_date: editForm.due_date || undefined,
       reminder_enabled: editForm.reminder_enabled,
       reminder_interval_days: editForm.reminder_enabled ? parseInt(editForm.reminder_interval_days) : undefined,
+      receipt_url: receiptUrl,
     });
 
     if (success) {
@@ -239,6 +276,7 @@ export default function BillDetail() {
         due_date: editForm.due_date || null,
         reminder_enabled: editForm.reminder_enabled,
         reminder_interval_days: editForm.reminder_enabled ? parseInt(editForm.reminder_interval_days) : null,
+        receipt_url: receiptUrl || null,
         participants: updatedParticipants,
       }));
       setShowEditDialog(false);
@@ -608,6 +646,8 @@ export default function BillDetail() {
       reminder_enabled: bill.reminder_enabled || false,
       reminder_interval_days: bill.reminder_interval_days?.toString() || "3",
     });
+    setEditReceiptFile(null);
+    setEditReceiptPreview(bill.receipt_url || null);
     setShowEditDialog(true);
   };
 
@@ -1127,6 +1167,49 @@ Never lose track of debts again. Split bills, send reminders & get paid faster.
               />
             </div>
 
+            {/* Receipt Upload */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Receipt / Invoice</label>
+              {editReceiptPreview && (
+                <div className="flex items-center gap-2">
+                  <img src={editReceiptPreview} alt="Receipt" className="h-16 w-16 object-cover rounded-lg border border-border" />
+                  <Button variant="ghost" size="sm" onClick={() => { setEditReceiptFile(null); setEditReceiptPreview(null); }}>
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+              )}
+              <div className="flex gap-2">
+                <label className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-muted/50 rounded-lg border border-dashed border-border cursor-pointer hover:bg-muted transition-colors">
+                  <Camera className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-sm text-muted-foreground">Camera</span>
+                  <input type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    setEditReceiptFile(file);
+                    const reader = new FileReader();
+                    reader.onload = (ev) => setEditReceiptPreview(ev.target?.result as string);
+                    reader.readAsDataURL(file);
+                  }} />
+                </label>
+                <label className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-muted/50 rounded-lg border border-dashed border-border cursor-pointer hover:bg-muted transition-colors">
+                  <ImagePlus className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-sm text-muted-foreground">Gallery</span>
+                  <input type="file" accept="image/*,application/pdf" className="hidden" onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    setEditReceiptFile(file);
+                    if (file.type.startsWith("image/")) {
+                      const reader = new FileReader();
+                      reader.onload = (ev) => setEditReceiptPreview(ev.target?.result as string);
+                      reader.readAsDataURL(file);
+                    } else {
+                      setEditReceiptPreview(null);
+                    }
+                  }} />
+                </label>
+              </div>
+            </div>
+
             {/* Reminder Settings */}
             <div className="space-y-3 pt-2 border-t border-border">
               <div className="flex items-center justify-between">
@@ -1165,7 +1248,9 @@ Never lose track of debts again. Split bills, send reminders & get paid faster.
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowEditDialog(false)}>Cancel</Button>
-            <Button onClick={handleEditSubmit}>Save Changes</Button>
+            <Button onClick={handleEditSubmit} disabled={isUploadingReceipt}>
+              {isUploadingReceipt ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Uploading...</> : "Save Changes"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
