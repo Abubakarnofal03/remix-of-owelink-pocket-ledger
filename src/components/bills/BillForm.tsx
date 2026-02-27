@@ -34,6 +34,7 @@ import {
   Smartphone,
   Bell,
   ImagePlus,
+  Camera,
 } from "lucide-react";
 import { compressImage, blobToFile } from "@/lib/imageCompression";
 import { supabase } from "@/integrations/supabase/client";
@@ -75,7 +76,7 @@ const SUBMIT_TIMEOUT_MS = 2000;
 
 export function BillForm() {
   const navigate = useNavigate();
-  const { profile, currency } = useAuth();
+  const { user, profile, currency } = useAuth();
   const { contacts, addContact, loading: contactsLoading } = useContacts();
   const { deviceContacts, fetchDeviceContacts, loading: deviceContactsLoading } = useDeviceContacts();
   const { createBill } = useBills();
@@ -459,31 +460,57 @@ export function BillForm() {
             </Button>
           </div>
         ) : null}
-        <label
-          className="flex items-center gap-2 px-4 py-3 bg-muted/50 rounded-lg border border-dashed border-border cursor-pointer hover:bg-muted transition-colors"
-        >
-          <ImagePlus className="h-4 w-4 text-muted-foreground" />
-          <span className="text-sm text-muted-foreground">
-            {receiptFile ? "Change file" : "Attach a photo or PDF"}
-          </span>
-          <input
-            type="file"
-            accept="image/*,application/pdf"
-            className="hidden"
-            onChange={async (e) => {
-              const file = e.target.files?.[0];
-              if (!file) return;
-              setReceiptFile(file);
-              if (file.type.startsWith("image/")) {
-                const reader = new FileReader();
-                reader.onload = (ev) => setReceiptPreview(ev.target?.result as string);
-                reader.readAsDataURL(file);
-              } else {
-                setReceiptPreview(null);
-              }
-            }}
-          />
-        </label>
+        <div className="flex gap-2">
+          {/* Camera capture */}
+          <label
+            className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-muted/50 rounded-lg border border-dashed border-border cursor-pointer hover:bg-muted transition-colors"
+          >
+            <Camera className="h-4 w-4 text-muted-foreground" />
+            <span className="text-sm text-muted-foreground">Camera</span>
+            <input
+              type="file"
+              accept="image/*"
+              capture="environment"
+              className="hidden"
+              onChange={async (e) => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                setReceiptFile(file);
+                if (file.type.startsWith("image/")) {
+                  const reader = new FileReader();
+                  reader.onload = (ev) => setReceiptPreview(ev.target?.result as string);
+                  reader.readAsDataURL(file);
+                }
+              }}
+            />
+          </label>
+          {/* Gallery / file picker */}
+          <label
+            className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-muted/50 rounded-lg border border-dashed border-border cursor-pointer hover:bg-muted transition-colors"
+          >
+            <ImagePlus className="h-4 w-4 text-muted-foreground" />
+            <span className="text-sm text-muted-foreground">
+              {receiptFile ? "Change" : "Gallery"}
+            </span>
+            <input
+              type="file"
+              accept="image/*,application/pdf"
+              className="hidden"
+              onChange={async (e) => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                setReceiptFile(file);
+                if (file.type.startsWith("image/")) {
+                  const reader = new FileReader();
+                  reader.onload = (ev) => setReceiptPreview(ev.target?.result as string);
+                  reader.readAsDataURL(file);
+                } else {
+                  setReceiptPreview(null);
+                }
+              }}
+            />
+          </label>
+        </div>
       </div>
 
       {/* Total Amount */}
