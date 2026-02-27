@@ -1,62 +1,41 @@
 
 
-# Android Widget Guide + Quick Action Buttons
+## Plan: Add Optional Invoice/Receipt Upload to Bills
 
-## Overview
-This plan creates two things:
-1. A complete step-by-step guide document (`docs/ANDROID_WIDGET_GUIDE.md`) with every file and command needed to build an Android home screen widget
-2. A TypeScript bridge file (`src/lib/widgetBridge.ts`) for pushing data from the app to the widget
+### Decision: Add `receipt_url` column to `bills` table
 
-The widget will display your balance summary AND include 3 quick action buttons: **Split Bill**, **Track Owe**, and **Add Expense** -- tapping any of them opens the app directly to that screen.
+Using the existing `invoices` table would be wasteful — it's a completely different entity with unrelated fields (invoice_number, client_phone_number, etc.). The most efficient approach is a single nullable `text` column on `bills` plus the already-existing `receipts` storage bucket.
 
-## What Gets Created
+### Technical Details
 
-### File 1: `docs/ANDROID_WIDGET_GUIDE.md`
-A comprehensive markdown guide containing complete, copy-pasteable code for:
+**Database Migration:**
+- Add `receipt_url text NULL` to `bills` table — zero storage cost when unused (nullable text = no bytes for NULL rows)
 
-1. **Widget Layout** (`res/layout/widget_layout.xml`)
-   - Balance display: "Owed to You", "You Owe", "Net Balance"
-   - 3 action buttons at the bottom: Split Bill, Track Owe, Add Expense
-   - Each button uses a `PendingIntent` that opens the app via deep links (`owelink://bills/new`, `owelink://ious/new`, `owelink://expenses`)
+**Storage:**
+- Reuse existing `receipts` bucket (already public) — no new bucket needed
 
-2. **Widget Background** (`res/drawable/widget_background.xml`)
-   - Rounded rectangle matching OweLink's dark theme
+**Code Changes:**
 
-3. **Widget Provider Config** (`res/xml/owelink_widget_info.xml`)
-   - Size, update interval, preview, resize settings
+1. **`src/components/bills/BillForm.tsx`** — Add optional file upload field after the Description section:
+   - File input accepting image/* and application/pdf
+   - Preview thumbnail when image selected
+   - Upload to `receipts` bucket on submit, store URL in `receipt_url`
+   - Compress images before upload using existing `src/lib/imageCompression.ts`
 
-4. **Widget Provider Class** (`OweLinkWidget.java`)
-   - Reads balances from `SharedPreferences`
-   - Sets up `RemoteViews` with balance data
-   - Configures `PendingIntent` for each quick action button (bill, owe, expense)
-   - Configures tap-to-open on the main widget area
+2. **`src/hooks/useBills.tsx`** — Add `receipt_url` to `BillInsert` interface and pass through in create/update mutations
 
-5. **Capacitor Bridge Plugin** (`WidgetBridge.java`)
-   - Receives balance data from the web app
-   - Writes to `SharedPreferences`
-   - Triggers widget refresh via `AppWidgetManager`
+3. **`src/lib/offline/db.ts`** — Add `receipt_url` to `LocalBill` interface
 
-6. **AndroidManifest.xml changes**
-   - Exact XML to register the widget receiver
+4. **`src/lib/offline/offlineDataLayer.ts`** — Pass `receipt_url` through in `createBillOfflineFirst`
 
-7. **MainActivity.java changes**
-   - Plugin registration line
+5. **`src/pages/BillDetail.tsx`** — Display receipt image/link when `receipt_url` exists (clickable thumbnail that opens full image)
 
-8. **Build and test commands**
-   - `npx cap sync android`, build in Android Studio, add widget from launcher
+6. **`src/lib/offline/dataSync.ts`** — Include `receipt_url` in sync column projection
 
-### File 2: `src/lib/widgetBridge.ts`
-TypeScript code that:
-- Uses `registerPlugin('WidgetBridge')` from Capacitor
-- Exports an `updateWidget(owedToYou, youOwe, netBalance)` function
-- Can be called from `useBalances` hook whenever balances update
-
-## Technical Details
-
-The widget quick action buttons work by leveraging the existing deep link infrastructure already set up in `AndroidManifest.xml` (the `owelink://` scheme) and the `useCapacitor` hook that handles routing. Each button creates a `PendingIntent` with the corresponding deep link URI:
-- Split Bill button -> `owelink://bills/new`
-- Track Owe button -> `owelink://ious/new`  
-- Add Expense button -> `owelink://expenses`
-
-No changes to existing app files are needed beyond creating the two new files.
+### Steps
+1. Run migration: `ALTER TABLE bills ADD COLUMN receipt_url text NULL`
+2. Update Bill interfaces and offline DB schema to include `receipt_url`
+3. Add file upload UI to BillForm with image compression
+4. Upload file to `receipts` bucket on bill creation, save URL
+5. Display receipt in BillDetail page
 
