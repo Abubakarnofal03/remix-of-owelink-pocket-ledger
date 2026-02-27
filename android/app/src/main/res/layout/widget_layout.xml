@@ -125,7 +125,6 @@
             android:orientation="vertical"
             android:gravity="center"
             android:clickable="true"
-            android:background="?android:attr/selectableItemBackground"
             android:padding="6dp">
 
             <ImageView
@@ -152,7 +151,6 @@
             android:orientation="vertical"
             android:gravity="center"
             android:clickable="true"
-            android:background="?android:attr/selectableItemBackground"
             android:padding="6dp">
 
             <ImageView
@@ -179,7 +177,6 @@
             android:orientation="vertical"
             android:gravity="center"
             android:clickable="true"
-            android:background="?android:attr/selectableItemBackground"
             android:padding="6dp">
 
             <ImageView
