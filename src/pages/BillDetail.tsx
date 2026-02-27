@@ -1072,7 +1072,10 @@ Never lose track of debts again. Split bills, send reminders & get paid faster.
         entityId={bill.id}
         currentAmount={debtorRemainingAmount}
         currency={bill.currency}
-        onSubmit={createDispute}
+        onSubmit={async (data) => {
+          await createDispute({ entity_type: "bill", entity_id: bill.id, ...data });
+        }}
+        isSubmitting={disputesLoading}
       />
 
       {/* Dispute Response Dialog */}
