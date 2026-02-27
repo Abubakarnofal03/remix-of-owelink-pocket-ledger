@@ -234,6 +234,7 @@ export function useBills() {
               description: updates.description,
               total_amount: updates.total_amount,
               due_date: updates.due_date,
+              receipt_url: updates.receipt_url,
             })
             .eq("id", id)
             .select()
