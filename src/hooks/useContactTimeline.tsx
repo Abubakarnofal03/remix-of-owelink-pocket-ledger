@@ -110,7 +110,7 @@ async function fetchContactTimeline(
     }
   });
 
-  // 3. IOUs I created where contact is debtor (they owe me)
+  // 3. IOUs I created where contact is the other person
   const { data: myIOUs } = await supabase
     .from("ious")
     .select("*")
@@ -123,20 +123,39 @@ async function fetchContactTimeline(
 
   filteredMyIOUs.forEach((iou) => {
     const remaining = iou.amount - iou.amount_paid;
-    owedToYou += remaining;
+    const direction = iou.direction || 'owed_to_me';
 
-    timelineItems.push({
-      id: `iou-${iou.id}`,
-      type: "iou_created",
-      title: iou.description || "IOU",
-      description: `${contactName} owe${remaining > 0 ? "s" : "d"} you`,
-      amount: iou.amount,
-      amountPaid: iou.amount_paid,
-      currency: iou.currency,
-      date: iou.created_at,
-      status: iou.status,
-      isCredit: true,
-    });
+    if (direction === 'owed_to_me') {
+      // Normal: contact owes me
+      owedToYou += remaining;
+      timelineItems.push({
+        id: `iou-${iou.id}`,
+        type: "iou_created",
+        title: iou.description || "IOU",
+        description: `${contactName} owe${remaining > 0 ? "s" : "d"} you`,
+        amount: iou.amount,
+        amountPaid: iou.amount_paid,
+        currency: iou.currency,
+        date: iou.created_at,
+        status: iou.status,
+        isCredit: true,
+      });
+    } else {
+      // Reverse (i_owe): I owe the contact
+      youOwe += remaining;
+      timelineItems.push({
+        id: `iou-${iou.id}`,
+        type: "iou_owed",
+        title: iou.description || "IOU",
+        description: `You owe ${contactName}`,
+        amount: iou.amount,
+        amountPaid: iou.amount_paid,
+        currency: iou.currency,
+        date: iou.created_at,
+        status: iou.status,
+        isCredit: false,
+      });
+    }
   });
 
   // 4. IOUs where I'm the debtor and contact is creditor (I owe them)
