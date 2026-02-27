@@ -780,21 +780,21 @@ Never lose track of debts again. Split bills, send reminders & get paid faster.
           )}
 
           {/* Receipt/Invoice attachment */}
-          {(bill as any).receipt_url && (
+          {bill.receipt_url && (
             <div className="mt-4 pt-4 border-t border-border">
               <p className="text-xs text-muted-foreground mb-2 flex items-center gap-1">
                 <FileCheck className="h-3 w-3" />
-                Attached Receipt
+                Attached Receipt / Invoice
               </p>
               <a
-                href={(bill as any).receipt_url}
+                href={bill.receipt_url}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-block"
               >
-                {(bill as any).receipt_url.match(/\.(jpg|jpeg|png|webp|gif)/i) ? (
+                {bill.receipt_url.match(/\.(jpg|jpeg|png|webp|gif)/i) ? (
                   <img
-                    src={(bill as any).receipt_url}
+                    src={bill.receipt_url}
                     alt="Receipt"
                     className="h-20 w-20 object-cover rounded-lg border border-border hover:opacity-80 transition-opacity"
                   />

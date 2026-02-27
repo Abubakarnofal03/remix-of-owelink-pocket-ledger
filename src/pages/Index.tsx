@@ -1,4 +1,5 @@
 import { useAuth } from "@/hooks/useAuth";
+import { PageLoadingSkeleton } from "@/components/ui/PageLoadingSkeleton";
 import { Navigate, Link } from "react-router-dom";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { MoneyDisplay } from "@/components/ui/MoneyDisplay";
@@ -29,11 +30,9 @@ export default function Index() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="animate-pulse-soft">
-          <div className="h-12 w-12 rounded-xl bg-primary/20" />
-        </div>
-      </div>
+      <AppLayout>
+        <PageLoadingSkeleton variant="dashboard" />
+      </AppLayout>
     );
   }
 

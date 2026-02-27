@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { PageLoadingSkeleton } from "@/components/ui/PageLoadingSkeleton";
 import { useAuth } from "@/hooks/useAuth";
 import { Navigate, useNavigate } from "react-router-dom";
 import { AppLayout } from "@/components/layout/AppLayout";
@@ -38,7 +39,13 @@ export default function Contacts() {
   const [deleteTarget, setDeleteTarget] = useState<Contact | null>(null);
   const navigate = useNavigate();
 
-  if (authLoading) return null;
+  if (authLoading) {
+    return (
+      <AppLayout>
+        <PageLoadingSkeleton variant="grid" />
+      </AppLayout>
+    );
+  }
   if (!user) return <Navigate to="/auth" replace />;
 
   const filteredContacts = searchQuery ? searchContacts(searchQuery) : contacts;
