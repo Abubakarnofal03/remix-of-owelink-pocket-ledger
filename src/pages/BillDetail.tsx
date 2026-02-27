@@ -120,6 +120,7 @@ export default function BillDetail() {
   const [editReceiptFile, setEditReceiptFile] = useState<File | null>(null);
   const [editReceiptPreview, setEditReceiptPreview] = useState<string | null>(null);
   const [isUploadingReceipt, setIsUploadingReceipt] = useState(false);
+  const [showReceiptViewer, setShowReceiptViewer] = useState(false);
   const [newParticipantPhone, setNewParticipantPhone] = useState("");
   const [newParticipantAmount, setNewParticipantAmount] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
@@ -205,6 +206,8 @@ export default function BillDetail() {
 
   // Pending payment requests count for creators
   const pendingRequestsCount = requests.filter(r => r.status === 'pending').length;
+  const isImageReceipt = !!bill.receipt_url && /\.(jpg|jpeg|png|webp|gif)(\?.*)?$/i.test(bill.receipt_url);
+  const isPdfReceipt = !!bill.receipt_url && /\.pdf(\?.*)?$/i.test(bill.receipt_url);
 
   const handleEditSubmit = async () => {
     const newTotal = parseFloat(editForm.total_amount);
@@ -826,22 +829,21 @@ Never lose track of debts again. Split bills, send reminders & get paid faster.
                 <FileCheck className="h-3 w-3" />
                 Attached Receipt / Invoice
               </p>
-              <a
-                href={bill.receipt_url}
-                target="_blank"
-                rel="noopener noreferrer"
+              <button
+                type="button"
+                onClick={() => setShowReceiptViewer(true)}
                 className="inline-block"
               >
-                {bill.receipt_url.match(/\.(jpg|jpeg|png|webp|gif)/i) ? (
+                {isImageReceipt ? (
                   <img
                     src={bill.receipt_url}
                     alt="Receipt"
                     className="h-20 w-20 object-cover rounded-lg border border-border hover:opacity-80 transition-opacity"
                   />
                 ) : (
-                  <span className="text-sm text-primary underline">View Receipt</span>
+                  <span className="text-sm text-primary underline">View Receipt in App</span>
                 )}
-              </a>
+              </button>
             </div>
           )}
 
@@ -1095,9 +1097,6 @@ Never lose track of debts again. Split bills, send reminders & get paid faster.
                 key={dispute.id}
                 dispute={dispute}
                 currency={bill.currency}
-                isCreator={isCreator}
-                getContactName={getContactNameBySuffix}
-                onRespond={isCreator ? () => setSelectedDispute(dispute) : undefined}
               />
             ))}
           </div>
@@ -1118,6 +1117,26 @@ Never lose track of debts again. Split bills, send reminders & get paid faster.
         isSubmitting={disputesLoading}
       />
 
+      {/* In-app Receipt Viewer */}
+      {bill.receipt_url && (
+        <Dialog open={showReceiptViewer} onOpenChange={setShowReceiptViewer}>
+          <DialogContent className="max-w-3xl">
+            <DialogHeader>
+              <DialogTitle>Receipt / Invoice</DialogTitle>
+            </DialogHeader>
+            <div className="max-h-[70vh] overflow-auto rounded-md border border-border bg-muted/20 p-2">
+              {isImageReceipt ? (
+                <img src={bill.receipt_url} alt="Bill receipt" className="w-full h-auto rounded-md object-contain" />
+              ) : isPdfReceipt ? (
+                <iframe src={bill.receipt_url} title="Receipt PDF" className="h-[70vh] w-full rounded-md" />
+              ) : (
+                <p className="text-sm text-muted-foreground">This file type can't be previewed in-app.</p>
+              )}
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
+
       {/* Dispute Response Dialog */}
       {selectedDispute && (
         <DisputeResponseDialog
@@ -1125,7 +1144,13 @@ Never lose track of debts again. Split bills, send reminders & get paid faster.
           onOpenChange={(open) => !open && setSelectedDispute(null)}
           dispute={selectedDispute}
           currency={bill.currency}
-          onRespond={updateDispute}
+          onAccept={async (response) => {
+            await updateDispute(selectedDispute.id, 'accepted', response);
+          }}
+          onReject={async (response) => {
+            await updateDispute(selectedDispute.id, 'rejected', response);
+          }}
+          isSubmitting={disputesLoading}
         />
       )}
 

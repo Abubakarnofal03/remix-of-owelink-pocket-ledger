@@ -1,4 +1,4 @@
-import Dexie, { Table } from 'dexie';
+import Dexie, { Table } from '@/lib/dexie';
 import { Capacitor } from '@capacitor/core';
 
 // Platform detection
