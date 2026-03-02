@@ -38,6 +38,7 @@ import Insights from "./pages/Insights";
 import GroupExpenses from "./pages/GroupExpenses";
 import NewGroupExpense from "./pages/NewGroupExpense";
 import GroupExpenseDetail from "./pages/GroupExpenseDetail";
+import Admin from "./pages/Admin";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient({
@@ -145,6 +146,7 @@ function AppRoutes() {
         <Route path="/groups/new" element={<NewGroupExpense />} />
         <Route path="/groups/:id" element={<GroupExpenseDetail />} />
         <Route path="/settings" element={<Settings />} />
+        <Route path="/admin" element={<Admin />} />
         <Route path="*" element={<NotFound />} />
       </Routes>
     </>
