@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 interface DisputeCardProps {
   dispute: Dispute;
   currency?: string;
+  disputerName?: string;
 }
 
 const statusConfig = {
@@ -16,7 +17,7 @@ const statusConfig = {
   resolved: { icon: CheckCircle, color: "text-primary", bg: "bg-primary/10", label: "Resolved" },
 };
 
-export function DisputeCard({ dispute, currency }: DisputeCardProps) {
+export function DisputeCard({ dispute, currency, disputerName }: DisputeCardProps) {
   const config = statusConfig[dispute.status] || statusConfig.open;
   const Icon = config.icon;
 
@@ -31,6 +32,12 @@ export function DisputeCard({ dispute, currency }: DisputeCardProps) {
           {format(new Date(dispute.created_at), "MMM d, yyyy")}
         </span>
       </div>
+
+      {disputerName && (
+        <p className="text-xs text-muted-foreground">
+          Filed by <span className="font-medium text-foreground">{disputerName}</span>
+        </p>
+      )}
 
       <p className="text-sm text-foreground">{dispute.reason}</p>
 

@@ -715,7 +715,11 @@ Never lose track of debts again. Split bills, send reminders & get paid faster.
               <div key={dispute.id} onClick={() => {
                 if (isCreditor && dispute.status === 'open') setSelectedDispute(dispute);
               }} className={isCreditor && dispute.status === 'open' ? 'cursor-pointer' : ''}>
-                <DisputeCard dispute={dispute} currency={iou.currency} />
+                <DisputeCard
+                  dispute={dispute}
+                  currency={iou.currency}
+                  disputerName={getContactNameBySuffix(dispute.disputed_by_phone_suffix)}
+                />
               </div>
             ))}
           </div>
@@ -875,6 +879,23 @@ Never lose track of debts again. Split bills, send reminders & get paid faster.
             currency={iou.currency}
             onAccept={async (response) => {
               await updateDispute(selectedDispute.id, "accepted", response);
+              // If proposed amount exists, update the IOU amount
+              if (selectedDispute.proposed_amount !== null && selectedDispute.proposed_amount !== undefined) {
+                try {
+                  await updateIOUOfflineFirst(iou.id, {
+                    amount: selectedDispute.proposed_amount,
+                  });
+                  updateIOULocally(prev => ({
+                    ...prev,
+                    amount: selectedDispute.proposed_amount,
+                  }));
+                  sync();
+                  toast.success("IOU amount updated to proposed amount");
+                } catch (error) {
+                  console.error("Error updating IOU amount:", error);
+                  toast.error("Dispute accepted but failed to update amount");
+                }
+              }
               setSelectedDispute(null);
             }}
             onReject={async (response) => {

@@ -91,7 +91,7 @@ export function BillForm() {
   const [dueDate, setDueDate] = useState<Date | undefined>();
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [equalSplit, setEqualSplit] = useState(true);
-  const [includeMe, setIncludeMe] = useState(false);
+  const [includeMe, setIncludeMe] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [showAddContact, setShowAddContact] = useState(false);
   const [submitting, setSubmitting] = useState(false);
