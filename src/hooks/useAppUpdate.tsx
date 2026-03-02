@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { Capacitor, registerPlugin } from '@capacitor/core';
+import { App } from '@capacitor/app';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import { supabase } from '@/integrations/supabase/client';
 import { APP_VERSION_CODE } from '@/lib/constants';
@@ -52,7 +53,16 @@ export const useAppUpdate = () => {
 
       const latest = data as unknown as AppVersion;
 
-      if (latest.version_code > APP_VERSION_CODE) {
+      let installedVersionCode = APP_VERSION_CODE;
+      if (Capacitor.isNativePlatform()) {
+        const appInfo = await App.getInfo();
+        const parsedBuild = Number.parseInt(appInfo.build ?? '', 10);
+        if (!Number.isNaN(parsedBuild) && parsedBuild > 0) {
+          installedVersionCode = parsedBuild;
+        }
+      }
+
+      if (latest.version_code > installedVersionCode) {
         setState(prev => ({
           ...prev,
           available: true,
