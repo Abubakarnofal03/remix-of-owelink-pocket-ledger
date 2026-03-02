@@ -1,40 +1,46 @@
 
 
-## Plan: Fix Dashboard "You Owe" and WhatsApp Number Formatting
+## Plan: Include Me Default, Dispute Identity & Full Dispute Flow
 
-### Issue 1: "You Owe" Showing Rs0.00
+### 1. Default "Include Me" to true in BillForm
 
-**Root cause**: The `useBalances` hook prioritizes local IndexedDB data. If the user has ANY local data (e.g., bills they created → `owedToYou > 0`), it returns immediately with potentially stale `youOwe = 0` and does a background server fetch. However, bills/IOUs where the user is the *debtor* may not be in local DB yet (sync hasn't run or completed). The background fetch should fix this via `setQueryData`, but the initial flash of 0 is what the user sees, and if the background fetch fails silently, it stays at 0.
+**File**: `src/components/bills/BillForm.tsx` line 94
 
-**Fix in `src/hooks/useBalances.tsx`**: When online, always use server data as the primary source. Use local data only as a fallback when offline or when the server times out. Remove the "local-first, server-background" pattern.
+Change `useState(false)` to `useState(true)` for `includeMe`.
 
-```
-queryFn flow:
-  1. If online → fetch from server directly (with 5s timeout)
-     - On success: return server data
-     - On timeout/error: fall back to local DB
-  2. If offline → fetch from local DB
-```
+### 2. Show who filed the dispute in DisputeCard
 
-### Issue 2: WhatsApp Number Formatting
+**File**: `src/components/disputes/DisputeCard.tsx`
 
-**Root cause**: `formatPhoneForWhatsApp()` in `src/lib/phoneUtils.ts` strips leading zeros and tries to prepend a country code. For numbers saved as `03121729411`, it strips the `0` and prepends `92`, making `923121729411` — but this logic is unreliable because:
-- The app isn't country-specific
-- The `defaultCountryCode` is just the first 2 digits of the user's own number, which may be wrong
-- Numbers saved with a leading `0` work fine on WhatsApp as-is
+Add a new prop `disputerName?: string` and display it (e.g., "Filed by **Name**") below the status row. The parent components (BillDetail, IOUDetail) will resolve the name from `dispute.disputed_by_phone_suffix` using existing `getContactNameBySuffix` helpers and pass it down.
 
-**Fix in `src/lib/phoneUtils.ts`**: Simplify `formatPhoneForWhatsApp`:
-- If number starts with `+`, strip the `+` and return digits (wa.me format)
-- If number starts with `0`, return as-is (WhatsApp handles local numbers)
-- Otherwise, return the raw digits without any manipulation
+**Files**: `src/pages/BillDetail.tsx`, `src/pages/IOUDetail.tsx` — pass `disputerName` prop to each `<DisputeCard>`.
 
-**Update all callers** (BillDetail, IOUDetail, IOUCard, BillCard, GroupedIOUList) to stop passing `defaultCountryCode` since it's no longer used.
+### 3. Complete dispute functionality in BillDetail
+
+Currently, `BillDetail` renders `DisputeCard` but unlike `IOUDetail`, the cards are **not clickable** for the creator to respond. Fix:
+
+**File**: `src/pages/BillDetail.tsx` (lines 1093-1099)
+
+- Wrap each `DisputeCard` in a clickable container (like IOUDetail does) so that when `isCreator && dispute.status === 'open'`, clicking opens `DisputeResponseDialog` via `setSelectedDispute(dispute)`.
+
+### 4. Handle dispute acceptance side-effects
+
+When the creator **accepts** a dispute with a `proposed_amount`, the participant's `amount_owed` should be updated to reflect the new amount. 
+
+**File**: `src/pages/BillDetail.tsx` — in the `onAccept` handler of `DisputeResponseDialog`:
+- After `updateDispute(...)`, if `selectedDispute.proposed_amount` exists:
+  - Find the participant by `disputed_by_phone_suffix`
+  - Update their `amount_owed` to `proposed_amount` via `updateBillParticipantOfflineFirst`
+  - Update local bill state
+  - Recalculate bill total if needed
+  - Sync
+
+**File**: `src/pages/IOUDetail.tsx` — similarly, on accept with proposed_amount, update the IOU amount.
 
 ### Files to Change
-1. `src/hooks/useBalances.tsx` — Rewrite queryFn to use server-first when online
-2. `src/lib/phoneUtils.ts` — Simplify `formatPhoneForWhatsApp` to not manipulate numbers
-3. `src/pages/BillDetail.tsx` — Remove `userCountryCode` from WhatsApp call
-4. `src/pages/IOUDetail.tsx` — Remove `userCountryCode` from WhatsApp call
-5. `src/components/ious/IOUCard.tsx` — Remove `userCountryCode` from WhatsApp call
-6. `src/components/bills/BillCard.tsx` — Remove `userCountryCode` from WhatsApp call
+1. `src/components/bills/BillForm.tsx` — line 94: `false` → `true`
+2. `src/components/disputes/DisputeCard.tsx` — add `disputerName` prop and display
+3. `src/pages/BillDetail.tsx` — make dispute cards clickable for creator, handle accept side-effects
+4. `src/pages/IOUDetail.tsx` — pass `disputerName`, handle accept side-effects
 
