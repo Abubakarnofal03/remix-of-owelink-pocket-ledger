@@ -88,8 +88,7 @@ export function IOUCard({ iou }: IOUCardProps) {
       label: "Send Reminder (WhatsApp)",
       icon: <MessageCircle className="h-4 w-4" />,
       onClick: () => {
-        const userCountryCode = profile?.phone_number?.replace(/[^0-9]/g, '').slice(0, 2);
-        const phone = formatPhoneForWhatsApp(iou.debtor_phone_number, userCountryCode);
+        const phone = formatPhoneForWhatsApp(iou.debtor_phone_number);
         const msg = `Reminder: You owe ${iou.currency} ${remaining.toFixed(2)}${iou.description ? ` for "${iou.description}"` : ''}`;
         window.open(`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`, '_blank');
       },

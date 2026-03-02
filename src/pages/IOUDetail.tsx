@@ -251,9 +251,7 @@ Never lose track of debts again. Split bills, send reminders & get paid faster.
   // Open WhatsApp for the debtor
   const handleWhatsAppShare = () => {
     const message = generateWhatsAppMessage();
-    // Use the user's country code from their profile, or extract from their phone number
-    const userCountryCode = profile?.phone_number?.replace(/[^0-9]/g, '').slice(0, 2);
-    const phoneNumber = formatPhoneForWhatsApp(iou.debtor_phone_number, userCountryCode);
+    const phoneNumber = formatPhoneForWhatsApp(iou.debtor_phone_number);
     const whatsappUrl = `https://wa.me/${phoneNumber}?text=${encodeURIComponent(message)}`;
     window.open(whatsappUrl, '_blank');
   };

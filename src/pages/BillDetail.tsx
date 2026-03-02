@@ -693,9 +693,7 @@ Never lose track of debts again. Split bills, send reminders & get paid faster.
   // Open WhatsApp for a single participant
   const handleWhatsAppShare = (participant: BillParticipant) => {
     const message = generateWhatsAppMessage(participant);
-    // Use the user's country code from their profile
-    const userCountryCode = profile?.phone_number?.replace(/[^0-9]/g, '').slice(0, 2);
-    const phoneNumber = formatPhoneForWhatsApp(participant.phone_number, userCountryCode);
+    const phoneNumber = formatPhoneForWhatsApp(participant.phone_number);
     const whatsappUrl = `https://wa.me/${phoneNumber}?text=${encodeURIComponent(message)}`;
     window.open(whatsappUrl, '_blank');
   };
