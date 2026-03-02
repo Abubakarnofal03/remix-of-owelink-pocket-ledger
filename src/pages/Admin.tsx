@@ -78,8 +78,8 @@ export default function Admin() {
   };
 
   const handleUploadAndCreate = async () => {
-    if (!versionCode || !versionName) {
-      toast({ title: "Missing fields", description: "Version code and name are required.", variant: "destructive" });
+    if (!versionCode || !versionName || !apkFile) {
+      toast({ title: "Missing fields", description: "Version code, version name, and APK file are required.", variant: "destructive" });
       return;
     }
 
@@ -113,7 +113,7 @@ export default function Admin() {
           version_name: versionName,
           release_notes: releaseNotes || null,
           apk_url: apkUrl,
-          update_type: apkFile ? "native" : "web",
+          update_type: "native",
           is_mandatory: isMandatory,
         } as any);
 
@@ -258,7 +258,7 @@ export default function Admin() {
 
             <Button
               onClick={handleUploadAndCreate}
-              disabled={creating || !versionCode || !versionName}
+              disabled={creating || !versionCode || !versionName || !apkFile}
               className="w-full gap-2"
             >
               {creating ? (
