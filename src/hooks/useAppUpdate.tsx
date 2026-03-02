@@ -45,6 +45,8 @@ export const useAppUpdate = () => {
       const { data, error } = await supabase
         .from('app_versions')
         .select('*')
+        .eq('update_type', 'native')
+        .not('apk_url', 'is', null)
         .order('version_code', { ascending: false })
         .limit(1)
         .single();
