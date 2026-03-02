@@ -43,10 +43,9 @@ export function BillCard({ bill }: BillCardProps) {
       label: "Share via WhatsApp",
       icon: <MessageCircle className="h-4 w-4" />,
       onClick: () => {
-        const userCountryCode = profile?.phone_number?.replace(/[^0-9]/g, '').slice(0, 2);
         const firstParticipant = bill.participants?.[0];
         if (firstParticipant) {
-          const phone = formatPhoneForWhatsApp(firstParticipant.phone_number, userCountryCode);
+          const phone = formatPhoneForWhatsApp(firstParticipant.phone_number);
           const msg = `Reminder for "${bill.title}" - ${bill.currency} ${bill.total_amount}`;
           window.open(`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`, '_blank');
         }

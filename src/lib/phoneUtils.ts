@@ -109,28 +109,20 @@ export function phonesMatch(phone1: string, phone2: string): boolean {
  * @param defaultCountryCode - Default country code without + (e.g., "92" for Pakistan)
  * @returns Formatted phone number for wa.me URLs (digits only, no +)
  */
-export function formatPhoneForWhatsApp(phone: string, defaultCountryCode?: string): string {
+export function formatPhoneForWhatsApp(phone: string): string {
   if (!phone) return "";
   
-  // Extract only digits
-  let digits = phone.replace(/[^0-9]/g, "");
-  
-  // If the number is already long enough (has country code), just return digits
-  // Most international numbers with country code are 11+ digits
-  if (digits.length >= 11) {
-    return digits;
+  // If starts with +, strip the + and return digits only (wa.me format)
+  if (phone.startsWith("+")) {
+    return phone.replace(/[^0-9]/g, "");
   }
   
-  // Remove leading zeros (convert 03121729411 → 3121729411)
-  digits = digits.replace(/^0+/, "");
-  
-  // If we have a default country code and the number is short (no country code)
-  // Prepend the country code
-  if (defaultCountryCode && digits.length <= 10) {
-    const cleanCountryCode = defaultCountryCode.replace(/[^0-9]/g, "");
-    return `${cleanCountryCode}${digits}`;
+  // If starts with 0 (local format like 03121729411), return as-is
+  // WhatsApp handles local numbers fine
+  if (phone.startsWith("0")) {
+    return phone;
   }
   
-  // Return the cleaned digits
-  return digits;
+  // Otherwise return raw digits without any manipulation
+  return phone.replace(/[^0-9]/g, "");
 }
