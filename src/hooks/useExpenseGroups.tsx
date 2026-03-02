@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { offlineDb, generateLocalId, safeDbOperation, LocalExpenseGroup, LocalExpenseGroupMember, LocalGroupExpense } from "@/lib/offline/db";
 import { addToSyncQueue } from "@/lib/offline/syncQueue";
 import { syncExpenseGroupsFromServer } from "@/lib/offline/dataSync";
+import { sendPushNotification, getPhoneSuffix } from "@/lib/notifications";
 
 export interface ExpenseGroup {
   id: string;
@@ -261,6 +262,22 @@ export function useExpenseGroupDetail(groupId: string | undefined) {
 
       setMembers(prev => [...prev, localMember as ExpenseGroupMember]);
       toast.success("Member added");
+
+      // Notify existing group members about the new member
+      const existingSuffixes = members
+        .map(m => m.phone_suffix || getPhoneSuffix(m.phone_number))
+        .filter(Boolean) as string[];
+      const userSuffix = user ? await supabase.from('profiles').select('phone_suffix').eq('user_id', user.id).single().then(r => r.data?.phone_suffix) : null;
+      const recipientSuffixes = existingSuffixes.filter(s => s !== userSuffix);
+      if (recipientSuffixes.length > 0 && group) {
+        sendPushNotification({
+          phoneSuffixes: recipientSuffixes,
+          title: `👥 ${group.name}`,
+          body: `${data.nickname || data.phone_number} was added to the group`,
+          data: { type: 'group', id: groupId },
+        });
+      }
+
       return localMember as ExpenseGroupMember;
     } catch (error: any) {
       console.error("Error adding member:", error);
@@ -282,6 +299,21 @@ export function useExpenseGroupDetail(groupId: string | undefined) {
 
       setMembers(prev => prev.filter(m => m.id !== memberId));
       toast.success("Member removed");
+
+      // Notify the removed member
+      const removedMember = members.find(m => m.id === memberId);
+      if (removedMember && group) {
+        const removedSuffix = removedMember.phone_suffix || getPhoneSuffix(removedMember.phone_number);
+        if (removedSuffix) {
+          sendPushNotification({
+            phoneSuffixes: [removedSuffix],
+            title: `👥 ${group.name}`,
+            body: `You were removed from the group`,
+            data: { type: 'group', id: groupId },
+          });
+        }
+      }
+
       return true;
     } catch (error) {
       console.error("Error removing member:", error);
@@ -321,6 +353,21 @@ export function useExpenseGroupDetail(groupId: string | undefined) {
 
       setExpenses(prev => [localExpense as GroupExpense, ...prev]);
       toast.success("Expense added");
+
+      // Notify all group members except the one who added
+      const userSuffix = user ? await supabase.from('profiles').select('phone_suffix').eq('user_id', user.id).single().then(r => r.data?.phone_suffix) : null;
+      const recipientSuffixes = members
+        .map(m => m.phone_suffix || getPhoneSuffix(m.phone_number))
+        .filter(s => s && s !== userSuffix) as string[];
+      if (recipientSuffixes.length > 0 && group) {
+        sendPushNotification({
+          phoneSuffixes: recipientSuffixes,
+          title: `💰 ${group.name}`,
+          body: `New expense: ${data.description || `${group.currency} ${data.amount}`}`,
+          data: { type: 'group', id: groupId },
+        });
+      }
+
       return localExpense as GroupExpense;
     } catch (error: any) {
       console.error("Error adding expense:", error);
@@ -342,6 +389,21 @@ export function useExpenseGroupDetail(groupId: string | undefined) {
 
       setExpenses(prev => prev.filter(e => e.id !== expenseId));
       toast.success("Expense deleted");
+
+      // Notify group members about deletion
+      const userSuffix = user ? await supabase.from('profiles').select('phone_suffix').eq('user_id', user.id).single().then(r => r.data?.phone_suffix) : null;
+      const recipientSuffixes = members
+        .map(m => m.phone_suffix || getPhoneSuffix(m.phone_number))
+        .filter(s => s && s !== userSuffix) as string[];
+      if (recipientSuffixes.length > 0 && group) {
+        sendPushNotification({
+          phoneSuffixes: recipientSuffixes,
+          title: `💰 ${group.name}`,
+          body: `An expense was deleted from the group`,
+          data: { type: 'group', id: groupId },
+        });
+      }
+
       return true;
     } catch (error) {
       console.error("Error deleting expense:", error);

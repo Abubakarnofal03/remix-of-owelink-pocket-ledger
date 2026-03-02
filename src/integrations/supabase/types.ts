@@ -555,6 +555,36 @@ export type Database = {
         }
         Relationships: []
       }
+      iou_notices: {
+        Row: {
+          author_phone_suffix: string
+          color: string
+          created_at: string
+          id: string
+          iou_id: string
+          message: string
+          updated_at: string
+        }
+        Insert: {
+          author_phone_suffix: string
+          color?: string
+          created_at?: string
+          id?: string
+          iou_id: string
+          message: string
+          updated_at?: string
+        }
+        Update: {
+          author_phone_suffix?: string
+          color?: string
+          created_at?: string
+          id?: string
+          iou_id?: string
+          message?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       iou_payment_requests: {
         Row: {
           amount_claimed: number

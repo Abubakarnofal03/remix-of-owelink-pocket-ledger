@@ -1119,6 +1119,31 @@ Never lose track of debts again. Split bills, send reminders & get paid faster.
         currency={bill.currency}
         onSubmit={async (data) => {
           await createDispute({ entity_type: "bill", entity_id: bill.id, ...data });
+          // Notify bill creator about the dispute
+          if (userPhoneSuffix) {
+            const creatorProfile = await supabase.from('profiles').select('phone_suffix').eq('user_id', bill.creator_id).single();
+            if (creatorProfile.data?.phone_suffix) {
+              const disputerName = getContactNameBySuffix(userPhoneSuffix);
+              sendPushNotification({
+                phoneSuffixes: [creatorProfile.data.phone_suffix],
+                title: `⚠️ Dispute Filed: ${bill.title}`,
+                body: `${disputerName} disputed the amount${data.proposed_amount ? ` (proposed ${bill.currency} ${data.proposed_amount})` : ''}`,
+                data: { type: 'bill', id: bill.id },
+              });
+            }
+            // Also notify other participants
+            const otherSuffixes = (bill.participants || [])
+              .map(p => p.phone_suffix || getPhoneSuffix(p.phone_number))
+              .filter(s => s && s !== userPhoneSuffix && s !== creatorProfile.data?.phone_suffix) as string[];
+            if (otherSuffixes.length > 0) {
+              sendPushNotification({
+                phoneSuffixes: otherSuffixes,
+                title: `⚠️ Dispute on: ${bill.title}`,
+                body: `A dispute has been filed on this bill`,
+                data: { type: 'bill', id: bill.id },
+              });
+            }
+          }
         }}
         isSubmitting={disputesLoading}
       />
@@ -1132,6 +1157,13 @@ Never lose track of debts again. Split bills, send reminders & get paid faster.
           currency={bill.currency}
           onAccept={async (response) => {
             await updateDispute(selectedDispute.id, "accepted", response);
+            // Notify disputer about acceptance
+            sendPushNotification({
+              phoneSuffixes: [selectedDispute.disputed_by_phone_suffix],
+              title: `✅ Dispute Accepted: ${bill.title}`,
+              body: `Your dispute has been accepted${selectedDispute.proposed_amount ? ` – amount updated to ${bill.currency} ${selectedDispute.proposed_amount}` : ''}`,
+              data: { type: 'bill', id: bill.id },
+            });
             // If proposed amount exists, update participant's amount_owed
             if (selectedDispute.proposed_amount !== null && selectedDispute.proposed_amount !== undefined) {
               const participant = bill.participants?.find(p => {
@@ -1163,6 +1195,13 @@ Never lose track of debts again. Split bills, send reminders & get paid faster.
           }}
           onReject={async (response) => {
             await updateDispute(selectedDispute.id, "rejected", response);
+            // Notify disputer about rejection
+            sendPushNotification({
+              phoneSuffixes: [selectedDispute.disputed_by_phone_suffix],
+              title: `❌ Dispute Rejected: ${bill.title}`,
+              body: `Your dispute has been rejected${response ? `: ${response}` : ''}`,
+              data: { type: 'bill', id: bill.id },
+            });
             setSelectedDispute(null);
           }}
           isSubmitting={disputesLoading}
@@ -1189,22 +1228,7 @@ Never lose track of debts again. Split bills, send reminders & get paid faster.
         </Dialog>
       )}
 
-      {/* Dispute Response Dialog */}
-      {selectedDispute && (
-        <DisputeResponseDialog
-          open={!!selectedDispute}
-          onOpenChange={(open) => !open && setSelectedDispute(null)}
-          dispute={selectedDispute}
-          currency={bill.currency}
-          onAccept={async (response) => {
-            await updateDispute(selectedDispute.id, 'accepted', response);
-          }}
-          onReject={async (response) => {
-            await updateDispute(selectedDispute.id, 'rejected', response);
-          }}
-          isSubmitting={disputesLoading}
-        />
-      )}
+      {/* Duplicate Dispute Response Dialog removed - handled above */}
 
       {/* Edit Dialog */}
       <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>

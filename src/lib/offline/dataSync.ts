@@ -142,6 +142,10 @@ export async function syncIOUsFromServer(userId: string, phoneSuffix: string | n
           updated_at: iou.updated_at,
           deleted_at: iou.deleted_at,
           direction: (iou as any).direction || 'owed_to_me',
+          reminder_enabled: (iou as any).reminder_enabled || false,
+          reminder_interval_days: (iou as any).reminder_interval_days || null,
+          last_reminder_sent_at: (iou as any).last_reminder_sent_at || null,
+          is_pinned: (iou as any).is_pinned || false,
           synced_at: now,
           is_local: false,
           // Creditor info from profile lookup
