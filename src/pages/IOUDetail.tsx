@@ -67,6 +67,8 @@ import { toast } from "sonner";
 import { getPhoneSuffix, sendPushNotification } from "@/lib/notifications";
 import { formatPhoneForWhatsApp } from "@/lib/phoneUtils";
 import { updateIOUOfflineFirst, createPaymentOfflineFirst } from "@/lib/offline/offlineDataLayer";
+import { IOUNoticeBoard } from "@/components/ious/IOUNoticeBoard";
+import { supabase } from "@/integrations/supabase/client";
 
 export default function IOUDetail() {
   const { user, profile, loading: authLoading } = useAuth();
@@ -483,6 +485,18 @@ Never lose track of debts again. Split bills, send reminders & get paid faster.
           )}
         </div>
 
+        {/* Notice Board */}
+        <IOUNoticeBoard
+          iouId={iou.id}
+          iouDescription={iou.description || 'Owe'}
+          isCreditor={isCreditor}
+          userPhoneSuffix={userPhoneSuffix}
+          otherPartyPhoneSuffix={isCreditor
+            ? (iou.debtor_phone_suffix || getPhoneSuffix(iou.debtor_phone_number))
+            : (profile?.phone_suffix || null)}
+          getContactName={getContactNameBySuffix}
+        />
+
         {/* Amount Summary */}
         <div className="card-elevated p-4">
           <div className="flex items-center justify-between mb-4">
@@ -866,6 +880,17 @@ Never lose track of debts again. Split bills, send reminders & get paid faster.
           currency={iou.currency}
           onSubmit={async (data) => {
             await createDispute({ entity_type: "iou", entity_id: iou.id, ...data });
+            // Notify the creditor about the dispute
+            const creditorProfile = await supabase.from('profiles').select('phone_suffix').eq('user_id', iou.creditor_id).single();
+            if (creditorProfile.data?.phone_suffix) {
+              const disputerName = userPhoneSuffix ? getContactNameBySuffix(userPhoneSuffix) : 'Someone';
+              sendPushNotification({
+                phoneSuffixes: [creditorProfile.data.phone_suffix],
+                title: `⚠️ Dispute Filed`,
+                body: `${disputerName} disputed the amount${data.proposed_amount ? ` (proposed ${iou.currency} ${data.proposed_amount})` : ''}`,
+                data: { type: 'iou', id: iou.id },
+              });
+            }
           }}
           isSubmitting={isDisputeCreating}
         />
@@ -879,6 +904,13 @@ Never lose track of debts again. Split bills, send reminders & get paid faster.
             currency={iou.currency}
             onAccept={async (response) => {
               await updateDispute(selectedDispute.id, "accepted", response);
+              // Notify disputer about acceptance
+              sendPushNotification({
+                phoneSuffixes: [selectedDispute.disputed_by_phone_suffix],
+                title: `✅ Dispute Accepted`,
+                body: `Your dispute has been accepted${selectedDispute.proposed_amount ? ` – amount updated to ${iou.currency} ${selectedDispute.proposed_amount}` : ''}`,
+                data: { type: 'iou', id: iou.id },
+              });
               // If proposed amount exists, update the IOU amount
               if (selectedDispute.proposed_amount !== null && selectedDispute.proposed_amount !== undefined) {
                 try {
@@ -900,6 +932,13 @@ Never lose track of debts again. Split bills, send reminders & get paid faster.
             }}
             onReject={async (response) => {
               await updateDispute(selectedDispute.id, "rejected", response);
+              // Notify disputer about rejection
+              sendPushNotification({
+                phoneSuffixes: [selectedDispute.disputed_by_phone_suffix],
+                title: `❌ Dispute Rejected`,
+                body: `Your dispute has been rejected${response ? `: ${response}` : ''}`,
+                data: { type: 'iou', id: iou.id },
+              });
               setSelectedDispute(null);
             }}
             isSubmitting={isDisputeUpdating}
