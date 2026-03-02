@@ -112,15 +112,23 @@ export function phonesMatch(phone1: string, phone2: string): boolean {
 export function formatPhoneForWhatsApp(phone: string): string {
   if (!phone) return "";
   
-  // If starts with +, strip the + and return digits only (wa.me format)
-  if (phone.startsWith("+")) {
-    return phone.replace(/[^0-9]/g, "");
-  }
-  
-  // If starts with 0 (local format like 03121729411), return as-is
+  // If starts with 0 (local format like 03216006036), return as-is
   // WhatsApp handles local numbers fine
   if (phone.startsWith("0")) {
     return phone;
+  }
+  
+  // If starts with + and the remaining digits are 10 or fewer,
+  // this was likely a local number (e.g., 03216006036) that got its leading 0
+  // stripped and + prepended incorrectly. Restore the leading 0.
+  if (phone.startsWith("+")) {
+    const digits = phone.replace(/[^0-9]/g, "");
+    if (digits.length <= 10) {
+      // Likely a local number that was incorrectly normalized — restore leading 0
+      return `0${digits}`;
+    }
+    // Proper international number — return digits only (wa.me format)
+    return digits;
   }
   
   // Otherwise return raw digits without any manipulation
