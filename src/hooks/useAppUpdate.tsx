@@ -65,12 +65,25 @@ export const useAppUpdate = () => {
   }, []);
 
   const downloadAndInstallApk = useCallback(async () => {
-    if (!state.version?.apk_url) return;
+    if (!state.version?.apk_url) {
+      setState(prev => ({
+        ...prev,
+        error: 'No download URL available for this update. Please contact the developer.',
+      }));
+      return;
+    }
 
     setState(prev => ({ ...prev, downloading: true, progress: 0, error: null }));
 
     try {
       const apkUrl = state.version.apk_url;
+
+      // On non-native platforms, just open the APK URL directly
+      if (!Capacitor.isNativePlatform()) {
+        window.open(apkUrl, '_blank');
+        setState(prev => ({ ...prev, downloading: false }));
+        return;
+      }
 
       // Download APK using fetch with progress tracking
       const response = await fetch(apkUrl);
@@ -121,16 +134,14 @@ export const useAppUpdate = () => {
       setState(prev => ({ ...prev, progress: 100 }));
 
       // Trigger native install via the AppUpdater plugin
-      if (Capacitor.isNativePlatform()) {
-        try {
-          await AppUpdater.installApk({ fileName });
-        } catch (pluginErr) {
-          console.error('[AppUpdate] Plugin error:', pluginErr);
-          setState(prev => ({
-            ...prev,
-            error: 'Could not launch installer. Please enable "Install from unknown sources" in your device settings for this app, then try again.',
-          }));
-        }
+      try {
+        await AppUpdater.installApk({ fileName });
+      } catch (pluginErr) {
+        console.error('[AppUpdate] Plugin error:', pluginErr);
+        setState(prev => ({
+          ...prev,
+          error: 'Could not launch installer. Please enable "Install from unknown sources" in your device settings for this app, then try again.',
+        }));
       }
 
       setState(prev => ({ ...prev, downloading: false }));

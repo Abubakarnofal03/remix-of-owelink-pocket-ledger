@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { toast } from "sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -84,6 +85,20 @@ function CapacitorInitializer() {
   const { bills } = useBills();
   const { ious } = useIOUs();
   const { contacts } = useContacts();
+
+  // Show a toast for non-mandatory updates so users know there's one available
+  useEffect(() => {
+    if (update.available && update.version && !update.version.is_mandatory) {
+      toast("Update Available", {
+        description: `Version ${update.version.version_name} is available. Tap to update.`,
+        duration: 8000,
+        action: {
+          label: "Update",
+          onClick: () => update.downloadAndInstallApk(),
+        },
+      });
+    }
+  }, [update.available, update.version]);
 
   return (
     <>
