@@ -16,6 +16,8 @@ import { TourOverlay } from "@/components/ui/TourOverlay";
 import { usePushNotifications } from "@/hooks/usePushNotifications";
 import { useBackButton } from "@/hooks/useBackButton";
 import { useAppPermissions } from "@/hooks/useAppPermissions";
+import { useAppUpdate } from "@/hooks/useAppUpdate";
+import { UpdateDialog } from "@/components/UpdateDialog";
 import { useBills } from "@/hooks/useBills";
 import { useIOUs } from "@/hooks/useIOUs";
 import { useContacts } from "@/hooks/useContacts";
@@ -71,20 +73,34 @@ function AuthCacheClearer() {
 function CapacitorInitializer() {
   const { user } = useAuth();
   useCapacitor();
-  useAppPermissions(); // Request both notifications and contacts permissions
+  useAppPermissions();
   usePushNotifications();
   useBackButton();
 
+  const update = useAppUpdate();
+
   // Pre-fetch bills, IOUs, and contacts when user is logged in
-  // This ensures data is available when clicking from dashboard
   const { bills } = useBills();
   const { ious } = useIOUs();
   const { contacts } = useContacts();
 
-  // Just accessing these hooks triggers the queries to run
-  // No need to do anything with the data here
-
-  return null;
+  return (
+    <>
+      {update.available && update.version && (
+        <UpdateDialog
+          open={update.available}
+          versionName={update.version.version_name}
+          releaseNotes={update.version.release_notes}
+          isMandatory={update.version.is_mandatory}
+          downloading={update.downloading}
+          progress={update.progress}
+          error={update.error}
+          onUpdate={update.downloadAndInstallApk}
+          onDismiss={update.dismissUpdate}
+        />
+      )}
+    </>
+  );
 }
 
 // Tour renderer - renders the overlay globally

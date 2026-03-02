@@ -1,4 +1,6 @@
 export const APP_NAME = "Owelink";
+export const APP_VERSION_CODE = 1;
+export const APP_VERSION_NAME = "1.0.0";
 
 export const CURRENCY_SYMBOLS: Record<string, string> = {
   USD: "$",
