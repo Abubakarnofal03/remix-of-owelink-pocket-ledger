@@ -44,6 +44,42 @@ export type Database = {
         }
         Relationships: []
       }
+      app_versions: {
+        Row: {
+          apk_url: string | null
+          created_at: string | null
+          id: string
+          is_mandatory: boolean | null
+          release_notes: string | null
+          update_type: string
+          version_code: number
+          version_name: string
+          web_bundle_url: string | null
+        }
+        Insert: {
+          apk_url?: string | null
+          created_at?: string | null
+          id?: string
+          is_mandatory?: boolean | null
+          release_notes?: string | null
+          update_type?: string
+          version_code: number
+          version_name: string
+          web_bundle_url?: string | null
+        }
+        Update: {
+          apk_url?: string | null
+          created_at?: string | null
+          id?: string
+          is_mandatory?: boolean | null
+          release_notes?: string | null
+          update_type?: string
+          version_code?: number
+          version_name?: string
+          web_bundle_url?: string | null
+        }
+        Relationships: []
+      }
       bill_notices: {
         Row: {
           author_phone_suffix: string
