@@ -1091,11 +1091,19 @@ Never lose track of debts again. Split bills, send reminders & get paid faster.
               Disputes ({disputes.length})
             </h2>
             {disputes.map((dispute) => (
-              <DisputeCard
+              <div
                 key={dispute.id}
-                dispute={dispute}
-                currency={bill.currency}
-              />
+                onClick={() => {
+                  if (isCreator && dispute.status === 'open') setSelectedDispute(dispute);
+                }}
+                className={isCreator && dispute.status === 'open' ? 'cursor-pointer' : ''}
+              >
+                <DisputeCard
+                  dispute={dispute}
+                  currency={bill.currency}
+                  disputerName={getContactNameBySuffix(dispute.disputed_by_phone_suffix)}
+                />
+              </div>
             ))}
           </div>
         )}
@@ -1114,6 +1122,52 @@ Never lose track of debts again. Split bills, send reminders & get paid faster.
         }}
         isSubmitting={disputesLoading}
       />
+
+      {/* Dispute Response Dialog - for bill creators */}
+      {selectedDispute && (
+        <DisputeResponseDialog
+          open={!!selectedDispute}
+          onOpenChange={(open) => !open && setSelectedDispute(null)}
+          dispute={selectedDispute}
+          currency={bill.currency}
+          onAccept={async (response) => {
+            await updateDispute(selectedDispute.id, "accepted", response);
+            // If proposed amount exists, update participant's amount_owed
+            if (selectedDispute.proposed_amount !== null && selectedDispute.proposed_amount !== undefined) {
+              const participant = bill.participants?.find(p => {
+                const pSuffix = p.phone_suffix || getPhoneSuffix(p.phone_number);
+                return pSuffix === selectedDispute.disputed_by_phone_suffix;
+              });
+              if (participant) {
+                try {
+                  await updateBillParticipantOfflineFirst(participant.id, {
+                    amount_owed: selectedDispute.proposed_amount,
+                  });
+                  updateBillLocally(prev => ({
+                    ...prev,
+                    participants: prev.participants?.map(p =>
+                      p.id === participant.id
+                        ? { ...p, amount_owed: selectedDispute.proposed_amount }
+                        : p
+                    ),
+                  }));
+                  sync();
+                  toast.success("Participant amount updated to proposed amount");
+                } catch (error) {
+                  console.error("Error updating participant amount:", error);
+                  toast.error("Dispute accepted but failed to update amount");
+                }
+              }
+            }
+            setSelectedDispute(null);
+          }}
+          onReject={async (response) => {
+            await updateDispute(selectedDispute.id, "rejected", response);
+            setSelectedDispute(null);
+          }}
+          isSubmitting={disputesLoading}
+        />
+      )}
 
       {/* In-app Receipt Viewer */}
       {bill.receipt_url && (
