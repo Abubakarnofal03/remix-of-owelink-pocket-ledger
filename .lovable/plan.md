@@ -1,50 +1,40 @@
 
 
-## Plan: Full Bill Visibility for All Participants
+## Plan: Fix Dashboard "You Owe" and WhatsApp Number Formatting
 
-### Problem
-The `bill_participants` table RLS policy "Participants can view own participation" only lets a participant see **their own** row. So when friend 1 opens the bill detail, they only see themselves — not friends 2, 3, 4, or the creator's share.
+### Issue 1: "You Owe" Showing Rs0.00
 
-### Root Cause
-Missing RLS policy. Need a policy that says: "If you are a participant of bill X, you can see ALL participants of bill X."
+**Root cause**: The `useBalances` hook prioritizes local IndexedDB data. If the user has ANY local data (e.g., bills they created → `owedToYou > 0`), it returns immediately with potentially stale `youOwe = 0` and does a background server fetch. However, bills/IOUs where the user is the *debtor* may not be in local DB yet (sync hasn't run or completed). The background fetch should fix this via `setQueryData`, but the initial flash of 0 is what the user sees, and if the background fetch fails silently, it stays at 0.
 
-### Changes
+**Fix in `src/hooks/useBalances.tsx`**: When online, always use server data as the primary source. Use local data only as a fallback when offline or when the server times out. Remove the "local-first, server-background" pattern.
 
-**1. Database Migration — New RLS policy on `bill_participants`**
-
-Add a SELECT policy:
-```sql
-CREATE POLICY "Participants can view all bill members"
-  ON public.bill_participants
-  FOR SELECT
-  USING (is_bill_participant(bill_id));
+```
+queryFn flow:
+  1. If online → fetch from server directly (with 5s timeout)
+     - On success: return server data
+     - On timeout/error: fall back to local DB
+  2. If offline → fetch from local DB
 ```
 
-This uses the existing `is_bill_participant()` security definer function — if you're in the bill, you see everyone in the bill. No recursion risk since the function is `SECURITY DEFINER`.
+### Issue 2: WhatsApp Number Formatting
 
-**2. No UI changes needed**
+**Root cause**: `formatPhoneForWhatsApp()` in `src/lib/phoneUtils.ts` strips leading zeros and tries to prepend a country code. For numbers saved as `03121729411`, it strips the `0` and prepends `92`, making `923121729411` — but this logic is unreliable because:
+- The app isn't country-specific
+- The `defaultCountryCode` is just the first 2 digits of the user's own number, which may be wrong
+- Numbers saved with a leading `0` work fine on WhatsApp as-is
 
-The `BillDetail.tsx` page already:
-- Shows all participants with owed/paid/remaining amounts (lines 837-986)
-- Gates edit controls behind `isCreator` checks (status dropdown, edit amount, remove, record payment, send reminder)
-- Lets non-creators file disputes and post to the notice board
-- Shows the receipt/invoice to everyone
+**Fix in `src/lib/phoneUtils.ts`**: Simplify `formatPhoneForWhatsApp`:
+- If number starts with `+`, strip the `+` and return digits (wa.me format)
+- If number starts with `0`, return as-is (WhatsApp handles local numbers)
+- Otherwise, return the raw digits without any manipulation
 
-The only thing blocking participants from seeing the full picture is the missing RLS policy.
+**Update all callers** (BillDetail, IOUDetail, IOUCard, BillCard, GroupedIOUList) to stop passing `defaultCountryCode` since it's no longer used.
 
-### What participants will see (read-only)
-- All member names, phone numbers, avatars
-- Each member's owed amount, paid amount, remaining amount
-- Individual progress bars
-- Bill total, collected amount, remaining amount, due date
-- Receipt/invoice attachment
-- Notice board and disputes
-
-### What participants cannot do (unchanged)
-- Edit bill title/description/total/due date
-- Change any participant's status
-- Record payments
-- Add/remove participants
-- Send reminders
-- Archive/delete the bill
+### Files to Change
+1. `src/hooks/useBalances.tsx` — Rewrite queryFn to use server-first when online
+2. `src/lib/phoneUtils.ts` — Simplify `formatPhoneForWhatsApp` to not manipulate numbers
+3. `src/pages/BillDetail.tsx` — Remove `userCountryCode` from WhatsApp call
+4. `src/pages/IOUDetail.tsx` — Remove `userCountryCode` from WhatsApp call
+5. `src/components/ious/IOUCard.tsx` — Remove `userCountryCode` from WhatsApp call
+6. `src/components/bills/BillCard.tsx` — Remove `userCountryCode` from WhatsApp call
 
