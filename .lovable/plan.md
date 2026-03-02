@@ -1,93 +1,71 @@
 
 
-## Plan: Engagement Notifications & Entertaining Reminders
+## Plan: In-App Self-Update System
 
-### Overview
+There are two types of updates for a Capacitor app. Since most of your app logic lives in the web layer (HTML/JS/CSS), **web-layer OTA updates** cover 95% of cases without needing a new APK. For the rare native changes (new Capacitor plugins, Android manifest changes), you'd need a full APK update.
 
-Two main changes:
-1. **New edge function** `send-engagement-notifications` — a daily cron job that sends 2-3 random, fun engagement notifications per user based on their actual data (pending IOUs, unpaid bills, expense tracking nudges).
-2. **Rewrite reminder notification messages** in both `send-bill-reminders` and `send-iou-reminders` to use randomized entertaining templates with emojis, and sometimes include "X days since..." context.
-3. **Notify the creditor/creator** when a reminder is successfully sent to a debtor/participant — with a fun confirmation message.
+This plan covers **both**:
 
 ---
 
-### 1. New Edge Function: `send-engagement-notifications`
+### 1. Database: `app_versions` table
 
-**File**: `supabase/functions/send-engagement-notifications/index.ts`
+New table to track releases:
 
-Runs daily via cron. For each user with registered device tokens:
-- Query their data: pending IOUs (owed to them), pending bills, total owed, expense count
-- Build a pool of applicable notification types:
-  - **"Track an expense"** — generic nudge if they haven't logged expenses recently
-  - **"Check your balances"** — if they have pending IOUs/bills
-  - **"Someone owes you X"** — pick a random pending IOU and mention the amount
-  - **"Add an IOU"** — if a friend hasn't paid, suggest creating one
-  - **"WhatsApp nudge"** — suggest reminding a debtor via WhatsApp from the app
-- Randomly pick 2-3 from the applicable pool
-- Each type has 3-5 randomized message templates with emojis
-
-Example messages:
-- `"💰 Got expenses to track? Pop them in before you forget!"`
-- `"👀 Someone still owes you $50... just saying 😏"`
-- `"📊 Peek at your balances — you might be surprised!"`
-- `"🤔 Lent money to a friend? Add an IOU so you don't forget"`
-
-**Config**: Add to `supabase/config.toml`:
-```toml
-[functions.send-engagement-notifications]
-verify_jwt = false
+```sql
+CREATE TABLE public.app_versions (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  version_code integer NOT NULL,
+  version_name text NOT NULL,
+  release_notes text,
+  apk_url text,           -- URL to APK in storage (for native updates)
+  web_bundle_url text,     -- URL to web bundle zip (for OTA updates)
+  update_type text NOT NULL DEFAULT 'web', -- 'web' or 'native'
+  is_mandatory boolean DEFAULT false,
+  created_at timestamptz DEFAULT now()
+);
 ```
 
-**Cron**: Set up a daily cron at ~12:00 PM UTC (different time than reminders at 9 AM) calling this function.
+No RLS needed for SELECT (all users can check for updates). INSERT/UPDATE restricted to admin.
 
----
+### 2. Storage Bucket: `app-updates`
 
-### 2. Make Reminder Messages Entertaining
+A storage bucket to hold APK files and/or web bundles uploaded by admin.
 
-**Files**: `supabase/functions/send-iou-reminders/index.ts`, `supabase/functions/send-bill-reminders/index.ts`
+### 3. Update Check Hook: `src/hooks/useAppUpdate.tsx`
 
-Replace the static "Payment Reminder: You owe X" messages with randomized fun templates.
+- On app launch, query `app_versions` for latest version
+- Compare against current `versionCode` stored in app
+- If newer version exists:
+  - **Web update**: Download zip, extract to Capacitor's web directory, reload app
+  - **Native update (APK)**: Show dialog, download APK via `@capacitor/filesystem`, trigger Android install intent using a small custom Capacitor plugin
+- Show a toast/dialog: "Update available! v{version_name} — {release_notes}"
+- If `is_mandatory`, block app usage until updated
 
-For IOU reminders (to debtor):
-- `"Hey! 💸 You still owe {amount} for {desc}. Time to square up!"`
-- `"🔔 Friendly nudge — {amount} is waiting to be paid for {desc}"`
-- `"😅 It's been {days} days... {amount} for {desc} is still hanging!"`  ← only sometimes include days
-- `"💳 Quick reminder: {amount} for {desc}. Your wallet called, it's ready!"`
+### 4. APK Install (Android only)
 
-For bill reminders (to participants):
-- `"📋 {title} is still waiting! You owe {amount}. Let's close this out 🎯"`
-- `"⏰ Tick tock! {amount} for {title}. Don't leave everyone hanging!"`
-- `"🧾 Just a nudge about {title} — {amount} remaining. {days} days and counting!"` ← sometimes
+For APK sideloading, a small native Java class (`AppUpdater.java`) is needed to:
+- Open the downloaded APK file using `ACTION_INSTALL_PACKAGE` intent
+- Requires `REQUEST_INSTALL_PACKAGES` permission in AndroidManifest.xml
+- Uses the existing `FileProvider` already configured in the manifest
 
-The "days since created/due" info is included randomly (~40% of the time) to keep it fresh.
+### 5. Integration
 
----
+- Call `useAppUpdate()` in `App.tsx` on mount
+- Store current version in `src/lib/constants.ts` (e.g., `APP_VERSION_CODE = 1`)
+- Show update dialog with release notes and download progress
 
-### 3. Notify Creditor/Creator When Reminder Is Sent
+### Files to Create/Change
 
-In both reminder edge functions, after successfully sending reminders to debtors/participants:
-- Look up the **creditor's** (IOU) or **creator's** (bill) device tokens
-- Send them a fun confirmation notification:
-  - `"📤 Reminder sent to {person}! They can't say they forgot now 😄"`
-  - `"✅ Done! {person} just got a nudge about the {amount} they owe you"`
-  - `"🔔 We poked {person} about {desc}. You're welcome 😎"`
+1. **Database migration** — `app_versions` table + storage bucket
+2. `src/hooks/useAppUpdate.tsx` — Version check + download + install logic
+3. `src/lib/constants.ts` — Add `APP_VERSION_CODE`
+4. `src/App.tsx` — Call the hook
+5. `android/app/src/main/java/.../AppUpdater.java` — Native install intent plugin
+6. `android/app/src/main/AndroidManifest.xml` — Add `REQUEST_INSTALL_PACKAGES` permission
+7. `android/app/src/main/java/.../MainActivity.java` — Register AppUpdater plugin
 
-For bills, `{person}` could say "2 people" if multiple participants were notified. For IOUs, use the debtor phone or a generic "your debtor."
+### Caveat
 
----
-
-### Files to Change
-
-1. `supabase/functions/send-engagement-notifications/index.ts` — **New** edge function
-2. `supabase/functions/send-iou-reminders/index.ts` — Entertaining templates + creditor notification
-3. `supabase/functions/send-bill-reminders/index.ts` — Entertaining templates + creator notification
-4. `supabase/config.toml` — Add engagement function config (auto-managed, just noting)
-
-### Technical Details
-
-- The engagement function queries `device_tokens` joined with user data to build per-user notification pools
-- Uses `Math.random()` for template selection and for the "include days" coin flip
-- Days calculation: `Math.floor((now - created_at) / 86400000)`
-- Creditor/creator token lookup uses `creditor_id` / `creator_id` to find their `device_tokens` via the `profiles` table's `phone_suffix`
-- The cron job for engagement notifications needs to be set up separately (daily at 12:00 UTC)
+APK sideloading requires users to have "Install from unknown sources" enabled for the app. The update dialog should guide them through this if needed. Alternatively, if you publish to Play Store, you could use Google's official In-App Updates API instead — but the custom approach gives you full control without Play Store dependency.
 
