@@ -102,11 +102,18 @@ async function fetchDashboardDataOffline(userId: string, profilePhoneNumber: str
     }
   });
 
-  // IOUs I created (I'm the creditor) - what others owe me
+  // IOUs I created (I'm the creditor) - check direction
   const myIOUs = localIOUs.filter(iou => iou.creditor_id === userId);
   
   myIOUs.forEach((iou) => {
-    owedToYou += iou.amount - iou.amount_paid;
+    const remaining = iou.amount - iou.amount_paid;
+    if (iou.direction === 'i_owe') {
+      // I created this as "I owe someone" → goes to youOwe
+      youOwe += remaining;
+    } else {
+      // Standard: someone owes me
+      owedToYou += remaining;
+    }
     
     activities.push({
       id: `iou-${iou.id}`,
@@ -115,7 +122,7 @@ async function fetchDashboardDataOffline(userId: string, profilePhoneNumber: str
       amount: iou.amount,
       currency: iou.currency,
       date: iou.created_at,
-      isCredit: true,
+      isCredit: iou.direction !== 'i_owe',
     });
   });
 
@@ -221,7 +228,14 @@ async function fetchDashboardData(userId: string, profilePhoneNumber: string, pr
     .is("deleted_at", null);
 
   myIOUs?.forEach((iou) => {
-    owedToYou += iou.amount - iou.amount_paid;
+    const remaining = iou.amount - iou.amount_paid;
+    if (iou.direction === 'i_owe') {
+      // I created this as "I owe someone" → goes to youOwe
+      youOwe += remaining;
+    } else {
+      // Standard: someone owes me
+      owedToYou += remaining;
+    }
     
     activities.push({
       id: `iou-${iou.id}`,
@@ -230,7 +244,7 @@ async function fetchDashboardData(userId: string, profilePhoneNumber: string, pr
       amount: iou.amount,
       currency: iou.currency,
       date: iou.created_at,
-      isCredit: true,
+      isCredit: iou.direction !== 'i_owe',
     });
   });
 
