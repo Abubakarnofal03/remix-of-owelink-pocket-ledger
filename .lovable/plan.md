@@ -1,138 +1,93 @@
 
 
-## Plan: Notifications, Reminder Fix, Notice Board & Disputes for IOUs
+## Plan: Engagement Notifications & Entertaining Reminders
 
-This is a large multi-part task. Here's a breakdown of everything needed.
+### Overview
+
+Two main changes:
+1. **New edge function** `send-engagement-notifications` — a daily cron job that sends 2-3 random, fun engagement notifications per user based on their actual data (pending IOUs, unpaid bills, expense tracking nudges).
+2. **Rewrite reminder notification messages** in both `send-bill-reminders` and `send-iou-reminders` to use randomized entertaining templates with emojis, and sometimes include "X days since..." context.
+3. **Notify the creditor/creator** when a reminder is successfully sent to a debtor/participant — with a fun confirmation message.
 
 ---
 
-### 1. Fix Reminder Toggle Not Persisting
+### 1. New Edge Function: `send-engagement-notifications`
 
-**Root cause**: In `src/lib/offline/dataSync.ts` line 127-151, `syncIOUsFromServer` does NOT map `reminder_enabled`, `reminder_interval_days`, `last_reminder_sent_at`, or `is_pinned` from server data to `LocalIOU` objects. So every sync overwrites these fields with `undefined`, resetting the toggle.
+**File**: `supabase/functions/send-engagement-notifications/index.ts`
 
-**Fix in `src/lib/offline/dataSync.ts`**: Add the missing fields to the IOU mapping:
-```typescript
-reminder_enabled: (iou as any).reminder_enabled || false,
-reminder_interval_days: (iou as any).reminder_interval_days || null,
-last_reminder_sent_at: (iou as any).last_reminder_sent_at || null,
-is_pinned: (iou as any).is_pinned || false,
+Runs daily via cron. For each user with registered device tokens:
+- Query their data: pending IOUs (owed to them), pending bills, total owed, expense count
+- Build a pool of applicable notification types:
+  - **"Track an expense"** — generic nudge if they haven't logged expenses recently
+  - **"Check your balances"** — if they have pending IOUs/bills
+  - **"Someone owes you X"** — pick a random pending IOU and mention the amount
+  - **"Add an IOU"** — if a friend hasn't paid, suggest creating one
+  - **"WhatsApp nudge"** — suggest reminding a debtor via WhatsApp from the app
+- Randomly pick 2-3 from the applicable pool
+- Each type has 3-5 randomized message templates with emojis
+
+Example messages:
+- `"💰 Got expenses to track? Pop them in before you forget!"`
+- `"👀 Someone still owes you $50... just saying 😏"`
+- `"📊 Peek at your balances — you might be surprised!"`
+- `"🤔 Lent money to a friend? Add an IOU so you don't forget"`
+
+**Config**: Add to `supabase/config.toml`:
+```toml
+[functions.send-engagement-notifications]
+verify_jwt = false
 ```
 
-The reminder interval logic in the edge functions (`send-bill-reminders`, `send-iou-reminders`) already correctly checks `daysSinceLastReminder < intervalDays`, so the "every N days" logic is already working. The issue was just the toggle resetting due to missing sync fields.
+**Cron**: Set up a daily cron at ~12:00 PM UTC (different time than reminders at 9 AM) calling this function.
 
 ---
 
-### 2. Add Notifications for Group Activities
+### 2. Make Reminder Messages Entertaining
 
-**File**: `src/hooks/useExpenseGroups.tsx`
+**Files**: `supabase/functions/send-iou-reminders/index.ts`, `supabase/functions/send-bill-reminders/index.ts`
 
-Add push notifications when:
-- **Member added** to a group: notify all existing group members
-- **Member removed**: notify the removed member
-- **Expense added**: notify all group members except the one who added it
-- **Expense deleted**: notify all group members
+Replace the static "Payment Reminder: You owe X" messages with randomized fun templates.
 
-This requires fetching group member phone suffixes and calling `sendPushNotification`. Import and use the existing `sendPushNotification` and `getPhoneSuffix` utilities.
+For IOU reminders (to debtor):
+- `"Hey! 💸 You still owe {amount} for {desc}. Time to square up!"`
+- `"🔔 Friendly nudge — {amount} is waiting to be paid for {desc}"`
+- `"😅 It's been {days} days... {amount} for {desc} is still hanging!"`  ← only sometimes include days
+- `"💳 Quick reminder: {amount} for {desc}. Your wallet called, it's ready!"`
 
----
+For bill reminders (to participants):
+- `"📋 {title} is still waiting! You owe {amount}. Let's close this out 🎯"`
+- `"⏰ Tick tock! {amount} for {title}. Don't leave everyone hanging!"`
+- `"🧾 Just a nudge about {title} — {amount} remaining. {days} days and counting!"` ← sometimes
 
-### 3. Add Notifications for Dispute Events
-
-**Files**: `src/pages/BillDetail.tsx`, `src/pages/IOUDetail.tsx`
-
-- **Dispute opened**: notify the bill creator / IOU creditor (already partly done via the disputes hook, but no push notification is sent)
-- **Dispute accepted/rejected**: notify the disputer
-
-For bills, also notify all other bill participants about the dispute event.
-
-Add `sendPushNotification` calls in:
-- `DisputeDialog` onSubmit handlers (in BillDetail and IOUDetail)
-- `DisputeResponseDialog` onAccept/onReject handlers
+The "days since created/due" info is included randomly (~40% of the time) to keep it fresh.
 
 ---
 
-### 4. Add Notifications for Notice Board Activity
+### 3. Notify Creditor/Creator When Reminder Is Sent
 
-**File**: `src/components/bills/NoticeBoard.tsx`
+In both reminder edge functions, after successfully sending reminders to debtors/participants:
+- Look up the **creditor's** (IOU) or **creator's** (bill) device tokens
+- Send them a fun confirmation notification:
+  - `"📤 Reminder sent to {person}! They can't say they forgot now 😄"`
+  - `"✅ Done! {person} just got a nudge about the {amount} they owe you"`
+  - `"🔔 We poked {person} about {desc}. You're welcome 😎"`
 
-The notice board already sends push notifications when a notice is added. Verify this is working and extend it to the IOUs module (see section 6).
-
----
-
-### 5. Create `iou_notices` Database Table
-
-**New migration**: Create `iou_notices` table mirroring `bill_notices`:
-
-```sql
-CREATE TABLE public.iou_notices (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  iou_id uuid NOT NULL,
-  author_phone_suffix text NOT NULL,
-  message text NOT NULL,
-  color text NOT NULL DEFAULT '#6366f1',
-  created_at timestamptz NOT NULL DEFAULT now(),
-  updated_at timestamptz NOT NULL DEFAULT now()
-);
-
-ALTER TABLE public.iou_notices ENABLE ROW LEVEL SECURITY;
-
--- RLS: creditor can manage notices
-CREATE POLICY "IOU creditor can manage notices" ON public.iou_notices
-  FOR ALL USING (EXISTS (
-    SELECT 1 FROM ious WHERE ious.id = iou_notices.iou_id AND ious.creditor_id = auth.uid()
-  ));
-
--- RLS: debtor can view and create notices
-CREATE POLICY "IOU debtor can view notices" ON public.iou_notices
-  FOR SELECT USING (
-    EXISTS (
-      SELECT 1 FROM ious WHERE ious.id = iou_notices.iou_id
-      AND (debtor_user_id = auth.uid() OR COALESCE(debtor_phone_suffix, RIGHT(regexp_replace(debtor_phone_number, '[^0-9]', '', 'g'), 10)) = get_user_phone_suffix(auth.uid()))
-    )
-  );
-
-CREATE POLICY "IOU debtor can create notices" ON public.iou_notices
-  FOR INSERT WITH CHECK (
-    author_phone_suffix = get_user_phone_suffix(auth.uid())
-    AND EXISTS (
-      SELECT 1 FROM ious WHERE ious.id = iou_notices.iou_id
-      AND (debtor_user_id = auth.uid() OR COALESCE(debtor_phone_suffix, RIGHT(regexp_replace(debtor_phone_number, '[^0-9]', '', 'g'), 10)) = get_user_phone_suffix(auth.uid()))
-    )
-  );
-
-CREATE POLICY "Author can delete own IOU notices" ON public.iou_notices
-  FOR DELETE USING (author_phone_suffix = get_user_phone_suffix(auth.uid()));
-```
-
----
-
-### 6. Implement Notice Board for IOUs
-
-**New component**: `src/components/ious/IOUNoticeBoard.tsx` — adapt `NoticeBoard.tsx` for IOUs, reading from `iou_notices` table instead of `bill_notices`.
-
-**Update IndexedDB schema** in `src/lib/offline/db.ts`:
-- Add `LocalIOUNotice` interface
-- Add `iouNotices` table to Dexie schema (bump version)
-
-**Add to IOUDetail page** (`src/pages/IOUDetail.tsx`):
-- Import and render `IOUNoticeBoard` component
-- Pass creditor/debtor phone suffixes for notifications
-
----
-
-### 7. Add Dispute Support for IOUs (Already Exists)
-
-IOUDetail already has dispute filing, viewing, and response dialogs. The missing piece is just **push notifications** (covered in section 3).
+For bills, `{person}` could say "2 people" if multiple participants were notified. For IOUs, use the debtor phone or a generic "your debtor."
 
 ---
 
 ### Files to Change
 
-1. `src/lib/offline/dataSync.ts` — Fix IOU sync missing reminder fields
-2. `src/hooks/useExpenseGroups.tsx` — Add push notifications for group activities
-3. `src/pages/BillDetail.tsx` — Add push notifications for dispute events
-4. `src/pages/IOUDetail.tsx` — Add push notifications for dispute events, add IOUNoticeBoard
-5. `src/lib/offline/db.ts` — Add `LocalIOUNotice` interface and table, bump schema version
-6. `src/components/ious/IOUNoticeBoard.tsx` — New component (adapted from NoticeBoard)
-7. **Database migration** — Create `iou_notices` table with RLS policies
+1. `supabase/functions/send-engagement-notifications/index.ts` — **New** edge function
+2. `supabase/functions/send-iou-reminders/index.ts` — Entertaining templates + creditor notification
+3. `supabase/functions/send-bill-reminders/index.ts` — Entertaining templates + creator notification
+4. `supabase/config.toml` — Add engagement function config (auto-managed, just noting)
+
+### Technical Details
+
+- The engagement function queries `device_tokens` joined with user data to build per-user notification pools
+- Uses `Math.random()` for template selection and for the "include days" coin flip
+- Days calculation: `Math.floor((now - created_at) / 86400000)`
+- Creditor/creator token lookup uses `creditor_id` / `creator_id` to find their `device_tokens` via the `profiles` table's `phone_suffix`
+- The cron job for engagement notifications needs to be set up separately (daily at 12:00 UTC)
 
