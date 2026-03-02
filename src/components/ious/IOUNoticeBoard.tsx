@@ -112,13 +112,14 @@ export function IOUNoticeBoard({
   const [loading, setLoading] = useState(true);
   const [newMessage, setNewMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [expanded, setExpanded] = useState(true);
+  const [expanded, setExpanded] = useState(false);
 
   useEffect(() => {
     const fetchNotices = async () => {
       const cached = await loadCachedNotices(iouId);
       if (cached.length > 0) {
         setNotices(cached);
+        setExpanded(true);
         setLoading(false);
       }
 
@@ -135,6 +136,7 @@ export function IOUNoticeBoard({
         const localOnly = cached.filter(n => n.is_local && !serverIds.has(n.id));
         const merged = [...localOnly, ...serverNotices];
         setNotices(merged);
+        if (merged.length > 0) setExpanded(true);
         await cacheNotices(serverNotices, iouId);
       } catch (error) {
         console.error("Error fetching IOU notices:", error);

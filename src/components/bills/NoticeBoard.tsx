@@ -117,7 +117,7 @@ export function NoticeBoard({
   const [loading, setLoading] = useState(true);
   const [newMessage, setNewMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [expanded, setExpanded] = useState(true);
+  const [expanded, setExpanded] = useState(false);
 
   useEffect(() => {
     const fetchNotices = async () => {
@@ -125,6 +125,7 @@ export function NoticeBoard({
       const cached = await loadCachedNotices(billId);
       if (cached.length > 0) {
         setNotices(cached);
+        setExpanded(true);
         setLoading(false);
       }
 
@@ -143,6 +144,7 @@ export function NoticeBoard({
         const localOnly = cached.filter(n => n.is_local && !serverIds.has(n.id));
         const merged = [...localOnly, ...serverNotices];
         setNotices(merged);
+        if (merged.length > 0) setExpanded(true);
 
         // Cache server data
         await cacheNotices(serverNotices, billId);
