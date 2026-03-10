@@ -75,7 +75,7 @@ export default function Index() {
                 <span className="text-xs text-muted-foreground font-medium">Owed to you</span>
               </div>
               <MoneyDisplay 
-                amount={balancesLoading ? 0 : owedToYou} 
+                amount={owedToYou} 
                 currency={currency}
                 size="lg" 
                 className="text-foreground" 
