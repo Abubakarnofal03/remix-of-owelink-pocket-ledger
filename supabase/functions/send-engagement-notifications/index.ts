@@ -261,22 +261,19 @@ const handler = async (req: Request): Promise<Response> => {
           candidates.push(whatsappNudge(debtorDesc));
         }
 
-        // Pick 2-3 random from candidates (deduplicated by title)
-        const count = Math.random() < 0.5 ? 2 : 3;
-        const selected = shuffle(candidates).slice(0, Math.min(count, candidates.length));
+        // Pick exactly 1 random notification per user per invocation
+        const selected = pick(shuffle(candidates));
 
         if (!accessToken) {
           accessToken = await getAccessToken(serviceAccount);
         }
 
-        for (const notif of selected) {
-          for (const fcmToken of tokens) {
-            const success = await sendFCM(accessToken, projectId, fcmToken, notif.title, notif.body, notif.data);
-            if (success) totalSent++;
-          }
+        for (const fcmToken of tokens) {
+          const success = await sendFCM(accessToken, projectId, fcmToken, selected.title, selected.body, selected.data);
+          if (success) totalSent++;
         }
 
-        console.log(`[engagement] User ${userId} — sent ${selected.length} engagement notifications`);
+        console.log(`[engagement] User ${userId} — sent 1 engagement notification`);
       } catch (userErr) {
         console.error(`[engagement] Error processing user ${userId}:`, userErr);
       }
