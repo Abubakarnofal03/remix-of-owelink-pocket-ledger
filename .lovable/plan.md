@@ -1,71 +1,41 @@
+## Bug Fixes: Dashboard Loading Speed & Engagement Notification Spam
 
+### Bug 1: Dashboard shows zeros for 2-3 seconds
 
-## Plan: In-App Self-Update System
+**Root cause:** `useBalances` uses `isOnline` check and always tries the server first with a 5-second timeout. While waiting, `isLoading` is true and the UI shows `0` for all amounts. There's no instant cache-first strategy.
 
-There are two types of updates for a Capacitor app. Since most of your app logic lives in the web layer (HTML/JS/CSS), **web-layer OTA updates** cover 95% of cases without needing a new APK. For the rare native changes (new Capacitor plugins, Android manifest changes), you'd need a full APK update.
+**Fix:** Load local IndexedDB data immediately as the initial/placeholder data, then silently refresh from the server in the background. This way numbers appear instantly from cache on every app open.
 
-This plan covers **both**:
+Changes to `src/hooks/useBalances.tsx`:
 
----
+- Add a `placeholderData` or `initialData` function that synchronously returns cached local DB data
+- Better approach: split into two queries — one instant local query, one background server query. Or simpler: always fetch local first (fast), then trigger a background server fetch that updates the cache.
+- Concretely: change `queryFn` to always return local data first, then fire-and-forget a server sync that invalidates the query when done. This matches the existing `non-blocking-list-queries` architecture pattern already used for bills/IOUs lists.
 
-### 1. Database: `app_versions` table
+Changes to `src/pages/Index.tsx`:
 
-New table to track releases:
+- Stop showing `0` while loading — show the cached values immediately instead of `balancesLoading ? 0 : owedToYou`
 
-```sql
-CREATE TABLE public.app_versions (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  version_code integer NOT NULL,
-  version_name text NOT NULL,
-  release_notes text,
-  apk_url text,           -- URL to APK in storage (for native updates)
-  web_bundle_url text,     -- URL to web bundle zip (for OTA updates)
-  update_type text NOT NULL DEFAULT 'web', -- 'web' or 'native'
-  is_mandatory boolean DEFAULT false,
-  created_at timestamptz DEFAULT now()
-);
-```
+### Bug 2: All engagement notifications arrive at the same time
 
-No RLS needed for SELECT (all users can check for updates). INSERT/UPDATE restricted to admin.
+**Root cause:** The edge function `send-engagement-notifications` runs once (via cron at 12:00 PM UTC), and for each user it sends 2-3 notifications all at once in a tight loop. There's no delay or spreading.
 
-### 2. Storage Bucket: `app-updates`
+**Fix:** Change the approach so only **1 notification per user per invocation** is sent, and schedule the cron to run **3-4 times per day at random-ish intervals** (e.g., 9 AM, 1 PM, 5 PM, 8 PM UTC — staggered). Each invocation picks just 1 random notification for each user.
 
-A storage bucket to hold APK files and/or web bundles uploaded by admin.
+Changes to `supabase/functions/send-engagement-notifications/index.ts`:
 
-### 3. Update Check Hook: `src/hooks/useAppUpdate.tsx`
+- Change from sending 2-3 notifications to sending exactly **1** notification per user per invocation
+- Remove the `count = Math.random() < 0.5 ? 2 : 3` logic — always pick 1
+- Remove the confirmation notifications to the creditor (the "Done! They just got a nudge" messages) — user explicitly asked for no owner notifications from engagement nudges
 
-- On app launch, query `app_versions` for latest version
-- Compare against current `versionCode` stored in app
-- If newer version exists:
-  - **Web update**: Download zip, extract to Capacitor's web directory, reload app
-  - **Native update (APK)**: Show dialog, download APK via `@capacitor/filesystem`, trigger Android install intent using a small custom Capacitor plugin
-- Show a toast/dialog: "Update available! v{version_name} — {release_notes}"
-- If `is_mandatory`, block app usage until updated
+**Cron schedule change** (via SQL):
 
-### 4. APK Install (Android only)
+- Update the cron job to run 3-4 times daily at spread-out hours (e.g., `0 8,13,17,21 * * *` — 8 AM, 1 PM, 5 PM, 9 PM UTC)
+- Each run sends only 1 random notification per user, so throughout the day users get 3-4 spaced-out nudges instead of a burst
 
-For APK sideloading, a small native Java class (`AppUpdater.java`) is needed to:
-- Open the downloaded APK file using `ACTION_INSTALL_PACKAGE` intent
-- Requires `REQUEST_INSTALL_PACKAGES` permission in AndroidManifest.xml
-- Uses the existing `FileProvider` already configured in the manifest
+### Summary of files to change
 
-### 5. Integration
-
-- Call `useAppUpdate()` in `App.tsx` on mount
-- Store current version in `src/lib/constants.ts` (e.g., `APP_VERSION_CODE = 1`)
-- Show update dialog with release notes and download progress
-
-### Files to Create/Change
-
-1. **Database migration** — `app_versions` table + storage bucket
-2. `src/hooks/useAppUpdate.tsx` — Version check + download + install logic
-3. `src/lib/constants.ts` — Add `APP_VERSION_CODE`
-4. `src/App.tsx` — Call the hook
-5. `android/app/src/main/java/.../AppUpdater.java` — Native install intent plugin
-6. `android/app/src/main/AndroidManifest.xml` — Add `REQUEST_INSTALL_PACKAGES` permission
-7. `android/app/src/main/java/.../MainActivity.java` — Register AppUpdater plugin
-
-### Caveat
-
-APK sideloading requires users to have "Install from unknown sources" enabled for the app. The update dialog should guide them through this if needed. Alternatively, if you publish to Play Store, you could use Google's official In-App Updates API instead — but the custom approach gives you full control without Play Store dependency.
-
+1. `**src/hooks/useBalances.tsx**` — Local-first: return IndexedDB data immediately, background-sync server data
+2. `**src/pages/Index.tsx**` — Remove `balancesLoading ? 0 : value` pattern, always show cached values
+3. `**supabase/functions/send-engagement-notifications/index.ts**` — Send exactly 1 notification per user per invocation, no owner confirmations
+4. **Cron job SQL** — Reschedule from single daily run to 3-4 spread-out runs per day
