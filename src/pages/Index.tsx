@@ -24,7 +24,7 @@ import {
 
 export default function Index() {
   const { user, profile, loading } = useAuth();
-  const { owedToYou, youOwe, netBalance, recentActivity, loading: balancesLoading, refetch } = useBalances();
+  const { owedToYou, youOwe, netBalance, recentActivity, refetch } = useBalances();
   const { currency } = useCurrency();
   
 
