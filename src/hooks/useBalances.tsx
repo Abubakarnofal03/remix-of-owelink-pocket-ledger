@@ -290,7 +290,8 @@ export function useBalances() {
   const queryClient = useQueryClient();
   const { isOnline } = useNetworkStatus();
 
-  const { data, isLoading: loading } = useQuery({
+  // Local-first query: returns IndexedDB data instantly
+  const { data } = useQuery({
     queryKey: [...DASHBOARD_QUERY_KEY, user?.id],
     queryFn: async () => {
       if (!user || !profile) {
@@ -300,27 +301,8 @@ export function useBalances() {
         };
       }
 
-      // Server-first when online, local fallback
-      if (isOnline) {
-        console.log('[useBalances] Online: fetching from server...');
-        try {
-          const timeoutPromise = new Promise<never>((_, reject) =>
-            setTimeout(() => reject(new Error('timeout')), 5000)
-          );
-          
-          const serverData = await Promise.race([
-            fetchDashboardData(user.id, profile.phone_number, profile.phone_suffix),
-            timeoutPromise
-          ]);
-          
-          return serverData;
-        } catch (e) {
-          console.warn('[useBalances] Server fetch failed/timeout, falling back to local:', e);
-        }
-      }
-
-      // Offline or server failed: use local DB
-      console.log('[useBalances] Using local DB fallback...');
+      // Always return local data first (instant)
+      console.log('[useBalances] Loading from local DB (instant)...');
       try {
         const localData = await fetchDashboardDataOffline(
           user.id,
@@ -332,22 +314,54 @@ export function useBalances() {
         console.warn('[useBalances] Local DB error:', e);
       }
 
-      // Final fallback
       return {
         balances: { owedToYou: 0, youOwe: 0, netBalance: 0 },
         recentActivity: [],
       };
     },
     enabled: !!user && !!profile,
-    staleTime: 30 * 1000, // 30 seconds - more responsive
-    gcTime: 15 * 60 * 1000, // 15 minutes
+    staleTime: Infinity, // Don't refetch automatically — we handle sync manually
+    gcTime: 15 * 60 * 1000,
   });
+
+  // Background server sync: fire-and-forget, invalidates query when done
+  React.useEffect(() => {
+    if (!user || !profile || !isOnline) return;
+
+    let cancelled = false;
+
+    const syncFromServer = async () => {
+      try {
+        console.log('[useBalances] Background server sync starting...');
+        const timeoutPromise = new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('timeout')), 5000)
+        );
+
+        const serverData = await Promise.race([
+          fetchDashboardData(user.id, profile.phone_number, profile.phone_suffix),
+          timeoutPromise
+        ]);
+
+        if (!cancelled) {
+          // Update the query cache with server data
+          queryClient.setQueryData([...DASHBOARD_QUERY_KEY, user.id], serverData);
+          console.log('[useBalances] Background sync complete, cache updated.');
+        }
+      } catch (e) {
+        console.warn('[useBalances] Background server sync failed:', e);
+      }
+    };
+
+    syncFromServer();
+
+    return () => { cancelled = true; };
+  }, [user?.id, profile?.phone_number, isOnline, queryClient]);
 
   return {
     owedToYou: data?.balances.owedToYou ?? 0,
     youOwe: data?.balances.youOwe ?? 0,
     netBalance: data?.balances.netBalance ?? 0,
-    loading,
+    loading: false, // Never show loading — we always have local data or zeros
     recentActivity: data?.recentActivity ?? [],
     refetch: () => queryClient.invalidateQueries({ queryKey: DASHBOARD_QUERY_KEY }),
   };

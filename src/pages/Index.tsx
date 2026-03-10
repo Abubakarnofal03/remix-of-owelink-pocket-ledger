@@ -104,20 +104,18 @@ export default function Index() {
               <div>
                 <p className="text-sm text-muted-foreground mb-1">Net Balance</p>
                 <MoneyDisplay 
-                  amount={balancesLoading ? 0 : netBalance} 
+                  amount={netBalance} 
                   currency={currency}
                   size="xl" 
                   showSign 
                 />
-                {!balancesLoading && (
-                  <p className="text-xs text-muted-foreground mt-1">
-                    {netBalance > 0
-                      ? "You're in the green!"
-                      : netBalance < 0
-                      ? "Time to settle up"
-                      : "All balanced!"}
-                  </p>
-                )}
+                <p className="text-xs text-muted-foreground mt-1">
+                  {netBalance > 0
+                    ? "You're in the green!"
+                    : netBalance < 0
+                    ? "Time to settle up"
+                    : "All balanced!"}
+                </p>
               </div>
               <div className={`h-12 w-12 rounded-full flex items-center justify-center ${
                 netBalance > 0 
