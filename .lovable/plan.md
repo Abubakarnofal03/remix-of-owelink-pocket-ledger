@@ -1,71 +1,93 @@
+# Smart Transaction Detection & Expense Suggestion
 
+Passively detect financial transactions from Android notifications (and optionally SMS) and turn them into **expense suggestions** that the user confirms. Nothing is ever auto-saved — the user always taps Add, Review, or Ignore.
 
-## Plan: In-App Self-Update System
+## Scope of this plan
 
-There are two types of updates for a Capacitor app. Since most of your app logic lives in the web layer (HTML/JS/CSS), **web-layer OTA updates** cover 95% of cases without needing a new APK. For the rare native changes (new Capacitor plugins, Android manifest changes), you'd need a full APK update.
+- **Android only.** iOS does not allow reading other apps' notifications/SMS, so this feature is gated behind `Capacitor.getPlatform() === 'android'`.
+- Suggestions feed into the existing `expenses` table (via `useExpenses.createExpense`). No schema changes to server tables.
+- All parsing, dedupe, and storage of raw notification text happens **on-device only**. Only confirmed expenses sync to the backend.
 
-This plan covers **both**:
+## User flow
 
----
+1. User grants Notification Access (and optionally SMS) once from Settings → "Smart Expense Detection".
+2. Bank/wallet app posts a notification (e.g. "Rs 500 debited at KFC via Meezan Bank").
+3. Native listener forwards the text to the JS layer, where it is parsed, deduped, and scored.
+4. A local Android notification appears: **"💡 Add Expense — Rs 500 at KFC"** with actions **Add / Review / Ignore**.
+5. User taps:
+   - **Add** → expense saved silently with auto-category.
+   - **Review** → app opens prefilled expense form (`/expenses/new?suggestion=<id>`).
+   - **Ignore** → suggestion dismissed and merchant optionally muted.
+6. An in-app **Suggestions inbox** (badge on the Expenses tab) lists pending suggestions for users who missed the notification.
 
-### 1. Database: `app_versions` table
+## What gets built
 
-New table to track releases:
+### 1. Native Android layer (new files in `android/app/.../`)
+- `TxnNotificationListener.java` — `NotificationListenerService` that captures notifications from a whitelist of bank/wallet packages (Meezan, HBL, UBL, Alfalah, JazzCash, EasyPaisa, Sadapay, Nayapay, default SMS apps) and forwards `{packageName, title, text, postedAt}` to the bridge.
+- `SmsReceiver.java` (optional, behind a toggle) — `BroadcastReceiver` for `SMS_RECEIVED` from known bank shortcodes.
+- `TxnBridge.java` — Capacitor plugin exposing:
+  - `requestNotificationAccess()` → opens Android settings page.
+  - `hasNotificationAccess()` → boolean.
+  - `requestSmsPermission()` / `hasSmsPermission()`.
+  - `showSuggestionNotification({id, title, body, actions})` with Add / Review / Ignore PendingIntents.
+  - Emits `txnSignal` event to JS with the raw payload.
+  - Emits `suggestionAction` event when user taps Add/Ignore from the notification (Review just deep-links via existing `owelink://` scheme).
+- `AndroidManifest.xml` — register the listener service, SMS permission/receiver (guarded), and intent filters for the suggestion action buttons. Register both plugins in `MainActivity.java`.
 
-```sql
-CREATE TABLE public.app_versions (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  version_code integer NOT NULL,
-  version_name text NOT NULL,
-  release_notes text,
-  apk_url text,           -- URL to APK in storage (for native updates)
-  web_bundle_url text,     -- URL to web bundle zip (for OTA updates)
-  update_type text NOT NULL DEFAULT 'web', -- 'web' or 'native'
-  is_mandatory boolean DEFAULT false,
-  created_at timestamptz DEFAULT now()
-);
-```
+### 2. JS parsing & suggestion pipeline (new `src/lib/txnDetection/`)
+- `parser.ts` — regex + keyword rules to extract `{amount, currency, merchant, type: debit|credit, source, timestamp, rawText}`. Handles common patterns: `Rs 500`, `PKR 1,234.00`, `debited/credited/spent/received`, "at <merchant>", "to <merchant>".
+- `categorizer.ts` — merchant → category map (KFC/McDonald's → Food, Uber/Careem/InDrive → Transport, Spotify/Netflix → Subscription, K-Electric/SSGC → Bills, Steam/PlayStation → Gaming, fallback Miscellaneous). Maps to existing **expense buckets** when one matches by name.
+- `dedupe.ts` — in-memory + Dexie-backed dedupe. Two signals merge if `|Δamount| < 0.01`, time within 5 minutes, and (source matches OR merchant fuzzy-matches via Levenshtein ≤ 2). Stores fingerprint in a new Dexie table `txn_signals` for 24h.
+- `confidence.ts` — score 0–1 from: number of agreeing sources (+0.3 each), clean merchant string (+0.2), amount parsed cleanly (+0.2), known package (+0.3). Thresholds: ≥0.7 high (notify), 0.4–0.7 medium (notify, marked "Low confidence"), <0.4 inbox-only.
+- `suggestionStore.ts` — new Dexie table `expense_suggestions` with `{id, amount, currency, merchant, category, bucketId?, source, timestamp, rawText, confidence, status: 'pending'|'added'|'ignored'|'reviewed', createdAt}`.
 
-No RLS needed for SELECT (all users can check for updates). INSERT/UPDATE restricted to admin.
+### 3. JS glue (new `src/hooks/useTxnDetection.tsx`)
+- Mounted once inside `<AuthProvider>` (in `App.tsx`), only when platform is Android and the user has enabled the feature in settings.
+- Subscribes to `txnSignal` from the bridge → parser → dedupe → confidence → store → trigger native `showSuggestionNotification` for medium/high confidence.
+- Subscribes to `suggestionAction`:
+  - `add` → calls `useExpenses.createExpense` with parsed data, marks suggestion `added`, toasts in-app if open.
+  - `ignore` → marks `ignored`, optionally adds merchant to mute list.
+- Listens for app deep link `owelink://suggestion/<id>` to open the prefilled form.
 
-### 2. Storage Bucket: `app-updates`
+### 4. UI
+- **Settings page** — new card "Smart Expense Detection" with toggles: Enable notifications scanning, Enable SMS scanning (Android only), Auto-ignore low confidence, Manage banking apps list, Manage muted merchants. Buttons trigger the native permission flows.
+- **Suggestions inbox** — new `src/pages/Suggestions.tsx` listing pending suggestions with Add / Review / Ignore buttons. Badge count surfaced on the Expenses tab in `BottomNav` (no new tab to keep the flat 6-tab structure).
+- **Prefilled expense form** — extend the existing `NewExpense`/add-expense entry point (whatever opens from Expenses) to read `?suggestion=<id>`, prefill amount/description/bucket, and mark the suggestion `added` on submit.
 
-A storage bucket to hold APK files and/or web bundles uploaded by admin.
+### 5. Privacy guarantees
+- `txn_signals` and `expense_suggestions` tables are local-only (Dexie). Never added to the sync queue.
+- `rawText` is stored in the local suggestion only; when saving as an expense we put a short, sanitized note (e.g. "KFC via Meezan Bank") in `description`, not the raw banking text, unless the user edits it in.
+- Bank package whitelist is hardcoded — listener ignores anything else, so social/chat notifications are never read.
 
-### 3. Update Check Hook: `src/hooks/useAppUpdate.tsx`
+## Technical notes
 
-- On app launch, query `app_versions` for latest version
-- Compare against current `versionCode` stored in app
-- If newer version exists:
-  - **Web update**: Download zip, extract to Capacitor's web directory, reload app
-  - **Native update (APK)**: Show dialog, download APK via `@capacitor/filesystem`, trigger Android install intent using a small custom Capacitor plugin
-- Show a toast/dialog: "Update available! v{version_name} — {release_notes}"
-- If `is_mandatory`, block app usage until updated
+- **Capacitor plugin pattern:** mirrors the existing `WidgetBridge` / `AppUpdater` plugins. Registered in `MainActivity.java` and wrapped by a typed TS facade in `src/lib/txnDetection/nativeBridge.ts`.
+- **Notification actions:** Android `NotificationCompat.Action` with PendingIntents pointing to a small `SuggestionActionReceiver` that calls back into the plugin (so Add works without opening the app, per spec).
+- **Dedupe storage:** new Dexie store version bump in `src/lib/offline/db.ts` adding `txn_signals` and `expense_suggestions` indexes (`++id, status, createdAt, fingerprint`).
+- **iOS:** hide the Settings card and short-circuit the hook — feature simply doesn't exist on iOS.
+- **Permissions UX:** Notification Access requires the user to flip a system toggle; show an explainer sheet before opening Android settings.
 
-### 4. APK Install (Android only)
+## Out of scope (deferred to "Future Enhancements")
 
-For APK sideloading, a small native Java class (`AppUpdater.java`) is needed to:
-- Open the downloaded APK file using `ACTION_INSTALL_PACKAGE` intent
-- Requires `REQUEST_INSTALL_PACKAGES` permission in AndroidManifest.xml
-- Uses the existing `FileProvider` already configured in the manifest
+- AI/LLM-based merchant recognition.
+- Subscription / recurring detection from signals.
+- Auto split into IOUs.
+- Email parsing.
+- Budget warnings driven by suggestions.
 
-### 5. Integration
+## Files touched
 
-- Call `useAppUpdate()` in `App.tsx` on mount
-- Store current version in `src/lib/constants.ts` (e.g., `APP_VERSION_CODE = 1`)
-- Show update dialog with release notes and download progress
+**New**
+- `android/.../TxnNotificationListener.java`, `SmsReceiver.java`, `TxnBridge.java`, `SuggestionActionReceiver.java`
+- `src/lib/txnDetection/{parser,categorizer,dedupe,confidence,suggestionStore,nativeBridge}.ts`
+- `src/hooks/useTxnDetection.tsx`
+- `src/pages/Suggestions.tsx`
 
-### Files to Create/Change
-
-1. **Database migration** — `app_versions` table + storage bucket
-2. `src/hooks/useAppUpdate.tsx` — Version check + download + install logic
-3. `src/lib/constants.ts` — Add `APP_VERSION_CODE`
-4. `src/App.tsx` — Call the hook
-5. `android/app/src/main/java/.../AppUpdater.java` — Native install intent plugin
-6. `android/app/src/main/AndroidManifest.xml` — Add `REQUEST_INSTALL_PACKAGES` permission
-7. `android/app/src/main/java/.../MainActivity.java` — Register AppUpdater plugin
-
-### Caveat
-
-APK sideloading requires users to have "Install from unknown sources" enabled for the app. The update dialog should guide them through this if needed. Alternatively, if you publish to Play Store, you could use Google's official In-App Updates API instead — but the custom approach gives you full control without Play Store dependency.
-
+**Edited**
+- `android/app/src/main/AndroidManifest.xml` — listener service, SMS permission, intent filters.
+- `android/.../MainActivity.java` — register `TxnBridge`.
+- `src/lib/offline/db.ts` — new local tables (version bump).
+- `src/App.tsx` — mount `useTxnDetection` for Android users.
+- `src/pages/Settings.tsx` — new "Smart Expense Detection" section.
+- `src/pages/Expenses.tsx` + `BottomNav.tsx` — suggestions badge entry point.
+- Existing add-expense form — accept `?suggestion=<id>` prefill.
