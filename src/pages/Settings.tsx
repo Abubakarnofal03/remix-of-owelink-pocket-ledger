@@ -26,6 +26,7 @@ import { toast } from "sonner";
 import { CURRENCIES, getCurrencySymbol } from "@/lib/currencies";
 import { hapticSuccess } from "@/lib/haptics";
 import { OfflineDiagnostics } from "@/components/settings/OfflineDiagnostics";
+import { TxnDetectionSettings } from "@/components/settings/TxnDetectionSettings";
 import { useBiometric } from "@/hooks/useBiometric";
 import { useRecurring } from "@/hooks/useRecurring";
 import { Button as ActionButton } from "@/components/ui/button";
@@ -234,6 +235,9 @@ export default function Settings() {
             </Select>
           </div>
         </div>
+
+        {/* Smart Expense Detection (Android only — component self-hides elsewhere) */}
+        <TxnDetectionSettings />
 
         {/* Security */}
         <div className="card-elevated p-4 space-y-4">
