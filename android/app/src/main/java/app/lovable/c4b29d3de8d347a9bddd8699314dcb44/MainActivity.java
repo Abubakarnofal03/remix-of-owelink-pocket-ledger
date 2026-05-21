@@ -8,6 +8,7 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(WidgetBridge.class);
         registerPlugin(AppUpdater.class);
+        registerPlugin(TxnBridge.class);
         super.onCreate(savedInstanceState);
     }
 }

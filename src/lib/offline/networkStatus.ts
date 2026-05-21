@@ -80,7 +80,7 @@ export function useNetworkStatus() {
   });
 
   const isSyncing = useRef(false);
-  const syncTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const syncTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Update pending counts
   const updateCounts = useCallback(async () => {

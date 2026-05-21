@@ -330,6 +330,31 @@ export interface LocalGroupExpense {
   is_local?: boolean;
 }
 
+export interface LocalTxnSignal {
+  id: string;            // fingerprint
+  amount: number;
+  merchant: string | null;
+  source: string | null; // package name or sms sender
+  timestamp: number;
+  rawText: string;
+  createdAt: number;
+}
+
+export interface LocalExpenseSuggestion {
+  id: string;
+  amount: number;
+  currency: string;
+  merchant: string | null;
+  category: string | null;
+  bucketId: string | null;
+  source: string | null;
+  timestamp: number;
+  rawText: string;
+  confidence: number;
+  status: 'pending' | 'added' | 'ignored' | 'reviewed';
+  createdAt: number;
+}
+
 export interface SyncQueueItem {
   id?: number;
   action_id: string;
@@ -392,6 +417,8 @@ class OfflineDatabase extends Dexie {
   syncMetadata!: Table<SyncMetadata, string>;
   localAppContacts!: Table<LocalAppContact, string>;
   nicknameOverrides!: Table<NicknameOverride, string>;
+  txnSignals!: Table<LocalTxnSignal, string>;
+  expenseSuggestions!: Table<LocalExpenseSuggestion, string>;
 
   private _isReady = false;
   private _initPromise: Promise<boolean> | null = null;
@@ -546,6 +573,33 @@ class OfflineDatabase extends Dexie {
       localAppContacts: 'id, phone_suffix, nickname, created_at',
       nicknameOverrides: 'phone_suffix, updated_at',
     });
+
+    // Version 9: Smart transaction detection (local-only)
+    this.version(9).stores({
+      profiles: 'id, user_id, phone_suffix, synced_at',
+      bills: 'id, creator_id, status, created_at, updated_at, synced_at',
+      billParticipants: 'id, bill_id, phone_number, phone_suffix, user_id, synced_at',
+      ious: 'id, creditor_id, debtor_phone_suffix, debtor_user_id, status, created_at, synced_at',
+      payments: 'id, reference_type, reference_id, payer_phone_number, synced_at',
+      contacts: 'id, user_id, phone_number, phone_suffix, synced_at',
+      notifications: 'id, user_id, read, created_at, synced_at',
+      paymentRequests: 'id, bill_id, participant_id, status, created_at, synced_at',
+      iouPaymentRequests: 'id, iou_id, status, created_at, synced_at',
+      expenses: 'id, user_id, bucket_id, created_at, synced_at',
+      expenseBuckets: 'id, user_id, created_at, synced_at',
+      billNotices: 'id, bill_id, author_phone_suffix, created_at, synced_at',
+      iouNotices: 'id, iou_id, author_phone_suffix, created_at, synced_at',
+      expenseGroups: 'id, creator_id, created_at, synced_at',
+      expenseGroupMembers: 'id, group_id, phone_number, synced_at',
+      groupExpenses: 'id, group_id, paid_by_member_id, created_at, synced_at',
+      syncQueue: '++id, action_id, entity_type, operation, entity_id, status, created_at',
+      syncMetadata: 'id, entity_type, last_synced_at',
+      localAppContacts: 'id, phone_suffix, nickname, created_at',
+      nicknameOverrides: 'phone_suffix, updated_at',
+      txnSignals: 'id, timestamp, createdAt',
+      expenseSuggestions: 'id, status, createdAt, timestamp',
+    });
+
 
     this.on('blocked', () => {
       console.warn('[OfflineDB] Database blocked - another tab may have the database open');
