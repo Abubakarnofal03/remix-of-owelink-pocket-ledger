@@ -330,7 +330,32 @@ export interface LocalGroupExpense {
   is_local?: boolean;
 }
 
-export interface SyncQueueItem {
+export interface LocalTxnSignal {
+  id: string;            // fingerprint
+  amount: number;
+  merchant: string | null;
+  source: string | null; // package name or sms sender
+  timestamp: number;
+  rawText: string;
+  createdAt: number;
+}
+
+export interface LocalExpenseSuggestion {
+  id: string;
+  amount: number;
+  currency: string;
+  merchant: string | null;
+  category: string | null;
+  bucketId: string | null;
+  source: string | null;
+  timestamp: number;
+  rawText: string;
+  confidence: number;
+  status: 'pending' | 'added' | 'ignored' | 'reviewed';
+  createdAt: number;
+}
+
+
   id?: number;
   action_id: string;
   entity_type: 'bill' | 'bill_participant' | 'iou' | 'payment' | 'contact' | 'notification' | 'payment_request' | 'iou_payment_request' | 'expense' | 'expense_bucket' | 'bill_notice' | 'iou_notice' | 'expense_group' | 'expense_group_member' | 'group_expense';
