@@ -29,7 +29,7 @@ export function ExpenseCard({
   hasBuckets = false,
 }: ExpenseCardProps) {
   const [isPressed, setIsPressed] = useState(false);
-  const pressTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const pressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handlePointerDown = (e: React.PointerEvent) => {
     // Ignore if clicking on buttons
