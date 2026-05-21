@@ -1,4 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useSearchParams } from "react-router-dom";
+import { setSuggestionStatus } from "@/lib/txnDetection/suggestionStore";
 import { PageLoadingSkeleton } from "@/components/ui/PageLoadingSkeleton";
 import { useAuth } from "@/hooks/useAuth";
 import { useExpenses, Expense } from "@/hooks/useExpenses";
@@ -58,6 +60,32 @@ export default function Expenses() {
   const [deleteBucketId, setDeleteBucketId] = useState<string | null>(null);
   const [showCreateBucket, setShowCreateBucket] = useState(false);
   const [activeTab, setActiveTab] = useState("all");
+  const [pendingSuggestionId, setPendingSuggestionId] = useState<string | null>(null);
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // Prefill from a transaction suggestion if present
+  useEffect(() => {
+    if (searchParams.get("suggestion") !== "1") return;
+    try {
+      const raw = sessionStorage.getItem("pending_suggestion");
+      if (!raw) return;
+      const s = JSON.parse(raw);
+      setAmount(String(s.amount ?? ""));
+      setDescription(
+        s.merchant
+          ? `${s.merchant}${s.source ? ` · ${s.source}` : ""}`
+          : s.source || s.category || ""
+      );
+      setShowForm(true);
+      setPendingSuggestionId(s.id || null);
+    } catch { /* ignore */ }
+    finally {
+      sessionStorage.removeItem("pending_suggestion");
+      searchParams.delete("suggestion");
+      setSearchParams(searchParams, { replace: true });
+    }
+  }, [searchParams, setSearchParams]);
+
 
   // Drag and drop state
   const [draggingExpense, setDraggingExpense] = useState<Expense | null>(null);
