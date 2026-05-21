@@ -417,6 +417,8 @@ class OfflineDatabase extends Dexie {
   syncMetadata!: Table<SyncMetadata, string>;
   localAppContacts!: Table<LocalAppContact, string>;
   nicknameOverrides!: Table<NicknameOverride, string>;
+  txnSignals!: Table<LocalTxnSignal, string>;
+  expenseSuggestions!: Table<LocalExpenseSuggestion, string>;
 
   private _isReady = false;
   private _initPromise: Promise<boolean> | null = null;
