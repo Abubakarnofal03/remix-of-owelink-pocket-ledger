@@ -355,7 +355,7 @@ export interface LocalExpenseSuggestion {
   createdAt: number;
 }
 
-
+export interface SyncQueueItem {
   id?: number;
   action_id: string;
   entity_type: 'bill' | 'bill_participant' | 'iou' | 'payment' | 'contact' | 'notification' | 'payment_request' | 'iou_payment_request' | 'expense' | 'expense_bucket' | 'bill_notice' | 'iou_notice' | 'expense_group' | 'expense_group_member' | 'group_expense';
