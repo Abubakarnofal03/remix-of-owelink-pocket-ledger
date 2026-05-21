@@ -40,7 +40,9 @@ import GroupExpenses from "./pages/GroupExpenses";
 import NewGroupExpense from "./pages/NewGroupExpense";
 import GroupExpenseDetail from "./pages/GroupExpenseDetail";
 import Admin from "./pages/Admin";
+import Suggestions from "./pages/Suggestions";
 import NotFound from "./pages/NotFound";
+import { useTxnDetection } from "@/hooks/useTxnDetection";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -78,6 +80,7 @@ function CapacitorInitializer() {
   useAppPermissions();
   usePushNotifications();
   useBackButton();
+  useTxnDetection();
 
   const update = useAppUpdate();
 
@@ -162,6 +165,7 @@ function AppRoutes() {
         <Route path="/groups/:id" element={<GroupExpenseDetail />} />
         <Route path="/settings" element={<Settings />} />
         <Route path="/admin" element={<Admin />} />
+        <Route path="/suggestions" element={<Suggestions />} />
         <Route path="*" element={<NotFound />} />
       </Routes>
     </>
