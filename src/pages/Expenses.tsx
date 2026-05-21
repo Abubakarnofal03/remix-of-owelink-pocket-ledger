@@ -112,6 +112,10 @@ export default function Expenses() {
         description: description.trim() || undefined,
         currency,
       });
+      if (pendingSuggestionId) {
+        await setSuggestionStatus(pendingSuggestionId, "added");
+        setPendingSuggestionId(null);
+      }
       setAmount("");
       setDescription("");
       setShowForm(false);
