@@ -413,13 +413,17 @@ export default function GroupExpenseDetail() {
           )}
         </div>
       </div>
+      </PullToRefresh>
 
       <AddGroupExpenseDialog
         open={showAddExpense}
         onOpenChange={setShowAddExpense}
         members={members}
+        isCreator={isCreator}
+        currentUserMemberId={currentUserMember?.id || null}
         onSubmit={addExpense}
       />
+
 
       <AlertDialog open={!!deleteExpenseId} onOpenChange={() => setDeleteExpenseId(null)}>
         <AlertDialogContent>
