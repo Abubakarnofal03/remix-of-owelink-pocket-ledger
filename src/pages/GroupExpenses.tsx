@@ -6,12 +6,14 @@ import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Skeleton } from "@/components/ui/skeleton";
 import { GroupCard } from "@/components/groups/GroupCard";
-import { Plus, Users, Loader2 } from "lucide-react";
+import { PullToRefresh } from "@/components/ui/PullToRefresh";
+import { processAllPendingSync } from "@/lib/offline/syncQueue";
+import { Plus, Users } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
 export default function GroupExpenses() {
   const { user, loading: authLoading } = useAuth();
-  const { groups, loading } = useExpenseGroups();
+  const { groups, loading, refetch } = useExpenseGroups();
   const navigate = useNavigate();
 
   if (authLoading) {
@@ -34,52 +36,63 @@ export default function GroupExpenses() {
     );
   }
 
+  const handleRefresh = async () => {
+    try {
+      await processAllPendingSync();
+    } catch (e) {
+      console.error('[Groups] sync failed', e);
+    }
+    await refetch();
+  };
+
   return (
     <AppLayout>
-      <div className="space-y-4 pb-20">
-        <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-bold">Group Expenses</h1>
-          <Button onClick={() => navigate("/groups/new")} size="sm">
-            <Plus className="h-4 w-4 mr-1" />
-            New Group
-          </Button>
-        </div>
+      <PullToRefresh onRefresh={handleRefresh}>
+        <div className="space-y-4 pb-20">
+          <div className="flex items-center justify-between">
+            <h1 className="text-2xl font-bold">Group Expenses</h1>
+            <Button onClick={() => navigate("/groups/new")} size="sm">
+              <Plus className="h-4 w-4 mr-1" />
+              New Group
+            </Button>
+          </div>
 
-        {loading ? (
-          <div className="space-y-3">
-            {[...Array(3)].map((_, i) => (
-              <div key={i} className="card-elevated p-4 space-y-3">
-                <div className="flex items-center gap-3">
-                  <Skeleton className="h-10 w-10 rounded-full" />
-                  <div className="flex-1 space-y-2">
-                    <Skeleton className="h-5 w-36" />
-                    <Skeleton className="h-3 w-20" />
+          {loading && groups.length === 0 ? (
+            <div className="space-y-3">
+              {[...Array(3)].map((_, i) => (
+                <div key={i} className="card-elevated p-4 space-y-3">
+                  <div className="flex items-center gap-3">
+                    <Skeleton className="h-10 w-10 rounded-full" />
+                    <div className="flex-1 space-y-2">
+                      <Skeleton className="h-5 w-36" />
+                      <Skeleton className="h-3 w-20" />
+                    </div>
                   </div>
+                  <Skeleton className="h-6 w-28" />
                 </div>
-                <Skeleton className="h-6 w-28" />
-              </div>
-            ))}
-          </div>
-        ) : groups.length === 0 ? (
-          <EmptyState
-            icon={Users}
-            title="No groups yet"
-            description="Create a group to split expenses with friends, roommates, or travel buddies"
-            action={{ label: "Create Group", onClick: () => navigate("/groups/new") }}
-          />
-        ) : (
-          <div className="space-y-3">
-            {groups.map((group) => (
-              <GroupCard
-                key={group.id}
-                group={group}
-                memberCount={group.memberCount}
-                totalExpenses={group.totalExpenses}
-              />
-            ))}
-          </div>
-        )}
-      </div>
+              ))}
+            </div>
+          ) : groups.length === 0 ? (
+            <EmptyState
+              icon={Users}
+              title="No groups yet"
+              description="Create a group to split expenses with friends, roommates, or travel buddies"
+              action={{ label: "Create Group", onClick: () => navigate("/groups/new") }}
+            />
+          ) : (
+            <div className="space-y-3">
+              {groups.map((group) => (
+                <GroupCard
+                  key={group.id}
+                  group={group}
+                  memberCount={group.memberCount}
+                  totalExpenses={group.totalExpenses}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      </PullToRefresh>
     </AppLayout>
   );
 }
