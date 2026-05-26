@@ -8,8 +8,10 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent } from "@/components/ui/card";
 import { AvatarCustom } from "@/components/ui/avatar-custom";
-import { supabase } from "@/integrations/supabase/client";
+import { offlineDb, generateLocalId, type LocalExpenseGroupMember } from "@/lib/offline/db";
+import { addToSyncQueue } from "@/lib/offline/syncQueue";
 import { Navigate, useNavigate } from "react-router-dom";
+
 import { ArrowLeft, Plus, X, Search, Users, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
