@@ -10,11 +10,14 @@ import { AvatarCustom } from "@/components/ui/avatar-custom";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AddGroupExpenseDialog } from "@/components/groups/AddGroupExpenseDialog";
 import { SettlementSummary } from "@/components/groups/SettlementSummary";
-import { calculateBalances, simplifyDebts } from "@/lib/debtSimplification";
+import { calculateBalances, simplifyDebts, calculatePairwiseDebts } from "@/lib/debtSimplification";
+import { PullToRefresh } from "@/components/ui/PullToRefresh";
+import { processAllPendingSync } from "@/lib/offline/syncQueue";
 import { Navigate, useParams, useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
-import { ArrowLeft, Plus, Users, Receipt, Trash2, UserPlus } from "lucide-react";
+import { ArrowLeft, Plus, Users, Receipt, Trash2, UserPlus, ArrowRight } from "lucide-react";
 import { format } from "date-fns";
+
 import { Input } from "@/components/ui/input";
 import { Search } from "lucide-react";
 import {
@@ -74,6 +77,35 @@ export default function GroupExpenseDetail() {
       memberIds
     );
   }, [members, expenses]);
+
+  // Pairwise: who owes whom (after netting reciprocal flows)
+  const pairwiseDebts = useMemo(() => {
+    if (members.length === 0 || expenses.length === 0) return [];
+    return calculatePairwiseDebts(
+      expenses.map(e => ({
+        paid_by_member_id: e.paid_by_member_id,
+        amount: e.amount,
+        split_type: e.split_type,
+        split_details: e.split_details,
+      })),
+      members.map(m => m.id)
+    );
+  }, [members, expenses]);
+
+  const currentUserMember = useMemo(
+    () => members.find(m => m.user_id === user?.id) || null,
+    [members, user?.id]
+  );
+
+  const handleRefresh = async () => {
+    try {
+      await processAllPendingSync();
+    } catch (e) {
+      console.error('[Groups] sync failed', e);
+    }
+    await refetch();
+  };
+
 
   // Per-member expense breakdown
   const getMemberExpenses = (memberId: string) => {
@@ -136,7 +168,9 @@ export default function GroupExpenseDetail() {
 
   return (
     <AppLayout hideNav>
+      <PullToRefresh onRefresh={handleRefresh}>
       <div className="space-y-6 pb-20 animate-fade-in">
+
         {/* Header */}
         <div className="flex items-center gap-3">
           <Button variant="ghost" size="icon" onClick={() => navigate("/groups")}>
@@ -164,8 +198,33 @@ export default function GroupExpenseDetail() {
           </CardContent>
         </Card>
 
-        {/* Settlement Summary */}
+        {/* Settlement Summary (minimum transactions) */}
         <SettlementSummary settlements={settlements} members={members} currency={group.currency} hasExpenses={expenses.length > 0} />
+
+        {/* Pairwise debts: who owes whom */}
+        {pairwiseDebts.length > 0 && (
+          <div className="space-y-2">
+            <h3 className="text-sm font-semibold text-foreground">Who owes whom</h3>
+            <div className="space-y-1.5">
+              {pairwiseDebts.map((d, i) => (
+                <Card key={i} className="border-border/60">
+                  <CardContent className="p-3 flex items-center gap-2">
+                    <span className="font-medium text-sm truncate flex-1 text-right text-destructive">
+                      {getMemberName(d.from)}
+                    </span>
+                    <ArrowRight className="h-4 w-4 text-muted-foreground shrink-0" />
+                    <MoneyDisplay amount={d.amount} currency={group.currency} className="text-sm font-semibold text-primary shrink-0" />
+                    <ArrowRight className="h-4 w-4 text-muted-foreground shrink-0" />
+                    <span className="font-medium text-sm truncate flex-1 text-emerald-600">
+                      {getMemberName(d.to)}
+                    </span>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          </div>
+        )}
+
 
         {/* Members */}
         <div className="space-y-3">
@@ -354,13 +413,17 @@ export default function GroupExpenseDetail() {
           )}
         </div>
       </div>
+      </PullToRefresh>
 
       <AddGroupExpenseDialog
         open={showAddExpense}
         onOpenChange={setShowAddExpense}
         members={members}
+        isCreator={isCreator}
+        currentUserMemberId={currentUserMember?.id || null}
         onSubmit={addExpense}
       />
+
 
       <AlertDialog open={!!deleteExpenseId} onOpenChange={() => setDeleteExpenseId(null)}>
         <AlertDialogContent>

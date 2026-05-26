@@ -92,3 +92,59 @@ export function calculateBalances(
 
   return balances;
 }
+
+/**
+ * Compute pairwise net debts: for each (debtor -> creditor) pair, how much
+ * the debtor owes the creditor (after netting any opposite-direction flow).
+ */
+export interface PairwiseDebt {
+  from: string;
+  to: string;
+  amount: number;
+}
+
+export function calculatePairwiseDebts(
+  expenses: { paid_by_member_id: string; amount: number; split_type: string; split_details: any }[],
+  memberIds: string[]
+): PairwiseDebt[] {
+  // matrix[debtor][creditor] = amount
+  const matrix = new Map<string, Map<string, number>>();
+  const add = (debtor: string, creditor: string, amt: number) => {
+    if (debtor === creditor || amt <= 0.001) return;
+    if (!matrix.has(debtor)) matrix.set(debtor, new Map());
+    const inner = matrix.get(debtor)!;
+    inner.set(creditor, (inner.get(creditor) || 0) + amt);
+  };
+
+  for (const e of expenses) {
+    const payer = e.paid_by_member_id;
+    if (e.split_type === 'equal' && memberIds.length > 0) {
+      const share = e.amount / memberIds.length;
+      for (const m of memberIds) add(m, payer, share);
+    } else if (e.split_type === 'exact' && e.split_details) {
+      const details = e.split_details as Record<string, number>;
+      for (const [m, amt] of Object.entries(details)) add(m, payer, Number(amt) || 0);
+    } else if (e.split_type === 'percentage' && e.split_details) {
+      const details = e.split_details as Record<string, number>;
+      for (const [m, pct] of Object.entries(details)) add(m, payer, (e.amount * (Number(pct) || 0)) / 100);
+    }
+  }
+
+  // Net opposing flows
+  const seen = new Set<string>();
+  const result: PairwiseDebt[] = [];
+  for (const [a, inner] of matrix) {
+    for (const [b, amt] of inner) {
+      const key = a < b ? `${a}|${b}` : `${b}|${a}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const reverse = matrix.get(b)?.get(a) || 0;
+      const net = amt - reverse;
+      if (net > 0.01) result.push({ from: a, to: b, amount: Math.round(net * 100) / 100 });
+      else if (net < -0.01) result.push({ from: b, to: a, amount: Math.round(-net * 100) / 100 });
+    }
+  }
+  return result;
+}
+
+

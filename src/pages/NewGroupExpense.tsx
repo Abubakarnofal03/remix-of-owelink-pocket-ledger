@@ -8,8 +8,10 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent } from "@/components/ui/card";
 import { AvatarCustom } from "@/components/ui/avatar-custom";
-import { supabase } from "@/integrations/supabase/client";
+import { offlineDb, generateLocalId, type LocalExpenseGroupMember } from "@/lib/offline/db";
+import { addToSyncQueue } from "@/lib/offline/syncQueue";
 import { Navigate, useNavigate } from "react-router-dom";
+
 import { ArrowLeft, Plus, X, Search, Users, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -65,22 +67,34 @@ export default function NewGroupExpense() {
 
       if (!group) return;
 
-      // Add yourself as a member
-      await supabase.from("expense_group_members").insert({
-        group_id: group.id,
-        phone_number: profile?.phone_number || '',
-        nickname: profile?.username || 'Me',
-        user_id: user.id,
-      });
+      const now = new Date().toISOString();
 
-      // Add other members
-      for (const m of memberPhones) {
-        await supabase.from("expense_group_members").insert({
+      const toAdd: Array<{ phone_number: string; nickname: string | null; user_id: string | null }> = [
+        { phone_number: profile?.phone_number || '', nickname: profile?.username || 'Me', user_id: user.id },
+        ...memberPhones.map(m => ({ phone_number: m.phone, nickname: m.nickname || null, user_id: null })),
+      ];
+
+      for (const m of toAdd) {
+        const memberId = generateLocalId();
+        const localMember: LocalExpenseGroupMember = {
+          id: memberId,
           group_id: group.id,
-          phone_number: m.phone,
-          nickname: m.nickname || null,
+          phone_number: m.phone_number,
+          phone_suffix: null,
+          user_id: m.user_id,
+          nickname: m.nickname,
+          created_at: now,
+          is_local: true,
+        };
+        await offlineDb.expenseGroupMembers.put(localMember);
+        await addToSyncQueue("expense_group_member", "create", memberId, {
+          group_id: group.id,
+          phone_number: m.phone_number,
+          nickname: m.nickname,
+          user_id: m.user_id,
         });
       }
+
 
       navigate(`/groups/${group.id}`);
     } catch (error) {
