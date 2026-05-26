@@ -10,11 +10,14 @@ import { AvatarCustom } from "@/components/ui/avatar-custom";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AddGroupExpenseDialog } from "@/components/groups/AddGroupExpenseDialog";
 import { SettlementSummary } from "@/components/groups/SettlementSummary";
-import { calculateBalances, simplifyDebts } from "@/lib/debtSimplification";
+import { calculateBalances, simplifyDebts, calculatePairwiseDebts } from "@/lib/debtSimplification";
+import { PullToRefresh } from "@/components/ui/PullToRefresh";
+import { processAllPendingSync } from "@/lib/offline/syncQueue";
 import { Navigate, useParams, useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
-import { ArrowLeft, Plus, Users, Receipt, Trash2, UserPlus } from "lucide-react";
+import { ArrowLeft, Plus, Users, Receipt, Trash2, UserPlus, ArrowRight } from "lucide-react";
 import { format } from "date-fns";
+
 import { Input } from "@/components/ui/input";
 import { Search } from "lucide-react";
 import {
