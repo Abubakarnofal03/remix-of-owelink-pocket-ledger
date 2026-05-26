@@ -198,8 +198,33 @@ export default function GroupExpenseDetail() {
           </CardContent>
         </Card>
 
-        {/* Settlement Summary */}
+        {/* Settlement Summary (minimum transactions) */}
         <SettlementSummary settlements={settlements} members={members} currency={group.currency} hasExpenses={expenses.length > 0} />
+
+        {/* Pairwise debts: who owes whom */}
+        {pairwiseDebts.length > 0 && (
+          <div className="space-y-2">
+            <h3 className="text-sm font-semibold text-foreground">Who owes whom</h3>
+            <div className="space-y-1.5">
+              {pairwiseDebts.map((d, i) => (
+                <Card key={i} className="border-border/60">
+                  <CardContent className="p-3 flex items-center gap-2">
+                    <span className="font-medium text-sm truncate flex-1 text-right text-destructive">
+                      {getMemberName(d.from)}
+                    </span>
+                    <ArrowRight className="h-4 w-4 text-muted-foreground shrink-0" />
+                    <MoneyDisplay amount={d.amount} currency={group.currency} className="text-sm font-semibold text-primary shrink-0" />
+                    <ArrowRight className="h-4 w-4 text-muted-foreground shrink-0" />
+                    <span className="font-medium text-sm truncate flex-1 text-emerald-600">
+                      {getMemberName(d.to)}
+                    </span>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          </div>
+        )}
+
 
         {/* Members */}
         <div className="space-y-3">
