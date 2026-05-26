@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -17,21 +17,33 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { ExpenseGroupMember } from "@/hooks/useExpenseGroups";
-import { Loader2 } from "lucide-react";
+import { Loader2, Info } from "lucide-react";
 
 interface AddGroupExpenseDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   members: ExpenseGroupMember[];
+  isCreator: boolean;
+  currentUserMemberId?: string | null;
   onSubmit: (data: { paid_by_member_id: string; amount: number; description?: string; split_type?: string }) => Promise<any>;
 }
 
-export function AddGroupExpenseDialog({ open, onOpenChange, members, onSubmit }: AddGroupExpenseDialogProps) {
+export function AddGroupExpenseDialog({ open, onOpenChange, members, isCreator, currentUserMemberId, onSubmit }: AddGroupExpenseDialogProps) {
   const [paidBy, setPaidBy] = useState("");
   const [amount, setAmount] = useState("");
   const [description, setDescription] = useState("");
   const [splitType, setSplitType] = useState("equal");
   const [submitting, setSubmitting] = useState(false);
+
+  // Default the payer: creator can pick anyone, non-creator is locked to themselves
+  useEffect(() => {
+    if (!open) return;
+    if (!isCreator && currentUserMemberId) {
+      setPaidBy(currentUserMemberId);
+    } else if (isCreator && !paidBy && currentUserMemberId) {
+      setPaidBy(currentUserMemberId);
+    }
+  }, [open, isCreator, currentUserMemberId]);
 
   const handleSubmit = async () => {
     if (!paidBy || !amount) return;
@@ -56,6 +68,10 @@ export function AddGroupExpenseDialog({ open, onOpenChange, members, onSubmit }:
     }
   };
 
+  const onBehalfOf = isCreator && paidBy && paidBy !== currentUserMemberId
+    ? members.find(m => m.id === paidBy)
+    : null;
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
@@ -65,18 +81,31 @@ export function AddGroupExpenseDialog({ open, onOpenChange, members, onSubmit }:
         <div className="space-y-4">
           <div>
             <label className="text-sm font-medium">Who paid?</label>
-            <Select value={paidBy} onValueChange={setPaidBy}>
+            <Select value={paidBy} onValueChange={setPaidBy} disabled={!isCreator}>
               <SelectTrigger>
                 <SelectValue placeholder="Select member" />
               </SelectTrigger>
               <SelectContent>
                 {members.map((m) => (
                   <SelectItem key={m.id} value={m.id}>
-                    {m.nickname || m.phone_number}
+                    {m.nickname || m.phone_number}{m.id === currentUserMemberId ? ' (You)' : ''}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
+            {!isCreator && (
+              <p className="text-xs text-muted-foreground mt-1">
+                Only the group creator can record expenses paid by other members.
+              </p>
+            )}
+            {onBehalfOf && (
+              <div className="mt-2 flex items-start gap-2 p-2 rounded-md bg-primary/10 border border-primary/20">
+                <Info className="h-3.5 w-3.5 text-primary mt-0.5 shrink-0" />
+                <p className="text-xs text-foreground">
+                  Adding on behalf of <span className="font-semibold">{onBehalfOf.nickname || onBehalfOf.phone_number}</span>
+                </p>
+              </div>
+            )}
           </div>
           <div>
             <label className="text-sm font-medium">Amount</label>
