@@ -78,6 +78,35 @@ export default function GroupExpenseDetail() {
     );
   }, [members, expenses]);
 
+  // Pairwise: who owes whom (after netting reciprocal flows)
+  const pairwiseDebts = useMemo(() => {
+    if (members.length === 0 || expenses.length === 0) return [];
+    return calculatePairwiseDebts(
+      expenses.map(e => ({
+        paid_by_member_id: e.paid_by_member_id,
+        amount: e.amount,
+        split_type: e.split_type,
+        split_details: e.split_details,
+      })),
+      members.map(m => m.id)
+    );
+  }, [members, expenses]);
+
+  const currentUserMember = useMemo(
+    () => members.find(m => m.user_id === user?.id) || null,
+    [members, user?.id]
+  );
+
+  const handleRefresh = async () => {
+    try {
+      await processAllPendingSync();
+    } catch (e) {
+      console.error('[Groups] sync failed', e);
+    }
+    await refetch();
+  };
+
+
   // Per-member expense breakdown
   const getMemberExpenses = (memberId: string) => {
     return expenses.filter(e => e.paid_by_member_id === memberId);
