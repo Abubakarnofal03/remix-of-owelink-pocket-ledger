@@ -26,6 +26,7 @@ export interface ExpenseGroupMember {
   phone_suffix: string | null;
   user_id: string | null;
   nickname: string | null;
+  is_co_creator?: boolean;
   created_at: string;
   is_local?: boolean;
 }
