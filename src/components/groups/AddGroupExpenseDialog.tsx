@@ -95,7 +95,7 @@ export function AddGroupExpenseDialog({ open, onOpenChange, members, isCreator, 
             </Select>
             {!isCreator && (
               <p className="text-xs text-muted-foreground mt-1">
-                Only the group creator can record expenses paid by other members.
+                Only the group creator or a co-creator can record expenses paid by other members.
               </p>
             )}
             {onBehalfOf && (
