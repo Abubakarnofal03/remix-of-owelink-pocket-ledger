@@ -425,6 +425,7 @@ export async function syncExpenseGroupsFromServer(userId: string): Promise<void>
         ...(membersRes.data || []).map((m: any) => ({
           id: m.id, group_id: m.group_id, phone_number: m.phone_number,
           phone_suffix: m.phone_suffix, user_id: m.user_id, nickname: m.nickname,
+          is_co_creator: m.is_co_creator === true,
           created_at: m.created_at, synced_at: now, is_local: false,
         })),
         ...localMembers,

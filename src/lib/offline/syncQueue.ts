@@ -812,6 +812,16 @@ async function syncExpenseGroupMember(item: SyncQueueItem): Promise<boolean> {
       await offlineDb.expenseGroupMembers.update(entity_id, { synced_at: Date.now(), is_local: false });
       return true;
     }
+    case 'update': {
+      const { id: _, is_local: __, synced_at: ___, ...updateData } = payload;
+      const { error } = await withTimeout(
+        supabase.from('expense_group_members').update(updateData).eq('id', entity_id),
+        SYNC_REQUEST_TIMEOUT_MS, 'Group member update'
+      );
+      if (error) throw error;
+      await offlineDb.expenseGroupMembers.update(entity_id, { synced_at: Date.now(), is_local: false });
+      return true;
+    }
     case 'delete': {
       const { error } = await supabase.from('expense_group_members').delete().eq('id', entity_id);
       if (error) throw error;

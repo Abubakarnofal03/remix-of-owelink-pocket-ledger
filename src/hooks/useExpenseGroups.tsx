@@ -26,6 +26,7 @@ export interface ExpenseGroupMember {
   phone_suffix: string | null;
   user_id: string | null;
   nickname: string | null;
+  is_co_creator?: boolean;
   created_at: string;
   is_local?: boolean;
 }
@@ -413,10 +414,28 @@ export function useExpenseGroupDetail(groupId: string | undefined) {
   };
 
   const isCreator = group?.creator_id === user?.id;
+  const currentUserMember = members.find(
+    m => m.user_id === user?.id
+  ) || null;
+  const isAdmin = isCreator || !!currentUserMember?.is_co_creator;
+
+  const setCoCreator = async (memberId: string, value: boolean) => {
+    try {
+      await offlineDb.expenseGroupMembers.update(memberId, { is_co_creator: value, is_local: true } as any);
+      await addToSyncQueue("expense_group_member", "update", memberId, { is_co_creator: value });
+      setMembers(prev => prev.map(m => m.id === memberId ? { ...m, is_co_creator: value } : m));
+      toast.success(value ? "Marked as co-creator" : "Removed co-creator role");
+      return true;
+    } catch (e: any) {
+      console.error(e);
+      toast.error(e.message || "Failed to update member");
+      return false;
+    }
+  };
 
   return {
-    group, members, expenses, loading, isCreator,
-    addMember, removeMember, addExpense, deleteExpense,
+    group, members, expenses, loading, isCreator, isAdmin,
+    addMember, removeMember, addExpense, deleteExpense, setCoCreator,
     refetch: fetchAll,
   };
 }

@@ -370,6 +370,7 @@ export type Database = {
           created_at: string
           group_id: string
           id: string
+          is_co_creator: boolean
           nickname: string | null
           phone_number: string
           phone_suffix: string | null
@@ -379,6 +380,7 @@ export type Database = {
           created_at?: string
           group_id: string
           id?: string
+          is_co_creator?: boolean
           nickname?: string | null
           phone_number: string
           phone_suffix?: string | null
@@ -388,6 +390,7 @@ export type Database = {
           created_at?: string
           group_id?: string
           id?: string
+          is_co_creator?: boolean
           nickname?: string | null
           phone_number?: string
           phone_suffix?: string | null
@@ -981,6 +984,10 @@ export type Database = {
       }
       is_bill_creator: { Args: { bill_id: string }; Returns: boolean }
       is_bill_participant: { Args: { bill_id: string }; Returns: boolean }
+      is_expense_group_admin: {
+        Args: { _group_id: string; _user_id: string }
+        Returns: boolean
+      }
       is_expense_group_member: {
         Args: { _group_id: string; _user_id: string }
         Returns: boolean
