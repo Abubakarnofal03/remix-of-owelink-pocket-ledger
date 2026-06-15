@@ -11,6 +11,7 @@ export interface ExpenseBucket {
   name: string;
   description: string | null;
   color: string;
+  budget_amount: number;
   created_at: string;
   updated_at: string;
   is_local?: boolean;
@@ -21,7 +22,16 @@ export interface BucketInsert {
   name: string;
   description?: string;
   color?: string;
+  budget_amount?: number;
 }
+
+export interface BucketUpdate {
+  name?: string;
+  description?: string;
+  color?: string;
+  budget_amount?: number;
+}
+
 
 const BUCKET_COLORS = [
   '#6366f1', // indigo
@@ -125,11 +135,13 @@ export function useExpenseBuckets() {
       name: data.name,
       description: data.description || null,
       color: data.color || BUCKET_COLORS[colorIndex],
+      budget_amount: data.budget_amount ?? 0,
       created_at: now,
       updated_at: now,
       is_local: true,
       synced_at: undefined,
     };
+
 
     try {
       const ready = await offlineDb.ensureReady();
