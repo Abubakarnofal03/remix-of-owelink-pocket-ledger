@@ -14,9 +14,11 @@ import { Textarea } from "@/components/ui/textarea";
 import { MoneyDisplay } from "@/components/ui/MoneyDisplay";
 import { ExpenseCard } from "./ExpenseCard";
 import { EmptyState } from "@/components/ui/EmptyState";
-import { Folder, Receipt, Plus, Loader2, X } from "lucide-react";
+import { Progress } from "@/components/ui/progress";
+import { Folder, Receipt, Plus, Loader2, X, Pencil, Check } from "lucide-react";
 import { getCurrencySymbol } from "@/lib/currencies";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 
 interface BucketDetailSheetProps {
   bucket: ExpenseBucket | null;
@@ -26,7 +28,9 @@ interface BucketDetailSheetProps {
   onOpenChange: (open: boolean) => void;
   onDeleteExpense: (id: string) => void;
   onCreateExpense?: (data: ExpenseInsert) => Promise<Expense | null>;
+  onUpdateBudget?: (bucketId: string, budget: number) => Promise<void> | void;
 }
+
 
 export function BucketDetailSheet({
   bucket,
@@ -36,17 +40,39 @@ export function BucketDetailSheet({
   onOpenChange,
   onDeleteExpense,
   onCreateExpense,
+  onUpdateBudget,
 }: BucketDetailSheetProps) {
   const [showForm, setShowForm] = useState(false);
   const [amount, setAmount] = useState("");
   const [description, setDescription] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [editingBudget, setEditingBudget] = useState(false);
+  const [budgetInput, setBudgetInput] = useState("");
 
   const currencySymbol = getCurrencySymbol(currency);
 
   if (!bucket) return null;
 
   const total = expenses.reduce((sum, e) => sum + e.amount, 0);
+  const budget = bucket.budget_amount || 0;
+  const hasBudget = budget > 0;
+  const remaining = budget - total;
+  const overspent = remaining < 0;
+  const progress = hasBudget ? Math.min(100, (total / budget) * 100) : 0;
+
+  const handleSaveBudget = async () => {
+    const v = parseFloat(budgetInput);
+    if (isNaN(v) || v < 0) {
+      toast.error("Enter a valid amount");
+      return;
+    }
+    if (onUpdateBudget) {
+      await onUpdateBudget(bucket.id, v);
+      toast.success("Budget updated");
+    }
+    setEditingBudget(false);
+  };
+
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
