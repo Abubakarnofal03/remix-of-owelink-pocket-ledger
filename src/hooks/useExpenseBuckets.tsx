@@ -233,8 +233,10 @@ export function useExpenseBuckets() {
     buckets,
     loading,
     createBucket,
+    updateBucket,
     deleteBucket,
     refetch: fetchBuckets,
     BUCKET_COLORS,
   };
+
 }
