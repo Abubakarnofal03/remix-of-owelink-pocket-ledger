@@ -337,6 +337,7 @@ export type Database = {
       }
       expense_buckets: {
         Row: {
+          budget_amount: number
           color: string | null
           created_at: string
           description: string | null
@@ -346,6 +347,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          budget_amount?: number
           color?: string | null
           created_at?: string
           description?: string | null
@@ -355,6 +357,7 @@ export type Database = {
           user_id: string
         }
         Update: {
+          budget_amount?: number
           color?: string | null
           created_at?: string
           description?: string | null
