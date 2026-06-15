@@ -202,6 +202,29 @@ export function useExpenseBuckets() {
     }
   };
 
+  const updateBucket = async (bucketId: string, updates: BucketUpdate) => {
+    try {
+      const ready = await offlineDb.ensureReady();
+      if (!ready) return;
+
+      const now = new Date().toISOString();
+      const patch: Record<string, unknown> = { updated_at: now };
+      if (updates.name !== undefined) patch.name = updates.name;
+      if (updates.description !== undefined) patch.description = updates.description || null;
+      if (updates.color !== undefined) patch.color = updates.color;
+      if (updates.budget_amount !== undefined) patch.budget_amount = updates.budget_amount;
+
+      await offlineDb.expenseBuckets.update(bucketId, patch);
+      await addToSyncQueue('expense_bucket', 'update', bucketId, patch);
+
+      setBuckets(prev => prev.map(b => b.id === bucketId ? { ...b, ...patch } as ExpenseBucket : b));
+    } catch (error) {
+      console.error('[useExpenseBuckets] Update error:', error);
+      toast.error("Failed to update bucket");
+    }
+  };
+
+
   useEffect(() => {
     fetchBuckets();
   }, [fetchBuckets]);
