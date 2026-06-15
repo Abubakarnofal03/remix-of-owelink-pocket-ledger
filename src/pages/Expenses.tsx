@@ -367,7 +367,7 @@ export default function Expenses() {
                     total={bucketTotal}
                     currency={currency}
                     onDelete={setDeleteBucketId}
-                    onClick={setSelectedBucket}
+                    onClick={(b) => setSelectedBucketId(b.id)}
                   />
                 );
               })
@@ -393,7 +393,7 @@ export default function Expenses() {
         expenses={selectedBucket ? getExpensesByBucket(selectedBucket.id) : []}
         currency={currency}
         open={!!selectedBucket}
-        onOpenChange={(open) => !open && setSelectedBucket(null)}
+        onOpenChange={(open) => !open && setSelectedBucketId(null)}
         onDeleteExpense={setDeleteId}
         onCreateExpense={createExpense}
         onUpdateBudget={(id, v) => updateBucket(id, { budget_amount: v })}
