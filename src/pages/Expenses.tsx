@@ -91,8 +91,9 @@ export default function Expenses() {
   const [draggingExpense, setDraggingExpense] = useState<Expense | null>(null);
   const [hoveredBucketId, setHoveredBucketId] = useState<string | null>(null);
 
-  // Bucket detail sheet
-  const [selectedBucket, setSelectedBucket] = useState<typeof buckets[0] | null>(null);
+  // Bucket detail sheet — track by id so it stays in sync when buckets update
+  const [selectedBucketId, setSelectedBucketId] = useState<string | null>(null);
+  const selectedBucket = selectedBucketId ? buckets.find((b) => b.id === selectedBucketId) ?? null : null;
 
   const { total, count, expenses: filteredExpenses } = getTotals(filter);
   const unbucketedExpenses = filteredExpenses.filter((e) => !e.bucket_id);
