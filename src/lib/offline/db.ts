@@ -261,11 +261,13 @@ export interface LocalExpenseBucket {
   name: string;
   description: string | null;
   color: string;
+  budget_amount: number;
   created_at: string;
   updated_at: string;
   synced_at?: number;
   is_local?: boolean;
 }
+
 
 export interface LocalBillNotice {
   id: string;

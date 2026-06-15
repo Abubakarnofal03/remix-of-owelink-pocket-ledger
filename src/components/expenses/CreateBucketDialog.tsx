@@ -27,16 +27,19 @@ const BUCKET_COLORS = [
 interface CreateBucketDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onCreate: (data: { name: string; description?: string; color?: string }) => Promise<unknown>;
+  onCreate: (data: { name: string; description?: string; color?: string; budget_amount?: number }) => Promise<unknown>;
+  currencySymbol?: string;
 }
 
 export function CreateBucketDialog({
   open,
   onOpenChange,
   onCreate,
+  currencySymbol = "$",
 }: CreateBucketDialogProps) {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
+  const [budget, setBudget] = useState("");
   const [color, setColor] = useState(BUCKET_COLORS[0]);
   const [loading, setLoading] = useState(false);
 
@@ -46,15 +49,23 @@ export function CreateBucketDialog({
 
     setLoading(true);
     try {
-      await onCreate({ name: name.trim(), description: description.trim() || undefined, color });
+      const budgetNum = parseFloat(budget);
+      await onCreate({
+        name: name.trim(),
+        description: description.trim() || undefined,
+        color,
+        budget_amount: !isNaN(budgetNum) && budgetNum > 0 ? budgetNum : 0,
+      });
       setName("");
       setDescription("");
+      setBudget("");
       setColor(BUCKET_COLORS[0]);
       onOpenChange(false);
     } finally {
       setLoading(false);
     }
   };
+
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -87,8 +98,30 @@ export function CreateBucketDialog({
             />
           </div>
           <div className="space-y-2">
+            <Label htmlFor="bucket-budget">Budget / amount in hand (optional)</Label>
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm font-medium">
+                {currencySymbol}
+              </span>
+              <Input
+                id="bucket-budget"
+                type="number"
+                step="0.01"
+                min="0"
+                placeholder="0.00"
+                value={budget}
+                onChange={(e) => setBudget(e.target.value)}
+                className="pl-8"
+              />
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Set how much you have allocated. Expenses can still exceed this amount.
+            </p>
+          </div>
+          <div className="space-y-2">
             <Label>Color</Label>
             <div className="flex gap-2 flex-wrap">
+
               {BUCKET_COLORS.map((c) => (
                 <button
                   key={c}

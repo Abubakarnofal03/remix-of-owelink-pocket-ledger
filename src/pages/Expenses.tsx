@@ -48,7 +48,7 @@ type FilterPeriod = "day" | "week" | "month" | "all";
 export default function Expenses() {
   const { user, currency, loading: authLoading } = useAuth();
   const { expenses, loading, createExpense, deleteExpense, assignToBucket, getExpensesByBucket, getTotals } = useExpenses();
-  const { buckets, createBucket, deleteBucket } = useExpenseBuckets();
+  const { buckets, createBucket, updateBucket, deleteBucket } = useExpenseBuckets();
   const currencySymbol = getCurrencySymbol(currency);
 
   const [showForm, setShowForm] = useState(false);
@@ -59,7 +59,7 @@ export default function Expenses() {
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [deleteBucketId, setDeleteBucketId] = useState<string | null>(null);
   const [showCreateBucket, setShowCreateBucket] = useState(false);
-  const [activeTab, setActiveTab] = useState("all");
+  const [activeTab, setActiveTab] = useState("buckets");
   const [pendingSuggestionId, setPendingSuggestionId] = useState<string | null>(null);
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -309,9 +309,10 @@ export default function Expenses() {
         {/* Tabs: All Expenses vs Buckets */}
         <Tabs value={activeTab} onValueChange={setActiveTab} data-tour="expense-tabs">
           <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="all">All Expenses</TabsTrigger>
             <TabsTrigger value="buckets">Buckets ({buckets.length})</TabsTrigger>
+            <TabsTrigger value="all">All Expenses</TabsTrigger>
           </TabsList>
+
 
           <TabsContent value="all" className="mt-4 space-y-2">
             {loading ? (
@@ -394,10 +395,12 @@ export default function Expenses() {
         onOpenChange={(open) => !open && setSelectedBucket(null)}
         onDeleteExpense={setDeleteId}
         onCreateExpense={createExpense}
+        onUpdateBudget={(id, v) => updateBucket(id, { budget_amount: v })}
       />
 
       {/* Create bucket dialog */}
-      <CreateBucketDialog open={showCreateBucket} onOpenChange={setShowCreateBucket} onCreate={createBucket} />
+      <CreateBucketDialog open={showCreateBucket} onOpenChange={setShowCreateBucket} onCreate={createBucket} currencySymbol={currencySymbol} />
+
 
       {/* Delete expense confirmation */}
       <AlertDialog open={!!deleteId} onOpenChange={() => setDeleteId(null)}>

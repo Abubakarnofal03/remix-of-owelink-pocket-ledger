@@ -1,0 +1,1 @@
+ALTER TABLE public.expense_buckets ADD COLUMN IF NOT EXISTS budget_amount numeric NOT NULL DEFAULT 0;

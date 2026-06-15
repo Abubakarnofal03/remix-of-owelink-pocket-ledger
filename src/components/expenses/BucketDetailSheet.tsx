@@ -14,9 +14,11 @@ import { Textarea } from "@/components/ui/textarea";
 import { MoneyDisplay } from "@/components/ui/MoneyDisplay";
 import { ExpenseCard } from "./ExpenseCard";
 import { EmptyState } from "@/components/ui/EmptyState";
-import { Folder, Receipt, Plus, Loader2, X } from "lucide-react";
+import { Progress } from "@/components/ui/progress";
+import { Folder, Receipt, Plus, Loader2, X, Pencil, Check } from "lucide-react";
 import { getCurrencySymbol } from "@/lib/currencies";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 
 interface BucketDetailSheetProps {
   bucket: ExpenseBucket | null;
@@ -26,7 +28,9 @@ interface BucketDetailSheetProps {
   onOpenChange: (open: boolean) => void;
   onDeleteExpense: (id: string) => void;
   onCreateExpense?: (data: ExpenseInsert) => Promise<Expense | null>;
+  onUpdateBudget?: (bucketId: string, budget: number) => Promise<void> | void;
 }
+
 
 export function BucketDetailSheet({
   bucket,
@@ -36,17 +40,39 @@ export function BucketDetailSheet({
   onOpenChange,
   onDeleteExpense,
   onCreateExpense,
+  onUpdateBudget,
 }: BucketDetailSheetProps) {
   const [showForm, setShowForm] = useState(false);
   const [amount, setAmount] = useState("");
   const [description, setDescription] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [editingBudget, setEditingBudget] = useState(false);
+  const [budgetInput, setBudgetInput] = useState("");
 
   const currencySymbol = getCurrencySymbol(currency);
 
   if (!bucket) return null;
 
   const total = expenses.reduce((sum, e) => sum + e.amount, 0);
+  const budget = bucket.budget_amount || 0;
+  const hasBudget = budget > 0;
+  const remaining = budget - total;
+  const overspent = remaining < 0;
+  const progress = hasBudget ? Math.min(100, (total / budget) * 100) : 0;
+
+  const handleSaveBudget = async () => {
+    const v = parseFloat(budgetInput);
+    if (isNaN(v) || v < 0) {
+      toast.error("Enter a valid amount");
+      return;
+    }
+    if (onUpdateBudget) {
+      await onUpdateBudget(bucket.id, v);
+      toast.success("Budget updated");
+    }
+    setEditingBudget(false);
+  };
+
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -111,6 +137,79 @@ export function BucketDetailSheet({
             )}
           </div>
         </SheetHeader>
+
+        {/* Budget summary */}
+        <div className="mt-4 p-4 rounded-lg border bg-muted/30 space-y-3">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-xs text-muted-foreground">Amount in hand</p>
+              {editingBudget ? (
+                <div className="flex items-center gap-2 mt-1">
+                  <div className="relative">
+                    <span className="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground text-xs font-medium">
+                      {currencySymbol}
+                    </span>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={budgetInput}
+                      onChange={(e) => setBudgetInput(e.target.value)}
+                      className="h-8 w-32 pl-6 text-sm"
+                      autoFocus
+                    />
+                  </div>
+                  <Button size="icon" className="h-8 w-8" onClick={handleSaveBudget}>
+                    <Check className="h-4 w-4" />
+                  </Button>
+                  <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setEditingBudget(false)}>
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <p className="text-lg font-bold">
+                    {hasBudget ? <MoneyDisplay amount={budget} currency={currency} /> : "Not set"}
+                  </p>
+                  {onUpdateBudget && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7"
+                      onClick={() => { setBudgetInput(budget ? String(budget) : ""); setEditingBudget(true); }}
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                    </Button>
+                  )}
+                </div>
+              )}
+            </div>
+            <div className="text-right">
+              <p className="text-xs text-muted-foreground">{overspent ? "Over budget" : "Remaining"}</p>
+              <p className={cn(
+                "text-lg font-bold",
+                !hasBudget && "text-muted-foreground",
+                hasBudget && (overspent ? "text-destructive" : "text-emerald-600 dark:text-emerald-500")
+              )}>
+                {hasBudget ? (
+                  <MoneyDisplay amount={Math.abs(remaining)} currency={currency} />
+                ) : "—"}
+              </p>
+            </div>
+          </div>
+          {hasBudget && (
+            <Progress
+              value={progress}
+              className={cn("h-2", overspent && "[&>div]:bg-destructive")}
+            />
+          )}
+          <div className="flex items-center justify-between text-xs text-muted-foreground">
+            <span>Spent <span className="text-destructive font-medium"><MoneyDisplay amount={total} currency={currency} /></span></span>
+            <span>{expenses.length} expense{expenses.length !== 1 ? "s" : ""}</span>
+          </div>
+        </div>
+
+
 
         {/* Quick Add Form */}
         {showForm && (

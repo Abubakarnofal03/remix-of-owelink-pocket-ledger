@@ -11,6 +11,7 @@ export interface ExpenseBucket {
   name: string;
   description: string | null;
   color: string;
+  budget_amount: number;
   created_at: string;
   updated_at: string;
   is_local?: boolean;
@@ -21,7 +22,16 @@ export interface BucketInsert {
   name: string;
   description?: string;
   color?: string;
+  budget_amount?: number;
 }
+
+export interface BucketUpdate {
+  name?: string;
+  description?: string;
+  color?: string;
+  budget_amount?: number;
+}
+
 
 const BUCKET_COLORS = [
   '#6366f1', // indigo
@@ -125,11 +135,13 @@ export function useExpenseBuckets() {
       name: data.name,
       description: data.description || null,
       color: data.color || BUCKET_COLORS[colorIndex],
+      budget_amount: data.budget_amount ?? 0,
       created_at: now,
       updated_at: now,
       is_local: true,
       synced_at: undefined,
     };
+
 
     try {
       const ready = await offlineDb.ensureReady();
@@ -190,6 +202,29 @@ export function useExpenseBuckets() {
     }
   };
 
+  const updateBucket = async (bucketId: string, updates: BucketUpdate) => {
+    try {
+      const ready = await offlineDb.ensureReady();
+      if (!ready) return;
+
+      const now = new Date().toISOString();
+      const patch: Record<string, unknown> = { updated_at: now };
+      if (updates.name !== undefined) patch.name = updates.name;
+      if (updates.description !== undefined) patch.description = updates.description || null;
+      if (updates.color !== undefined) patch.color = updates.color;
+      if (updates.budget_amount !== undefined) patch.budget_amount = updates.budget_amount;
+
+      await offlineDb.expenseBuckets.update(bucketId, patch);
+      await addToSyncQueue('expense_bucket', 'update', bucketId, patch);
+
+      setBuckets(prev => prev.map(b => b.id === bucketId ? { ...b, ...patch } as ExpenseBucket : b));
+    } catch (error) {
+      console.error('[useExpenseBuckets] Update error:', error);
+      toast.error("Failed to update bucket");
+    }
+  };
+
+
   useEffect(() => {
     fetchBuckets();
   }, [fetchBuckets]);
@@ -198,8 +233,10 @@ export function useExpenseBuckets() {
     buckets,
     loading,
     createBucket,
+    updateBucket,
     deleteBucket,
     refetch: fetchBuckets,
     BUCKET_COLORS,
   };
+
 }
